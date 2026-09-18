@@ -535,14 +535,18 @@ def parse_update_payload(data: bytes, url: str) -> dict:
         dl = ""
         assets = obj.get("assets") or []
         if isinstance(assets, list):
-            for a in assets:
-                if not isinstance(a, dict):
-                    continue
-                nm = (a.get("name") or "").lower()
-                if nm.endswith((".exe", ".zip", ".7z")):
-                    dl = a.get("browser_download_url") or ""
-                    if dl:
-                        break
+            cands = [a for a in assets if isinstance(a, dict)
+                     and (a.get("name") or "").lower().endswith((".exe", ".zip", ".7z"))]
+            # 优先安装版 exe（升级场景最常用），其次才是压缩包；
+            # 不能只取「第一个匹配项」—— assets 顺序由 GitHub 决定，zip 可能排在 exe 前面。
+            for ext in (".exe", ".zip", ".7z"):
+                for a in cands:
+                    if (a.get("name") or "").lower().endswith(ext):
+                        dl = a.get("browser_download_url") or ""
+                        if dl:
+                            break
+                if dl:
+                    break
         if not dl:
             dl = obj.get("html_url") or ""
         return {"version": ver, "url": dl, "notes": notes, "name": obj.get("name") or ""}
