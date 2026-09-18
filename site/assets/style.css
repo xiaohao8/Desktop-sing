@@ -268,8 +268,9 @@ h3 { font-size: clamp(19px, 2vw, 24px); letter-spacing: -.012em; line-height: 1.
 
 /* ---------- 下载 ---------- */
 
-.dl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
-@media (max-width: 780px) { .dl-grid { grid-template-columns: 1fr; } }.dl {
+.dl-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
+@media (max-width: 960px) { .dl-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 720px) { .dl-grid { grid-template-columns: 1fr; } }.dl {
   display: flex; flex-direction: column; gap: 6px;
   padding: 32px 30px; border-radius: var(--r-lg);
   background: #fff; border: 1px solid var(--l-line);
