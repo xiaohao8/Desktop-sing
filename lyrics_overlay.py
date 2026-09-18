@@ -542,13 +542,18 @@ def parse_update_payload(data: bytes, url: str) -> dict:
             for ext in (".exe", ".zip", ".7z"):
                 for a in cands:
                     if (a.get("name") or "").lower().endswith(ext):
-                        dl = a.get("browser_download_url") or ""
+                        # GitHub 用 browser_download_url，Gitee 同名字段/ download_url 都见过，
+                        # 逐个兜；但不用裸 "url"（那是 API 地址，不是下载直链）
+                        dl = (a.get("browser_download_url") or ""
+                              or a.get("download_url") or "")
                         if dl:
                             break
                 if dl:
                     break
         if not dl:
-            dl = obj.get("html_url") or ""
+            # 资源没给出下载直链时回落到对应平台的 Releases 页（Gitee 的 API 返回体略不同于 GitHub）
+            dl = (obj.get("html_url") or ""
+                  or (GITEE_RELEASES_PAGE if "gitee.com" in str(url) else GITHUB_RELEASES_PAGE))
         return {"version": ver, "url": dl, "notes": notes, "name": obj.get("name") or ""}
     # 通用清单
     ver = str(obj.get("version", "") or "").lstrip("vV")
@@ -1943,13 +1948,21 @@ APP_VERSION = "1.0.0"
 # ---------------- 内置更新源 ----------------
 # 分工：GitHub Releases API 负责回答「有没有新版本、版本号是多少」，
 # 真正下载默认走蓝奏云镜像（国内直连更快）。两者都内置，用户不用手填地址。
-UPDATE_REPO = "xiaohao8/Desktop-sing"
+UPDATE_REPO = "xiaohao8/Desktop-sing"        # GitHub（源码主仓）
+GITEE_REPO = "xiaohao3/Desktop-sing"         # Gitee（国内镜像仓，API/raw 文件都能直连）
 DEFAULT_UPDATE_URL = "https://api.github.com/repos/%s/releases/latest" % UPDATE_REPO
 GITHUB_RELEASES_PAGE = "https://github.com/%s/releases" % UPDATE_REPO
+GITEE_RELEASES_PAGE = "https://gitee.com/%s/releases" % GITEE_REPO
+GITEE_RELEASES_API = "https://gitee.com/api/v5/repos/%s/releases/latest" % GITEE_REPO
 
-# 备用清单镜像：仓库里的 update.json（含版本号 + 蓝奏云链接），走 CDN 直连，
-# 国内访问 GitHub API 不畅时仍能查到新版本。取不到就静默跳过，不影响主源。
-UPDATE_MANIFEST_URLS = [
+# 备用更新源：主源（GitHub API）拉不动时按顺序尝试，取版本号最高的那个有效结果。
+# 顺序有讲究——国内直连的 Gitee 排前面，海外 CDN 兜底。
+#   ① Gitee Releases API：Gitee 发过 release 时可用（现阶段还没发，会自动跳过）
+#   ② Gitee raw 的 update.json：国内直连最快，含蓝奏云链接
+#   ③ jsDelivr 反代 GitHub 仓库的 update.json：海外 / Gitee 都不可达时兜底
+UPDATE_FALLBACK_SOURCES = [
+    GITEE_RELEASES_API,
+    "https://gitee.com/%s/raw/main/update.json" % GITEE_REPO,
     "https://cdn.jsdelivr.net/gh/%s@main/update.json" % UPDATE_REPO,
 ]
 
@@ -3333,7 +3346,7 @@ class LyricOverlay(QWidget):
         任一源失败只记下错误、继续下一个，全部失败才提示失败。
         """
         best, err, got_data = None, "", False
-        for src in [url] + list(UPDATE_MANIFEST_URLS):
+        for src in [url] + list(UPDATE_FALLBACK_SOURCES):
             try:
                 api_url = resolve_update_url(src)
                 if not api_url:
@@ -6659,7 +6672,7 @@ class SettingsPanel(QWidget):
         self.update_check_btn.setCursor(Qt.PointingHandCursor)
         self.update_check_btn.clicked.connect(lambda: ov.check_update(manual=True))
         l6.addWidget(self.update_check_btn)
-        upd_tip = QLabel("内置更新源：GitHub Releases 检测版本号 · 蓝奏云镜像下载（国内更快）")
+        upd_tip = QLabel("内置更新源：GitHub / Gitee 查版本号 · 下载默认走蓝奏云镜像（国内更快）")
         upd_tip.setObjectName("rowhint")
         upd_tip.setWordWrap(True)
         l6.addWidget(upd_tip)

@@ -62,6 +62,10 @@ def case(name, cond, extra=""):
 print("== 内置常量 ==")
 case("默认更新源指向 GitHub API", L.DEFAULT_UPDATE_URL ==
      "https://api.github.com/repos/xiaohao8/Desktop-sing/releases/latest", L.DEFAULT_UPDATE_URL)
+case("备用源 Gitee 排最前（国内直连优先）",
+     "gitee.com" in (L.UPDATE_FALLBACK_SOURCES[0] or "") and
+     len(L.UPDATE_FALLBACK_SOURCES) == 3,
+     " → ".join(x.split("/")[2] for x in L.UPDATE_FALLBACK_SOURCES))
 case("蓝奏云镜像表收录 1.0.0", bool(L.lanzou_mirror("1.0.0").get("setup")))
 case("未收录版本返回空", L.lanzou_mirror("9.9.9") == {})
 case("版本号带 v 前缀也能查", bool(L.lanzou_mirror("v1.0.0").get("portable")))
@@ -92,6 +96,41 @@ case("镜像源救回更新提示", p.get("has_update") is True)
 case("携带蓝奏云安装版", p.get("lanzou_setup", "").endswith("NEWSETUP"), p.get("lanzou_setup"))
 case("携带蓝奏云免安装版", p.get("lanzou_portable", "").endswith("NEWPORTABLE"))
 case("无资源直链时回落到 Releases 页", "github.com/xiaohao8/Desktop-sing/releases" in (p.get("url") or ""))
+
+print("\n== GitHub 挂了 → 优先走 Gitee raw 清单（国内直连）==")
+gitee_manifest = json.dumps({
+    "version": "1.0.2",
+    "lanzou_setup": "https://wwbgk.lanzouu.com/GITEE_SETUP",
+    "lanzou_portable": "https://wwbgk.lanzouu.com/GITEE_PORTABLE",
+    "notes": "Gitee 镜像清单",
+}).encode("utf-8")
+st = Stub()
+L.http_get = fake_http_factory({"api.github.com": RuntimeError("GitHub 不通"),
+                                "gitee.com/xiaohao3": gitee_manifest,
+                                "jsdelivr": manifest})
+st.run(L.DEFAULT_UPDATE_URL, True)
+p = st.got[-1]
+case("Gitee 清单命中", p.get("version") == "1.0.2", p.get("version"))
+case("带上 Gitee 清单里的蓝奏云链接",
+     p.get("lanzou_setup", "").endswith("GITEE_SETUP"), p.get("lanzou_setup"))
+
+print("\n== Gitee Releases API 也能识别（资源字段用 download_url）==")
+gitee_release = json.dumps({
+    "tag_name": "v1.0.3",
+    "name": "Desktop-sing v1.0.3",
+    "body": "Gitee 发布说明",
+    "assets": [{"name": "Desktop-sing-v1.0.3-portable.zip", "url": "别用我/API地址"},
+               {"name": "Desktop-sing-v1.0.3-setup.exe",
+                "download_url": "https://gitee.com/xiaohao3/Desktop-sing/releases/download/x.exe"}],
+}).encode("utf-8")
+st = Stub()
+L.http_get = fake_http_factory({"api.github.com": RuntimeError("GitHub 不通"),
+                                "gitee.com/api": gitee_release})
+st.run(L.DEFAULT_UPDATE_URL, True)
+p = st.got[-1]
+case("读到 Gitee 版本号", p.get("version") == "1.0.3", p.get("version"))
+case("兼容 download_url 字段", "/releases/download/" in (p.get("url") or ""), p.get("url"))
+case("不会被 API 的裸 url 字段骗走", "别用我" not in (p.get("url") or ""))
 
 print("\n== 内置镜像表兜底（GitHub 报 1.0.0 的下一版，表里已有链接）==")
 L.LANZOU_MIRRORS["2.0.0"] = {"setup": "https://wwbgk.lanzouu.com/S2",
