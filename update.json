@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "name": "Desktop-sing v1.0.0",
+  "url": "https://github.com/xiaohao8/Desktop-sing/releases/latest",
+  "lanzou_setup": "https://wwbgk.lanzouu.com/iTgxJ48z9kjg",
+  "lanzou_portable": "https://wwbgk.lanzouu.com/ih2SA48z8rmf",
+  "notes": "桌面歌词 Desktop-sing 首个正式版本。\n\n更新源说明：本文件由程序内置的国内清单镜像读取，用于在没有 GitHub 网络时也能检测到新版本；下载默认走蓝奏云镜像。"
+}

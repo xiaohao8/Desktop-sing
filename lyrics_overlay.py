@@ -554,12 +554,18 @@ def parse_update_payload(data: bytes, url: str) -> dict:
     ver = str(obj.get("version", "") or "").lstrip("vV")
     if not ver:
         return None
-    return {
+    out = {
         "version": ver,
         "url": str(obj.get("url", "") or ""),
         "notes": str(obj.get("notes", "") or "").strip(),
         "name": str(obj.get("name", "") or ""),
     }
+    # 自建清单也可以直接带蓝奏云镜像（键名与内置镜像表一致），省去改代码
+    for k in ("lanzou_setup", "lanzou_portable"):
+        v = str(obj.get(k, "") or "").strip()
+        if v:
+            out[k] = v
+    return out
 
 
 
@@ -1934,6 +1940,36 @@ WAVE_AMP = 0.11         # 波浪振幅，相对字号
 
 APP_VERSION = "1.0.0"
 
+# ---------------- 内置更新源 ----------------
+# 分工：GitHub Releases API 负责回答「有没有新版本、版本号是多少」，
+# 真正下载默认走蓝奏云镜像（国内直连更快）。两者都内置，用户不用手填地址。
+UPDATE_REPO = "xiaohao8/Desktop-sing"
+DEFAULT_UPDATE_URL = "https://api.github.com/repos/%s/releases/latest" % UPDATE_REPO
+GITHUB_RELEASES_PAGE = "https://github.com/%s/releases" % UPDATE_REPO
+
+# 备用清单镜像：仓库里的 update.json（含版本号 + 蓝奏云链接），走 CDN 直连，
+# 国内访问 GitHub API 不畅时仍能查到新版本。取不到就静默跳过，不影响主源。
+UPDATE_MANIFEST_URLS = [
+    "https://cdn.jsdelivr.net/gh/%s@main/update.json" % UPDATE_REPO,
+]
+
+# 蓝奏云镜像表：版本号 → {"setup": 安装版, "portable": 免安装版}。
+# 发新版时把新的蓝奏云分享链接补进这里即可；
+# 表里查不到该版本时，会自动退回 GitHub 资源直链，保证任何情况下都有得下。
+LANZOU_MIRRORS = {
+    "1.0.0": {
+        "setup": "https://wwbgk.lanzouu.com/iTgxJ48z9kjg",
+        "portable": "https://wwbgk.lanzouu.com/ih2SA48z8rmf",
+    },
+}
+
+
+def lanzou_mirror(ver: str) -> dict:
+    """取某版本的蓝奏云镜像；未收录返回空字典（调用方据此回落 GitHub 直链）。"""
+    m = LANZOU_MIRRORS.get(str(ver or "").strip().lstrip("vV"))
+    return m if isinstance(m, dict) else {}
+
+
 # 精选适合听歌场景的字体（按本机安装情况过滤；覆盖中英文）
 CURATED_FONTS = [
     "MiSans", "MiSans Semibold", "HarmonyOS Sans SC", "OPPO Sans",
@@ -2586,33 +2622,63 @@ class UpdateDialog(QDialog):
             te = QTextEdit()
             te.setReadOnly(True)
             te.setPlainText(notes[:3000])
-            te.setMaximumHeight(160)
+            te.setMaximumHeight(150)
             v.addWidget(te)
-        else:
-            url_lbl = QLabel("下载地址：%s" % (info.get("url") or "（清单未提供下载链接）"))
-            url_lbl.setObjectName("udhint")
-            url_lbl.setWordWrap(True)
-            v.addWidget(url_lbl)
+
+        self._gh_url = (info.get("url") or "").strip()
+        self._lz_setup = (info.get("lanzou_setup") or "").strip()
+        self._lz_portable = (info.get("lanzou_portable") or "").strip()
+
+        chans = []
+        if self._lz_setup or self._lz_portable:
+            chans.append("蓝奏云（国内直连）")
+        if self._gh_url:
+            chans.append("GitHub Releases")
+        chan_lbl = QLabel("下载渠道：" + " · ".join(chans) if chans
+                          else "清单未提供下载链接")
+        chan_lbl.setObjectName("udhint")
+        chan_lbl.setWordWrap(True)
+        v.addWidget(chan_lbl)
+
+        # 主按钮优先蓝奏云安装版（国内下载最快），没有镜像时退回 GitHub 直链
+        main_url = self._lz_setup or self._lz_portable or self._gh_url
+        main_txt = "蓝奏云下载" if (self._lz_setup or self._lz_portable) else "前往下载"
 
         btns = QHBoxLayout()
         btns.setSpacing(10)
         later = QPushButton("稍后再说")
         later.setObjectName("udghost")
+        later.setCursor(Qt.PointingHandCursor)
         later.clicked.connect(self.reject)
-        go = QPushButton("前往下载")
-        go.setObjectName("udgo")
-        go.setCursor(Qt.PointingHandCursor)
-        go.clicked.connect(self._open)
         btns.addStretch(1)
         btns.addWidget(later)
+        if self._gh_url and (self._lz_setup or self._lz_portable):
+            gh = QPushButton("GitHub 下载")
+            gh.setObjectName("udghost")
+            gh.setCursor(Qt.PointingHandCursor)
+            gh.clicked.connect(lambda: self._open(self._gh_url))
+            btns.addWidget(gh)
+        go = QPushButton(main_txt)
+        go.setObjectName("udgo")
+        go.setCursor(Qt.PointingHandCursor)
+        go.clicked.connect(lambda: self._open(main_url))
         btns.addWidget(go)
         v.addLayout(btns)
+
+        # 主按钮已是安装版时，免安装版单独给一个文字链
+        if self._lz_setup and self._lz_portable:
+            alt = QLabel('<a href="%s">免安装版（蓝奏云）</a>' % self._lz_portable)
+            alt.setObjectName("udlink")
+            alt.setOpenExternalLinks(True)
+            alt.setTextInteractionFlags(Qt.TextBrowserInteraction)
+            v.addWidget(alt, 0, Qt.AlignRight)
 
         self.setStyleSheet(
             "QDialog{background:#14171f;border-radius:14px;}"
             "QLabel#udtitle{color:#f2f6fb;font-size:16px;font-weight:600;}"
             "QLabel#udsub{color:#9fb0c3;font-size:13px;}"
             "QLabel#udhint{color:#9fb0c3;font-size:12px;}"
+            "QLabel#udlink{color:%s;font-size:12px;}"
             "QTextEdit{background:#0f1218;color:#cfd8e3;border:1px solid #2a2f3a;"
             "border-radius:8px;padding:8px;font-size:12px;}"
             "QPushButton#udghost{background:transparent;color:#cdd7e3;"
@@ -2621,10 +2687,10 @@ class UpdateDialog(QDialog):
             "QPushButton#udgo{background:%s;color:#06222e;border:none;border-radius:9px;"
             "padding:8px 18px;font-size:13px;font-weight:600;}"
             "QPushButton#udgo:hover{background:%s;}"
-            % (accent.name(), accent.lighter(115).name()))
+            % (accent.name(), accent.name(), accent.lighter(115).name()))
 
-    def _open(self):
-        url = (self.info.get("url") or "").strip()
+    def _open(self, url: str = ""):
+        url = (url or "").strip() or (self.info.get("url") or "").strip()
         if url:
             QDesktopServices.openUrl(QUrl(url))
         self.accept()
@@ -2742,7 +2808,8 @@ class LyricOverlay(QWidget):
         self.locked = bool(self.cfg.get("locked", False))            # 锁定位置（禁止拖动）
         self.hotkeys_on = bool(self.cfg.get("hotkeys", False))       # 全局快捷键（默认关闭，避免和别的软件抢键）
         self.keepalive = bool(self.cfg.get("keepalive", True))       # 进程保活（守护进程自动拉起）
-        self.update_url = (self.cfg.get("update_url") or "").strip()   # 更新清单地址（GitHub/通用JSON）
+        # 更新地址：留空时用内置源（GitHub Releases 查版本 + 蓝奏云镜像下载），开箱即用
+        self.update_url = (self.cfg.get("update_url") or "").strip() or DEFAULT_UPDATE_URL
         self.update_auto = bool(self.cfg.get("update_auto", True))     # 启动自动检查更新
         self._update_result = None
         self.update_checked.connect(self._on_update_checked)
@@ -3245,7 +3312,7 @@ class LyricOverlay(QWidget):
     def check_update(self, manual: bool = False):
         """检查更新：manual=True 表示用户手动触发（无论有无更新都给提示）；
         manual=False 仅用于启动自动检查（无更新时静默）。"""
-        url = self.update_url
+        url = self.update_url or DEFAULT_UPDATE_URL
         if not url:
             if manual:
                 self.tray.showMessage(
@@ -3259,27 +3326,46 @@ class LyricOverlay(QWidget):
                          args=(url, manual), daemon=True).start()
 
     def _check_update_worker(self, url: str, manual: bool):
-        try:
-            api_url = resolve_update_url(url)
-            data = http_get(api_url, timeout=8.0)
-            info = parse_update_payload(data, api_url)
-            if not info or not info.get("version"):
-                self.update_checked.emit({
-                    "has_update": False, "manual": manual,
-                    "msg": "更新信息格式无法识别（请确认链接返回的是合法 JSON）。"})
-                return
-            cmp = compare_version(info["version"], APP_VERSION)
-            if cmp <= 0:
-                self.update_checked.emit({
-                    "has_update": False, "manual": manual,
-                    "msg": "当前已是最新版本 v%s" % APP_VERSION})
-                return
-            info.update({"has_update": True, "manual": manual})
-            self.update_checked.emit(info)
-        except Exception as ex:
+        """依次尝试各个更新源，取版本号最高的有效结果。
+
+        主源是 GitHub Releases；GitHub 在国内可能访问不畅，所以额外挂了
+        国内可直连的清单镜像（仓库里的 update.json，自带蓝奏云链接）。
+        任一源失败只记下错误、继续下一个，全部失败才提示失败。
+        """
+        best, err, got_data = None, "", False
+        for src in [url] + list(UPDATE_MANIFEST_URLS):
+            try:
+                api_url = resolve_update_url(src)
+                if not api_url:
+                    continue
+                data = http_get(api_url, timeout=8.0)
+                got_data = True
+                info = parse_update_payload(data, api_url)
+                if not info or not info.get("version"):
+                    continue
+                # 补上内置蓝奏云镜像（清单自带镜像时不覆盖，优先用清单里的）
+                mir = lanzou_mirror(info["version"])
+                for k, label in (("lanzou_setup", "setup"), ("lanzou_portable", "portable")):
+                    if not info.get(k) and mir.get(label):
+                        info[k] = mir[label]
+                if not info.get("url"):
+                    info["url"] = GITHUB_RELEASES_PAGE
+                if best is None or compare_version(info["version"], best["version"]) > 0:
+                    best = info
+            except Exception as ex:
+                err = str(ex)
+        if best is None:
+            msg = ("更新信息格式无法识别（请确认链接返回的是合法 JSON）。"
+                   if got_data and not err else "检查更新失败：%s" % (err or "网络不可用"))
+            self.update_checked.emit({"has_update": False, "manual": manual, "msg": msg})
+            return
+        if compare_version(best["version"], APP_VERSION) <= 0:
             self.update_checked.emit({
                 "has_update": False, "manual": manual,
-                "msg": "检查更新失败：%s" % ex})
+                "msg": "当前已是最新版本 v%s" % APP_VERSION})
+            return
+        best.update({"has_update": True, "manual": manual})
+        self.update_checked.emit(best)
 
     def _on_update_checked(self, payload):
         """在主线程处理检查结果（信号跨线程走 QueuedConnection 回到主线程）"""
@@ -3304,8 +3390,9 @@ class LyricOverlay(QWidget):
         dlg.exec()
 
     def set_update_url(self, url: str):
-        self.update_url = (url or "").strip()
-        self.cfg["update_url"] = self.update_url
+        raw = (url or "").strip()
+        self.cfg["update_url"] = raw          # 留空存档 = 用内置源
+        self.update_url = raw or DEFAULT_UPDATE_URL
         save_config(self.cfg)
 
     def set_update_auto(self, on: bool):
@@ -6559,11 +6646,11 @@ class SettingsPanel(QWidget):
 
         # ---- 更新 ----
         self.update_url_edit = QLineEdit()
-        self.update_url_edit.setPlaceholderText("GitHub Releases / 更新清单 JSON 链接（留空则不检查）")
-        self.update_url_edit.setText(ov.update_url)
+        self.update_url_edit.setPlaceholderText("留空 = 内置源（GitHub 查版本 + 蓝奏云镜像下载）")
+        self.update_url_edit.setText((ov.cfg.get("update_url") or "").strip())
         self.update_url_edit.setMinimumWidth(280)
         self.update_url_edit.editingFinished.connect(self._on_update_url)
-        l6.addWidget(make_row("更新地址", self.update_url_edit))
+        l6.addWidget(make_row("更新地址", self.update_url_edit, hint="留空即用内置源"))
         self.update_auto_check = self._switch(ov.update_auto, self._on_update_auto)
         l6.addWidget(make_row("启动自动检查", self.update_auto_check,
                               hint="上传新版本后自动提示"))
@@ -6572,6 +6659,10 @@ class SettingsPanel(QWidget):
         self.update_check_btn.setCursor(Qt.PointingHandCursor)
         self.update_check_btn.clicked.connect(lambda: ov.check_update(manual=True))
         l6.addWidget(self.update_check_btn)
+        upd_tip = QLabel("内置更新源：GitHub Releases 检测版本号 · 蓝奏云镜像下载（国内更快）")
+        upd_tip.setObjectName("rowhint")
+        upd_tip.setWordWrap(True)
+        l6.addWidget(upd_tip)
 
         keys_box = QWidget()
         keys_box.setObjectName("keys")
