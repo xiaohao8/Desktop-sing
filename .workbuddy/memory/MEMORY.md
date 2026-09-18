@@ -117,4 +117,40 @@
      （`CACHE_MAX_FILES=3000` / `CACHE_MAX_BYTES=40MB`，按 `st_atime` 淘汰，
      写缓存后自动 `prune_cache()`），且设置面板要有**看得见占用量 + 一键清理**的入口
      （只写在隐私政策里不够）。
+- **许可随包合规（2026-09-19 建成，政策 11.2）**：程序内置 MiSans 字体、歌词引擎借鉴
+  Apache-2.0 的 Lyricify-Lyrics-Helper → **Apache-2.0 第 4 条要求向「接收者」提供 NOTICE**，
+  商店用户只拿到 .msix、看不到仓库，所以**只放仓库里 = 实打实的许可违规**。
+  已建仓库根 `LICENSE-THIRD-PARTY.txt`（5 节：Lyricify 归属 + FluentFlyout「未使用源码」声明 +
+  内置/可下载字体 + 运行时依赖 PySide6/winsdk/pycryptodome + 歌词内容版权），
+  **三条分发渠道全部随包**：`build_store.py` 的 `BUNDLED_LICENSES` 常量（`stage_layout()` 里复制，
+  **缺文件直接 SystemExit 不许静默跳过**）→ `pkg_portable.py` 的 `docs`（打为 `第三方许可.txt`）
+  → `installer.nsi` 的 `File /oname=第三方许可.txt`。「关于」窗口指引也改为指向**安装目录下的
+  随包文件**（指向 NOTICE.md 等于没有——商店用户看不到仓库）。
+- **「商标审查」必须枚举所有用户可见载体，不能只扫界面文案**：第 3 轮最严重的发现是
+  `build_store.py` 的 `DESCRIPTION` 常量里藏着「如 QQ音乐 / 网易云音乐 / 酷狗音乐」——
+  这串会写进 `uap:VisualElements/@Description`（**包元数据，商店页可见**）。
+  前两轮只扫了 `lyrics_overlay.py` / 官网 / README 所以漏掉。
+  现审计 P5.1 已扩展为**多载体扫描**：P5.1 界面文案、P5.1b 清单 Description 商标、
+  P5.1c 播放器品牌黑名单（QQ音乐/网易云/酷狗/汽水/虾米）、P5.1d 更新菜单文案如实性。
+  **正确做法**：说明兼容性描述客观事实（「接入 SMTC 的播放器」），不点名品牌。
+- **行为正确 ≠ 描述正确**：商店版 `check_update()` 行为本就正确（提示去商店更新），
+  但菜单项和桌面版一样写「检查更新…」→ 用户以为应用内有更新通道、点了拿不到版本信息，
+  看起来像功能坏了。已改 `"在商店中获取更新…" if STORE_MODE else "检查更新…"`。
+  审核员读的是**文案**不是源码。
+- **商店截图三要件（2026-09-19 补齐）**：① **尺寸 ≥1366×768**（`shot_settings()` 原来只抓
+  548 宽的面板本体，远不达标 → 改为贴 1600×900 桌面底）；② **文件名要可被识别**
+  （`store-shot-*.png`，旧名 `1-idle.png` 不含 shot/preview 关键词，审计匹配不到）；
+  ③ **内容非空**（offscreen 下 `grab()` 有时抓到全透明，落盘是纯壁纸 101KB 看着正常但无内容
+  → 审计加空白检测：采样角落背景色，内容占比 <3% 判空白）。
+  `render_shots.py` 的 `composite()` 已加 `pixmap=` 参数，支持先 `grab()` 再算居中位置。
+- **审计脚本现有规模**：`store/audit_round3.py` 约 400 行 / 21 项检查（P3.6 截图组 3 项 +
+  P5 组 18 项），**2026-09-19 首次做到 FAIL 0 / WARN 0**。
+  P5.12 系列 8 项是许可随包检查，含**已打 MSIX 包内容抽验**（`zipfile.namelist()` 找
+  `LICENSE-THIRD-PARTY` / `PRIVACY.md`）。**两条检查当场抓出我手改时漏掉的问题**
+  （P5.1 旧占位文案、P5.12e 包内无许可）——人改代码会漏，脚本不会，别省自动检查。
+- **`__pycache__` 陈旧字节码坑（第三次踩，务必记住）**：改完代码跑脚本前**先清
+  `__pycache__`**。本次症状是「代码明明对但行为不对」——截图一直抓成全透明，
+  排查了尺寸、`composite(pixmap=)` 路径等半天，最后 `rm -rf store/__pycache__` 后重跑即正常。
+- **图片 Read 工具按内容哈希缓存**：同一路径图片更新后再次 Read 返回「image unchanged」，
+  不能据此判断是否重生成 → 改用程序化像素统计验证内容非空。
 - 提审完整步骤 / 自签本地测试 / WACK / 13 条政策逐条对照 / 拒审原因表：`store/README-STORE.md`。
