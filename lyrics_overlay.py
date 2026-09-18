@@ -3931,16 +3931,26 @@ class LyricOverlay(QWidget):
         duration = max(0.0, float(info.get("duration") or 0.0))
 
         def worker():
-            lines, words, cover_url, trans = fetch_lyrics(title, artist,
-                                                          prefer_netease=prefer_netease,
-                                                          duration=duration)
+            # fetch_lyrics 内部对「各源失败」已有兜底，但预处理（缓存读写/清洗）
+            # 仍可能抛出预期外的异常。这里必须自己兜住：
+            # 线程一旦静默死亡，fetched 信号就永远不会发，UI 会一直停在
+            # 「等待播放…」上——用户看到的就是「歌词坏了但没人告诉我」。
+            # 兜住之后无论成败都 emit，让界面走到「纯音乐或暂无歌词」的降级显示。
+            lines, words, cover_url, trans = [], {}, None, []
+            try:
+                lines, words, cover_url, trans = fetch_lyrics(
+                    title, artist, prefer_netease=prefer_netease, duration=duration)
+            except Exception:
+                log("fetch_lyrics crashed: " + traceback.format_exc())
+                lines, words, cover_url, trans = [], {}, None, []
             fallback_cover = None
             if self._req_id == req_id and self.cover_pix is None and cover_url:
                 try:
                     fallback_cover = http_get(cover_url, timeout=5)
                 except Exception:
                     fallback_cover = None
-            self.fetched.emit((req_id, lines, words, fallback_cover, trans))
+            self.fetched.emit((req_id, lines or [], words or {},
+                               fallback_cover, trans or []))
 
         threading.Thread(target=worker, daemon=True).start()
 

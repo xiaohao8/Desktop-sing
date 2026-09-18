@@ -58,7 +58,7 @@ STORE_LISTING_DESCRIPTION = """桌面歌词是一款常驻桌面的歌词悬浮�
 · 封面主色换肤 · 翻译与音译歌词 · 进度时间
 · 摆放位置预设（7 个锚点，换分辨率也贴边）· 可锁定位置防误拖
 · 全局快捷键（默认关闭，可在设置里开启）
-· 开机自启（默认关闭，可在系统「设置 → 应用 → 桌面歌词 → 启动」里开启）
+· 开机自启（默认关闭，可在系统「设置 → 应用 → 启动」里开启）
 
 【使用前提（重要限制）】
 · 仅支持 Windows 10（1809 及以上）/ Windows 11，仅 x64
@@ -93,7 +93,7 @@ CERTIFICATION_NOTES = """测试指引（桌面歌词 v{version}）
 5. 歌词浮层初始位于屏幕底部中央；可拖动改变位置，右键菜单可锁定。
 6. 设置面板：托盘右键 → 设置…（或快捷键 Ctrl+Alt+S，需先在设置里开启快捷键）。
 7. 商店版本说明：程序内无更新检查；「开机自启」在系统
-   设置 → 应用 → 桌面歌词 → 启动 里管理。
+   设置 → 应用 → 启动 里管理（也可在任务管理器的「启动应用」标签开关）。
 8. 若歌词未出现，多为播放器未接入 SMTC 所致，属预期行为，非崩溃。"""
 
 # 商店版不要带的文件（卸载器没有意义：商店应用从系统设置里卸载）
@@ -273,6 +273,7 @@ def export_listing(version: str) -> str:
     复制粘贴即可。文件落在 store/out/listing-v<ver>.md。
     """
     os.makedirs(OUTDIR, exist_ok=True)
+    pkgver = package_version(version)     # MSIX 文件名里是四段版本
     path = os.path.join(OUTDIR, "listing-v%s.md" % version)
     txt = f"""# 桌面歌词 微软商店提审材料（v{version}）
 
@@ -280,10 +281,10 @@ def export_listing(version: str) -> str:
 > 改文案请改常量后重新生成，别直接编辑本文件。
 
 ## 1. 程序包
-`store/out/Desktop-sing-{version}-x64.msix`（**未签名**，商店会重签）
+`store/out/Desktop-sing-{pkgver}-x64.msix`（**未签名**，商店会重签）
 
 > 每次提交版本号必须递增；版本号来自 `lyrics_overlay.py` 的 `APP_VERSION`，
-> 会自动补成四段（{version}）。
+> 会自动补成四段（{pkgver}）。
 
 ## 2. 属性 / 类别
 - 产品类别：**音乐（Music）**；次级建议：实用工具（Utilities）
