@@ -24,8 +24,13 @@ with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED) as z:
     # 便携版随包附带说明文档（与安装版 SEC_CORE 一致）。
     # 卸载脚本 卸载桌面歌词.bat 已由 build_exe.py 复制进 onedir 源目录，os.walk 已包含，
     # 这里不再重复写入，避免 zip 内同名冲突。
+    #
+    # ⚠️ LICENSE-THIRD-PARTY.txt 是**许可合规要求**，不能只在仓库里放一份：
+    #    Apache-2.0 第 4 条要求向接收者提供 NOTICE，内置 MiSans 也要求保留许可说明。
+    #    用户拿到的是 zip，看不到 GitHub 仓库，所以必须真的打进去。
     docs = [("使用说明.txt", "使用说明.txt"),
-            ("隐私声明.txt", "PRIVACY.md")]
+            ("隐私声明.txt", "PRIVACY.md"),
+            ("第三方许可.txt", "LICENSE-THIRD-PARTY.txt")]
     for arcname, srcname in docs:
         sp = os.path.join(BASE, srcname)
         if os.path.isfile(sp):

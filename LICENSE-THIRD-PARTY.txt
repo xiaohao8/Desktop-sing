@@ -1,0 +1,88 @@
+桌面歌词 / Desktop-sing —— 第三方来源与许可说明
+Third-Party Notices and Licenses
+================================================
+
+本文件随程序一同分发。以下内容按各许可证的要求给出必要的声明与归属。
+
+本文件是仓库根目录 NOTICE.md 的随包版本（内容同源）；若两者不一致，
+以仓库中的 NOTICE.md 为准。
+
+------------------------------------------------
+1. Lyricify-Lyrics-Helper
+------------------------------------------------
+
+  仓库：    https://github.com/WXRIW/Lyricify-Lyrics-Helper
+  版权方：  Copyright (c) WXRIW
+  许可：    Apache License, Version 2.0
+            http://www.apache.org/licenses/LICENSE-2.0
+
+  Portions of this software are derived from Lyricify-Lyrics-Helper
+  Copyright (c) WXRIW
+  Licensed under the Apache License, Version 2.0
+
+  说明：本项目为 Python 重写实现（clean-room reimplementation），
+  参考了该项目的算法思路、歌词数据格式约定与接口划分
+  （KRC 解密、KRC/YRC/LRC 解析、格式自动识别、时间轴偏移、
+   逐字降级逐行、LRC 导出、酷狗在线取词、多源搜索匹配、
+   LRCLIB 来源、信息行识别、中文简繁转换等），
+  未逐行复制其 C# 源码，也未引入其编译产物。
+
+  该项目自身还引用了以下第三方代码，一并声明：
+    - LyricParser（MIT License）        https://github.com/HyPlayer/LyricParser
+    - 163MusicLyrics（Apache-2.0）      https://github.com/jitwxs/163MusicLyrics
+
+------------------------------------------------
+2. FluentFlyout
+------------------------------------------------
+
+  仓库：    https://github.com/unchihugo/FluentFlyout
+  开发：    Hugo Li（unchihugo）等
+  许可：    GNU General Public License v3.0
+
+  声明：本项目**没有使用** FluentFlyout 的任何源码、资源文件或编译产物，
+  仅参考了 UI 与交互设计概念（浮层位置预设、平滑入场/出场动画、
+  托盘常驻与整体观感）。概念、交互范式与视觉风格本身不受著作权保护，
+  相关功能均由本项目独立实现。因此本项目的许可不受 GPL-3.0 约束。
+
+------------------------------------------------
+3. 内置 / 可下载字体
+------------------------------------------------
+
+  程序设置面板中的「字体库」可按需下载以下字体到本机
+  （保存在 %APPDATA%\Desktop-sing\fonts\），字体版权归各自作者所有：
+
+  - MiSans（小米）                随包内置为默认字体
+                                  小米官方免费商用许可
+                                  https://hyperos.mi.com/font/
+
+  - 钉钉进步体（阿里巴巴/钉钉）     免费商用
+  - 阿里巴巴普惠体 3.0（阿里巴巴）  免费商用
+                                  https://fonts.alibabagroup.com/
+  - 思源黑体 / Noto Sans SC         SIL Open Font License 1.1
+                                  https://github.com/google/fonts
+  - 霞鹜文楷 LXGW WenKai            SIL Open Font License 1.1
+                                  https://github.com/lxgw/LxgwWenKai
+  - 得意黑 Smiley Sans              SIL Open Font License 1.1
+                                  https://github.com/atelier-anchor/smiley-sans
+
+  字体文件本身不随安装包分发（MiSans 除外），均由用户在程序内按需下载。
+
+------------------------------------------------
+4. 运行时依赖
+------------------------------------------------
+
+  本程序使用以下第三方 Python 包，各自遵循其原始许可：
+
+  - PySide6 / Qt for Python          LGPL-3.0 / 商业双许可
+  - winsdk / winrt-*（Windows SDK 绑定） MIT License
+  - pycryptodome（部分加密接口）       BSD 2-Clause / Public Domain
+
+  完整依赖列表见仓库 requirements.txt。
+
+------------------------------------------------
+5. 歌词与封面内容
+------------------------------------------------
+
+  歌词与专辑封面均来自各音乐平台的公开接口，版权归各权利人所有。
+  本程序仅将其用于本机显示，不做任何形式的再分发。
+  程序与上述平台之间不存在从属、代理或合作关系。

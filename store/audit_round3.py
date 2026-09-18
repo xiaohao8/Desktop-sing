@@ -175,17 +175,60 @@ priv = os.path.join(ROOT, "site", "privacy.html")
 check("P3.4 site/privacy.html 存在", os.path.exists(priv))
 check("P3.5 PRIVACY.md 存在", os.path.exists(os.path.join(ROOT, "PRIVACY.md")))
 
-# 截图：商店至少 1 张
+# 截图：商店至少 1 张。
+# 注意要**递归**找 —— store/out/shots/ 是 render_shots.py 的产出目录，
+# 只扫顶层的旧写法会把已经生成好的截图漏掉，误报成「没有截图」。
+# 商店要求最小 1366×768，所以顺带把尺寸也验了（小图会被直接拒）。
 shots = []
 for d in ("site/assets", "docs", "screenshots", "store"):
     p = os.path.join(ROOT, d)
-    if os.path.isdir(p):
-        for f in os.listdir(p):
+    if not os.path.isdir(p):
+        continue
+    for dp, _, fs in os.walk(p):
+        for f in fs:
             if f.lower().endswith((".png", ".jpg", ".jpeg")) and any(
                     k in f.lower() for k in ("shot", "screenshot", "预览", "preview", "效果")):
-                shots.append(os.path.join(d, f))
+                shots.append(os.path.join(dp, f))
+
 if shots:
-    check("P3.6 找到可用作商店截图的图片", True, ", ".join(shots[:4]))
+    from PySide6.QtGui import QImage as _QI
+    big, small, blank = [], [], []
+    for sp_ in shots:
+        img = _QI(sp_)
+        if img.isNull():
+            continue
+        # 空白检测：角落背景色相同的采样点占比过高 = 抓成纯底色了。
+        # （踩过坑：offscreen 下 grab 有时抓到全透明，落盘是一张纯壁纸，
+        #   只看文件大小看不出来 —— 95KB 也可能是纯渐变。）
+        bg = img.pixelColor(4, 4)
+        nz = tot = 0
+        for _y in range(0, img.height(), 8):
+            for _x in range(0, img.width(), 8):
+                tot += 1
+                c = img.pixelColor(_x, _y)
+                if abs(c.red() - bg.red()) + abs(c.green() - bg.green()) \
+                        + abs(c.blue() - bg.blue()) > 30:
+                    nz += 1
+        ratio = (nz / float(tot)) if tot else 0.0
+        tag = "%dx%d %s(内容 %.0f%%)" % (img.width(), img.height(),
+                                        os.path.relpath(sp_, ROOT), ratio * 100)
+        if ratio < 0.03:
+            blank.append(tag)
+        elif img.width() >= 1366 and img.height() >= 768:
+            big.append(tag)
+        else:
+            small.append(tag)
+    check("P3.6 找到可用作商店截图的图片", bool(big),
+          ("达标(≥1366×768) %d 张：%s" % (len(big), "; ".join(big[:3]))) if big
+          else "没有同时满足「尺寸达标 + 内容非空」的图")
+    if blank:
+        check("P3.6a 截图不是空白（真的画出了内容）", False,
+              "疑似空图: %s" % "; ".join(blank))
+    else:
+        check("P3.6a 截图不是空白（真的画出了内容）", True)
+    if small:
+        warn("P3.6b 有 %d 张截图尺寸不足 1366×768（商店最小要求）" % len(small),
+             "; ".join(small[:3]))
 else:
     warn("P3.6 仓库里没找到明显的「截图/预览」图（商店至少需 1 张，建议 1366×768+）",
          "需人工用运行中的程序截图后上传 Partner Center")
@@ -240,13 +283,39 @@ check("P4.6 隐私政策含 SMTC 系统媒体读取说明（PRIVACY.md）",
 head("P5 商标风险与本地数据控制权")
 
 # P5.1 界面里不能出现第三方品牌名（内部 key 与代码标识符不算）
+# ⚠️ 只扫 lyrics_overlay.py 是不够的：清单 Description、商品页文案也都会
+#    被用户看到（2026-09-19 实测清单里藏着一句「如 QQ音乐 / 网易云音乐 / 酷狗音乐」，
+#    正是这条检查没覆盖 build_store.py 才漏掉的）。下面把所有「用户可见载体」都过一遍。
+TM_PAT = re.compile(r'(Spotify|iOS|Apple Music|Musixmatch|iTunes)')
 ui_src = open(os.path.join(ROOT, "lyrics_overlay.py"), encoding="utf-8").read()
+build_src = open(os.path.join(ROOT, "store", "build_store.py"), encoding="utf-8").read()
+
 # 只看用户可见的中文字符串常量（"…" 里含中文的）
 zh_strings = [s for s in re.findall(r'"([^"\n]*)"', ui_src) if re.search(r'[\u4e00-\u9fff]', s)]
-tm_hits = [s for s in zh_strings
-           if re.search(r'(Spotify|iOS|Apple Music|Musixmatch)', s)]
+tm_hits = [s for s in zh_strings if TM_PAT.search(s)]
 check("P5.1 界面文案不含第三方注册商标（Spotify / iOS / …）", not tm_hits,
       "命中: %s" % tm_hits[:4] if tm_hits else "样式名一律用外观特征命名")
+
+# P5.1b 清单 Description 同样不得含注册商标（这段会被写进包元数据、商店可见）
+desc_m = re.search(r'^DESCRIPTION = \((.*?)\)\s*\n', build_src, re.S | re.M)
+desc_txt = "".join(re.findall(r'"([^"]*)"', desc_m.group(1))) if desc_m else ""
+desc_tm = TM_PAT.findall(desc_txt)
+check("P5.1b 清单 Description 不含第三方注册商标", not desc_tm,
+      "命中: %s" % desc_tm if desc_tm else "已改为只描述 SMTC 兼容性")
+
+# P5.1c 清单 Description 不得点名具体播放器品牌（QQ音乐/网易云/酷狗/汽水…）
+PLAYER_BRANDS = ("QQ音乐", "QQ 音乐", "网易云", "酷狗", "汽水音乐", "虾米")
+desc_brands = [b for b in PLAYER_BRANDS if b in desc_txt]
+check("P5.1c 清单 Description 不点名播放器品牌", not desc_brands,
+      "命中: %s" % desc_brands if desc_brands else "")
+
+# P5.1d 商店版「更新」菜单项的文案必须如实（不能还写「检查更新…」，
+#       否则用户以为应用内有更新通道，点了却拿不到版本信息 → 像功能坏了）
+check("P5.1d 商店版更新菜单文案如实反映商店分发",
+      "在商店中获取更新" in ui_src and
+      re.search(r'QAction\("在商店中获取更新…" if STORE_MODE else "检查更新…"', ui_src)
+      is not None,
+      "旧版两种模式都写「检查更新…」")
 
 # P5.2 不得暗示与音乐平台存在关联
 check("P5.2 「关于」窗口声明与音乐平台无从属关系",
@@ -334,6 +403,39 @@ for label, txt in (("关于窗口", about_txt), ("商品页描述", listing_txt)
     check("P5.11 %s 的功能数量与代码一致" % label, not bad,
           "不一致: %s" % bad if bad else "、".join(
               "%s%d" % (k, v[0]) for k, v in sorted(claims.items())))
+
+# P5.12 许可与隐私声明必须随包分发
+# Apache-2.0 第 4 条要求向接收者提供 NOTICE；内置 MiSans 要求保留许可说明。
+# 商店用户只拿到 .msix，看不到 GitHub 仓库 → 文件不进包就是实打实的许可违规。
+lp = os.path.join(ROOT, "LICENSE-THIRD-PARTY.txt")
+check("P5.12 存在随包许可文件 LICENSE-THIRD-PARTY.txt", os.path.exists(lp))
+if os.path.exists(lp):
+    lt = open(lp, encoding="utf-8").read()
+    check("P5.12a 许可文件含 Apache-2.0 归属声明（Lyricify）",
+          "Lyricify-Lyrics-Helper" in lt and "Apache License, Version 2.0" in lt)
+    check("P5.12b 许可文件含内置字体 MiSans 的说明", "MiSans" in lt)
+    check("P5.12c 许可文件含 FluentFlyout 的「未使用源码」声明",
+          "FluentFlyout" in lt and "没有使用" in lt)
+check("P5.12d 打包脚本把许可文件列入随包清单",
+      "LICENSE-THIRD-PARTY.txt" in notes and "BUNDLED_LICENSES" in notes)
+# 三条分发渠道都要带许可文件（商店版 / 便携 zip / NSIS 安装包）——
+# 用户从哪条渠道拿到程序，就必须在哪条渠道拿到许可声明。
+_nsi = open(os.path.join(ROOT, "installer", "installer.nsi"), encoding="utf-8").read()
+_pkg = open(os.path.join(ROOT, "pkg_portable.py"), encoding="utf-8").read()
+check("P5.12f NSIS 安装包随包许可文件",
+      "LICENSE-THIRD-PARTY.txt" in _nsi,
+      "安装版用户看不到仓库")
+check("P5.12g 便携 zip 随包许可文件",
+      "LICENSE-THIRD-PARTY.txt" in _pkg)
+# 已打出的包要真的带上（没跑过打包就跳过，不误报）
+_msix = os.path.join(ROOT, "store", "out", "Desktop-sing-1.0.0.0-x64.msix")
+if os.path.exists(_msix):
+    import zipfile as _zf
+    _names = _zf.ZipFile(_msix).namelist()
+    _have = [n for n in _names
+             if "LICENSE-THIRD-PARTY" in n or n.endswith("PRIVACY.md")]
+    check("P5.12e 已打包的 MSIX 里含许可/隐私声明", bool(_have),
+          "找到: %s" % _have if _have else "包内没有 —— 需重新打包")
 
 # ---------------------------------------------------------------- 汇总
 head("汇总")

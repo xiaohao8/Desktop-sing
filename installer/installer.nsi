@@ -182,6 +182,9 @@ Section "核心文件（必装）" SEC_CORE
   SetOutPath "$INSTDIR"
   File /r "..\dist\Desktop-sing-v1.0.0\*.*"
   File /oname=隐私声明.txt "..\PRIVACY.md"
+  ; 许可合规：Apache-2.0 第 4 条要求向接收者提供 NOTICE，内置 MiSans 也要求
+  ; 保留许可说明。用户装的是这个 exe，看不到 GitHub 仓库 → 必须随包。
+  File /oname=第三方许可.txt "..\LICENSE-THIRD-PARTY.txt"
   File "..\使用说明.txt"
   File "..\卸载桌面歌词.bat"
   ; 注册安装信息（控制面板可卸载 / 重装记忆位置）
@@ -228,7 +231,7 @@ Section "Uninstall"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Desktop-sing"
 SectionEnd
 
-LangString DESC_SEC_CORE ${LANG_SIMPCHINESE} "程序本体、内置字体、隐私声明与使用说明。"
+LangString DESC_SEC_CORE ${LANG_SIMPCHINESE} "程序本体、内置字体、隐私声明、第三方许可与使用说明。"
 LangString DESC_SEC_DESK ${LANG_SIMPCHINESE} "在桌面创建 桌面歌词 快捷方式。"
 LangString DESC_SEC_MENU ${LANG_SIMPCHINESE} "在开始菜单创建程序与卸载入口。"
 

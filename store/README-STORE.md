@@ -183,7 +183,8 @@ WACK（Windows App Certification Kit，`appcert.exe`）就是商店审核用的�
 | **10.2.7** | 必须清楚告知并让用户能彻底卸载 | 商店应用经系统设置卸载，`%APPDATA%` 私有视图由系统一并清理；包内**不含**自定义卸载器（会被质疑） |
 | **10.2.8** | 改 Windows 设置须用受支持方法且获用户同意 | 自启用官方 `startupTask` 扩展（默认 `Enabled="false"`）；置顶/点击穿透用 Qt 官方窗口标志；**未使用任何无障碍 API** |
 | **10.3** | 必须可测试 | 无账号无登录；已备 `CERTIFICATION_NOTES` 说明测法 |
-| **10.5.1** | **Desktop Bridge 与 Win32 产品必须始终具备隐私政策** | `site/privacy.html` + `PRIVACY.md` |
+| **10.5.1** | **Desktop Bridge 与 Win32 产品必须始终具备隐私政策** | `site/privacy.html` + `PRIVACY.md`，且 `PRIVACY.md` **随包分发** |
+| **11.2** | 不得侵犯第三方权利（含许可合规） | 随包 `LICENSE-THIRD-PARTY.txt`：Apache-2.0 归属（Lyricify-Lyrics-Helper）+ 内置 MiSans 许可说明 + FluentFlyout「未使用源码」声明。**三条分发渠道都要带**（MSIX / 便携 zip / NSIS 安装包） |
 | **10.6** | 声明的能力必须与实际功能相关，不得绕过系统检查 | 仅 `runFullTrust`，名副其实 |
 | **10.7** | 声明支持的语言必须本地化其描述文本；功能不全须说明 | 清单 `Resources` **只声明 `zh-CN`**（不虚报 en-US），描述里也写了「界面仅简体中文」 |
 | **10.9** | 通知须标注来源、不夹带无关推广、尊重系统开关 | 仅用托盘气泡提示自身状态，无推广、无 WNS |

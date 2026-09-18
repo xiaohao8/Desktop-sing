@@ -59,9 +59,10 @@ def wallpaper() -> QPixmap:
     return pm
 
 
-def composite(bg: QPixmap, widget, x: int, y: int) -> QPixmap:
-    """把控件真实渲染结果叠到壁纸上"""
-    grab = widget.grab()
+def composite(bg: QPixmap, widget, x: int, y: int, pixmap=None) -> QPixmap:
+    """把控件真实渲染结果叠到壁纸上。
+    pixmap 非空时直接用这张已抓好的图（用于要先 grab 再算居中位置的场合）。"""
+    grab = pixmap if pixmap is not None else widget.grab()
     if grab.isNull():
         raise SystemExit("grab() 失败：控件没 show() 或尺寸为 0")
     out = QPixmap(bg)
@@ -79,7 +80,7 @@ def shot_idle(app) -> str:
     ov_.show()
     app.processEvents()
     pm = composite(wallpaper(), ov_, (W - 900) // 2, H - 300)
-    path = os.path.join(OUT, "1-idle.png")
+    path = os.path.join(OUT, "store-shot-1-idle.png")
     pm.save(path)
     return path
 
@@ -109,26 +110,35 @@ def shot_hero(app) -> str:
     ov_.update()
     app.processEvents()
     pm = composite(wallpaper(), ov_, (W - 1000) // 2, H - 340)
-    path = os.path.join(OUT, "2-hero.png")
+    path = os.path.join(OUT, "store-shot-2-hero.png")
     pm.save(path)
     return path
 
 
 def shot_settings(app) -> str:
     """设置面板。注意：offscreen 下控件需要几轮事件循环才完成布局与绘制，
-    直接 grab 会抓到纯背景，所以要 processEvents + repaint 多轮后再抓。"""
+    直接 grab 会抓到纯背景，所以要 processEvents + repaint 多轮后再抓。
+
+    面板本体只有 548 宽，直接抓出来远小于商店要求的 1366×768。
+    这里把面板贴到 1600×900 的桌面底上（与另外两张同规格），
+    既是真实观感，也一并满足尺寸门槛。
+    """
     watcher = ov.MediaWatcher()
     ov_ = ov.LyricOverlay(watcher)
     panel = ov.SettingsPanel(ov_)
-    panel.resize(1000, 860)
+    panel.resize(620, 880)
     panel.show()
     for _ in range(8):
         app.processEvents()
     panel.repaint()
     app.processEvents()
     grab = panel.grab()
-    path = os.path.join(OUT, "3-settings.png")
-    grab.save(path)
+    # 贴到桌面底：面板居中，(H - 面板高) / 2 保证上下留白相等
+    pm = composite(wallpaper(), panel, (W - grab.width()) // 2,
+                   max(0, (H - grab.height()) // 2),
+                   pixmap=grab)
+    path = os.path.join(OUT, "store-shot-3-settings.png")
+    pm.save(path)
     return path
 
 

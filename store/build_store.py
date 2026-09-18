@@ -39,11 +39,15 @@ SHORT_NAME = "桌面歌词"        # 磁贴底部短名称（全名过长会被�
 PUBLISHER_DISPLAY_NAME = "Desktop-sing Project"
 
 # 清单里的 Description（uap:VisualElements/@Description）：
-# 商店策略 10.1.1 要求准确描述功能与「重要限制」。这里把限制写全，
+# 商店策略 10.1.1 要求准确描述「重要限制」。这里把限制写全，
 # 免得审核员按描述预期去测却发现对不上。
+#
+# ⚠️ 这一串会被写进用户可见的清单，**同样受 10.1.1 / 11.2 约束**：
+#    不点名任何第三方品牌（旧版写了「如 QQ音乐 / 网易云音乐 / 酷狗音乐」，
+#    等于把商标写进包元数据）。要说明兼容性就描述「接入 SMTC」这一客观事实。
 DESCRIPTION = ("常驻桌面的卡拉OK歌词悬浮条：自动跟随接入 Windows 系统媒体控制（SMTC）"
-               "的播放器（如 QQ音乐 / 网易云音乐 / 酷狗音乐）显示逐字歌词。"
-               "支持 5 种悬浮样式、氛围屏保、封面主色换肤、翻译与音译显示、进度时间、"
+               "的播放器显示逐字歌词。"
+               "支持 5 种悬浮样式、4 种氛围屏保、封面主色换肤、翻译与音译显示、进度时间、"
                "全局快捷键（默认关闭）与开机自启（默认关闭）。"
                "所有数据仅保存在本机，无账号、无广告、无追踪。")
 
@@ -112,6 +116,13 @@ CERTIFICATION_NOTES = """测试指引（桌面歌词 v{version}）
 # 商店版不要带的文件（卸载器没有意义：商店应用从系统设置里卸载）
 EXCLUDE_FILES = {"卸载桌面歌词.bat"}
 
+# 必须随包分发的许可/声明文件。
+# 为什么不能只放在仓库里：Apache-2.0 第 4 条要求「向接收者提供一份 NOTICE」，
+# 内置的 MiSans 也要求保留许可说明。商店用户只拿到 .msix，看不到 GitHub 仓库，
+# 所以这些文件必须真的进包，否则是实打实的许可违规。
+# （来源：仓库根目录，打包时复制到程序目录，用户可在安装目录里查看。）
+BUNDLED_LICENSES = ("LICENSE-THIRD-PARTY.txt", "PRIVACY.md")
+
 
 def app_version() -> str:
     """从主程序读 APP_VERSION（省得两处维护）。"""
@@ -163,6 +174,14 @@ def stage_layout():
         p = os.path.join(app_dir, f)
         if os.path.isfile(p):
             os.remove(p)
+
+    # 许可与隐私声明必须随包（见 BUNDLED_LICENSES 注释）
+    for f in BUNDLED_LICENSES:
+        src = os.path.join(ROOT, f)
+        if not os.path.isfile(src):
+            raise SystemExit("缺少随包声明文件：%s（许可合规要求，不能省）" % f)
+        shutil.copyfile(src, os.path.join(app_dir, f))
+        print("  [声明] 已随包 %s" % f)
     assets_dst = os.path.join(LAYOUT, "Assets")
     os.makedirs(assets_dst, exist_ok=True)
     import make_store_assets

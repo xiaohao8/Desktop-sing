@@ -3336,7 +3336,10 @@ class LyricOverlay(QWidget):
         m_sys.addAction(act_auto)
         m_sys.addAction(act_keep)
         m_sys.addAction(act_hk)
-        act_check = QAction("检查更新…", menu)
+        # 商店版没有应用内更新通道（更新走商店），但这一项保留 —— 点它会提示
+        # 「请在商店获取更新」。所以**文案要如实反映**，不能还写「检查更新…」，
+        # 否则用户以为应用里有更新通道，点了却没有任何版本信息，像功能坏了。
+        act_check = QAction("在商店中获取更新…" if STORE_MODE else "检查更新…", menu)
         act_check.triggered.connect(lambda: self.check_update(manual=True))
         m_sys.addAction(act_check)
         m_sys.addSeparator()
@@ -3446,7 +3449,8 @@ class LyricOverlay(QWidget):
             + abilities +
             "\n"
             "歌词取自各音乐平台公开接口，与上述平台无从属或合作关系\n"
-            "歌词引擎与优化借鉴 Lyricify-Lyrics-Helper（Apache-2.0），详见 NOTICE.md\n\n"
+            "歌词引擎与优化借鉴 Lyricify-Lyrics-Helper（Apache-2.0）。\n"
+            "第三方来源与许可详见安装目录下的 LICENSE-THIRD-PARTY.txt\n\n"
             + tail +
             "[ / ] 歌词偏移 · L 显示隐藏 · S 设置 · T 样式 · D 显示模式\n"
             "G 锁定位置 · B 氛围屏保",
@@ -7043,7 +7047,13 @@ class SettingsPanel(QWidget):
             return "清理缓存"
         if n <= 0:
             return "暂无缓存"
-        return "清理缓存（%d 首 / %.1f MB）" % (n, total / 1048576.0)
+        # 不足 0.1 MB 时用整数 KB，否则会显示成「0.0 MB」——
+        # 那看起来像坏了（明明有 6 首却占 0.0 MB），审核/用户都会当成 bug。
+        if total < 100 * 1024:
+            size = "%d KB" % max(1, int(round(total / 1024.0)))
+        else:
+            size = "%.1f MB" % (total / 1048576.0)
+        return "清理缓存（%d 首 / %s）" % (n, size)
 
     def _on_clear_cache(self):
         try:
