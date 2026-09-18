@@ -167,6 +167,7 @@ _diag_update_dialog.py     更新弹窗离屏渲染巡检（按钮与链接布�
 update.json                国内清单镜像内容（jsDelivr 直读，发版时同步版本号与蓝奏云链接）
 build_exe.py               打包 exe
 pkg_portable.py            打包便携版 zip
+sign_release.py            发布完整性校验与代码签名（无证书时自动跳过签名）
 check_ver.py               产物版本信息校验
 installer/installer.nsi    NSIS 安装器源码
 NOTICE.md                  第三方来源与许可说明
@@ -182,6 +183,56 @@ preview/                   预览图输出目录
 托管即可；本地直接双击 `site/index.html` 也能完整浏览。
 
 ---
+
+## 发布与安全
+
+### 为什么首次运行会被拦
+
+程序**没有代码签名证书**（Authenticode 证书按年付费，个人项目通常先从无证书起步）。
+Windows SmartScreen 对一个「没签名 + 下载量还没攒起来」的新 exe 默认按不受信任处理，
+于是双击时会先弹蓝色警示框。这不是程序有问题，只是缺 reputation（声誉），放行一次即可。
+
+### 用户怎么放行
+
+| 场景 | 做法 |
+|---|---|
+| 蓝色「Windows 已保护你的电脑」 | 点 **更多信息** → **仍要运行** |
+| Edge / Chrome 提示「此文件可能有危险」 | 在下载栏点 **… → 保留**；若被自动删除，去「下载 → 显示已阻止的内容」恢复 |
+| 杀毒软件启发式误报 | 把程序目录加进信任/白名单（PyInstaller 打包的无签名程序容易被启发式规则命中） |
+| 想确认文件没被换包 | 见下方「校验文件真伪」 |
+
+### 校验文件真伪
+
+每个版本都会在 `dist/release/` 生成 `SHA256SUMS.txt`，发布时把它一起放进 Release 附件。
+
+```bat
+certutil -hashfile 桌面歌词-v1.0.0-安装版.exe SHA256
+```
+
+把输出哈希和清单里的那一行比对，一致就说明下载到的文件与构建产物完全一致
+（能防「网盘/镜像被替换」，但**不能**证明作者身份——那需要代码签名）。
+仓库根也自带 `sign_release.py`，一条命令就能重算校验值并顺带检查所有产物的签名状态：
+
+```bat
+python sign_release.py            :: 算 SHA256 + 报告签名状态 + 写 SHA256SUMS.txt
+python sign_release.py --sign     :: 给所有 exe 签名（配了证书才真签，没配就跳过、退出码仍为 0）
+```
+
+### 以后怎么接签名
+
+脚本已把签名位留好，**没有证书时整条构建流程完全不受影响**。等买到证书，设置环境变量再跑
+`python sign_release.py --sign` 即可（密码走环境变量，不进命令行历史、不进仓库）：
+
+| 变量 | 用途 |
+|---|---|
+| `SIGN_PFX` / `SIGN_PWD` | PFX/PKCS#12 文件路径与密码（token 里的证书可留空密码，届时会交互输入） |
+| `SIGN_THUMBPRINT` | 二选一：证书存储里的 SHA1 指纹（配 `SIGN_STORE`，默认 `My`） |
+| `SIGN_TIMESTAMP` | RFC3161 时间戳服务，默认 `http://timestamp.digicert.com`（加了时间戳，证书过期后签名依然有效） |
+| `SIGN_DESC` / `SIGN_URL` | 签名描述与产品主页（可选） |
+| `SIGN_TOOL` | `signtool.exe` 路径；不设会自动在本机 Windows SDK 里找 |
+
+补充：**EV 证书能立刻建立声誉**（几乎不再弹 SmartScreen），**OV 证书仍需要积累下载量**
+才会逐步消失拦截，两者都需要组织/个人实名鉴证。
 
 ## 已知限制
 
