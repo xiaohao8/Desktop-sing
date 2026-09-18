@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>桌面歌词 · 让歌词浮在桌面之上</title>
+<meta name="description" content="自动读取 QQ音乐 / 网易云 / 酷狗 正在播放的歌曲，在桌面显示卡拉OK逐字歌词。5 种样式、9 种逐字动画、4 种氛围屏保、单文件免安装。Windows 10/11。">
+<meta name="theme-color" content="#000000">
+<meta property="og:title" content="桌面歌词 · 让歌词浮在桌面之上">
+<meta property="og:description" content="自动跟随播放 · 卡拉OK逐字歌词 · 5 种样式 · 4 种氛围屏保。单文件免安装，Windows 10/11。">
+<meta property="og:image" content="assets/hero.png">
+<meta property="og:type" content="website">
+<link rel="icon" href="assets/favicon-32.png" sizes="32x32">
+<link rel="icon" href="assets/icon-256.png" sizes="256x256">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="assets/style.css">
+<script>
+/* 渐进增强开关（同步执行，早于首次绘制，所以不会闪一下再隐藏）：
+   style.css 里 .reveal 默认是可见的，只有 <html> 带上 js 类才启用"先隐藏、滚动入场"。
+   —— 这样即使访客禁用 JS，页面也是完整的，不会是白屏。
+   另外：如果 assets/main.js 没有随文件一起上传（部署漏了 assets 目录），
+   主逻辑不会就位，2.5 秒后这里兜底把全部内容显示出来。*/
+(function () {
+  var d = document.documentElement;
+  d.className += ' js';
+  setTimeout(function () {
+    if (!window.__dlRevealReady) d.className += ' reveal-all';
+  }, 2500);
+})();
+</script>
+<noscript><style>.reveal{opacity:1 !important;transform:none !important}</style></noscript>
+</head>
+<body>
+
+<!-- ==========================================================================
+     ⚠️  部署前唯一要改的地方：搜索「配置区」三个字
+     把下面 download 区里的 4 个 href="#" 换成你的真实下载地址即可。
+     ========================================================================== -->
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <img src="assets/icon-180.png" alt="">
+      <span>桌面歌词</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#features">功能</a>
+      <a href="#styles">样式</a>
+      <a href="#saver">屏保</a>
+      <a href="#faq">常见问题</a>
+    </nav>
+    <a class="nav-cta" href="#download">下载</a>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ================= 首屏 ================= -->
+  <section class="hero sec--dark">
+    <div class="wrap">
+      <div class="hero-text">
+        <p class="eyebrow">Windows 10 / 11 · 单文件免安装</p>
+        <h1>让歌词，<br>浮在桌面之上。</h1>
+        <p class="lead">
+          自动读取 QQ音乐 / 网易云 / 酷狗正在播放的歌曲，在桌面显示卡拉OK式逐字歌词。
+          配色随专辑封面自动变化，安静地待在那里，不抢你的焦点。
+        </p>
+        <div class="btn-row">
+          <a class="btn btn--primary" href="#download">下载 Windows 版</a>
+          <a class="btn btn--ghost" href="#features">看看有什么功能</a>
+        </div>
+        <p class="small" style="margin-top:22px">约 42 MB · 免安装 · 本地运行，不上传任何数据</p>
+      </div>
+
+      <div class="hero-shot">
+        <div class="shot">
+          <img src="assets/hero.png" alt="玻璃胶囊样式的桌面歌词" loading="eager" decoding="async">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 三大特性 ================= -->
+  <section class="sec sec--dark2" id="features">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <p class="eyebrow">核心</p>
+        <h2>它自己知道你在听什么。</h2>
+        <p class="lead">
+          不需要手动搜索、不需要拖动窗口。系统媒体一换歌，歌词就跟着换。
+        </p>
+      </div>
+
+      <div class="grid3">
+        <div class="card reveal" style="--d:0ms">
+          <div class="ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 6.7 3"/>
+              <path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-6.7-3"/>
+              <path d="M18 3v4h-4M6 21v-4h4"/>
+            </svg>
+          </div>
+          <h3>自动跟随播放</h3>
+          <p>通过 Windows 系统媒体控制读取当前歌曲与进度。同时开着 QQ音乐和网易云时，
+             跟随正在播放的那个。歌名、歌手、专辑封面、播放进度全都自动同步。</p>
+        </div>
+
+        <div class="card reveal" style="--d:80ms">
+          <div class="ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>
+            </svg>
+          </div>
+          <h3>歌词多源择优</h3>
+          <p>QQ音乐 → 网易云 → 酷狗 → LRCLIB 四个来源并行竞速，各来源先算质量分再择优，
+             拿到「逐字 + 翻译」的满配结果就提前收工。结果本地缓存，下次秒开。</p>
+        </div>
+
+        <div class="card reveal" style="--d:160ms">
+          <div class="ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 14V7a3 3 0 0 1 3-3h3"/><path d="M14 4h3a3 3 0 0 1 3 3v7"/>
+              <path d="M20 16v1a3 3 0 0 1-3 3h-3"/><path d="M8 20H7a3 3 0 0 1-3-3v-1"/>
+              <circle cx="12" cy="12" r="2.4"/>
+            </svg>
+          </div>
+          <h3>卡拉OK 逐字流光</h3>
+          <p>逐字（而不是逐行）驱动的高亮，唱到哪个字就亮哪个字，边界是一道柔和的推进波前。
+             高亮色谱直接取自专辑封面主色，每首歌的颜色都不一样。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 五种样式 ================= -->
+  <section class="sec sec--dark" id="styles">
+    <div class="wrap">
+      <div class="sec-head center reveal">
+        <p class="eyebrow">外观</p>
+        <h2>五种样式，随心情换。</h2>
+        <p class="lead">从完全融入桌面的「原生浮字」，到有实体卡片感的「黑胶唱片」。右键菜单里一键切换。</p>
+      </div>
+    </div>
+
+    <div class="gallery">
+      <figure class="reveal" style="--d:0ms">
+        <div class="shot"><img src="assets/style-native.png" alt="原生浮字样式" loading="lazy" decoding="async"></div>
+        <figcaption><b>原生浮字</b> · 无卡片底，直接压在壁纸上</figcaption>
+      </figure>
+      <figure class="reveal" style="--d:70ms">
+        <div class="shot"><img src="assets/style-glass.png" alt="玻璃胶囊样式" loading="lazy" decoding="async"></div>
+        <figcaption><b>玻璃胶囊</b> · 半透明毛玻璃，透出壁纸</figcaption>
+      </figure>
+      <figure class="reveal" style="--d:140ms">
+        <div class="shot"><img src="assets/style-ios.png" alt="iOS 音乐卡片样式" loading="lazy" decoding="async"></div>
+        <figcaption><b>iOS 音乐卡片</b> · 圆角大卡片，最耐看的一套</figcaption>
+      </figure>
+      <figure class="reveal" style="--d:210ms">
+        <div class="shot"><img src="assets/style-vinyl.png" alt="黑胶唱片样式" loading="lazy" decoding="async"></div>
+        <figcaption><b>黑胶唱片</b> · 旋转唱片 + 唱针，播放时转起来</figcaption>
+      </figure>
+      <figure class="reveal" style="--d:280ms">
+        <div class="shot"><img src="assets/style-spotify.png" alt="Spotify 声波样式" loading="lazy" decoding="async"></div>
+        <figcaption><b>Spotify 声波</b> · 极简排版 + 声波律动</figcaption>
+      </figure>
+    </div>
+    <p class="hint-swipe">← 左右滑动查看全部五种 →</p>
+
+    <div class="wrap" style="margin-top:64px">
+      <div class="split">
+        <div class="reveal">
+          <p class="eyebrow">动效</p>
+          <h2>九个字的动画，<br>唱到才动。</h2>
+          <p class="lead">
+            逐字驱动，不是整行一起动。想安静的时候也可以完全关掉动画。
+          </p>
+          <ul class="chips">
+            <li>流光滑入</li><li>字字上浮</li><li>缩放入场</li>
+            <li>纯淡入</li><li>弹跳落字</li><li>波浪起伏</li>
+            <li>扇形展开</li><li>打字机</li><li>无动画</li>
+          </ul>
+        </div>
+        <div class="reveal" style="--d:120ms">
+          <div class="shot"><img src="assets/anim-fan.png" alt="扇形展开逐字动画" loading="lazy" decoding="async"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 设置面板 ================= -->
+  <section class="sec sec--light" id="panel">
+    <div class="wrap">
+      <div class="split split--panel">
+        <div class="reveal">
+          <p class="eyebrow">控制</p>
+          <h2>该有的都有，<br>不该有的都没有。</h2>
+          <p class="lead">
+            卡片式设置面板，配色实时跟随专辑封面主色。滑条一律 10% 一档 —— 不做无意义的 1% 精细调节。
+          </p>
+          <ul class="ticks">
+            <li><b>歌词同步</b> 偏移校准 ±5 秒，慢了就提前，快了就延后</li>
+            <li><b>外观</b> 样式 / 字体 / 字号 / 透明度 / 逐字动画 / 边缘虚化</li>
+            <li><b>字体库</b> 6 款免费商用字体一键下载，带国内镜像自动回退</li>
+            <li><b>悬浮窗</b> 封面 / 翻译歌词 / 进度时间 / 点击穿透 / 位置锁定</li>
+            <li><b>氛围屏保</b> 四种风格 + 空闲自动进入</li>
+            <li><b>系统</b> 开机自启 / 进程保活 / 全局快捷键</li>
+          </ul>
+        </div>
+        <div class="reveal" style="--d:120ms">
+          <div class="shot"><img src="assets/panel.png" alt="设置面板" loading="lazy" decoding="async"></div>
+        </div>
+      </div>
+
+      <div class="split" style="margin-top:clamp(48px,7vw,96px)">
+        <div class="reveal">
+          <div class="shot"><img src="assets/menu.png" alt="右键菜单" loading="lazy" decoding="async"></div>
+        </div>
+        <div class="reveal" style="--d:120ms">
+          <p class="eyebrow">随手可用</p>
+          <h2>右键就够。</h2>
+          <p class="lead">
+            播放控制、样式、显示模式、歌词偏移、悬浮窗开关，全在右键菜单里。
+            悬停歌词还会浮出一条胶囊控制条，双击就是播放 / 暂停。
+          </p>
+          <ul class="ticks">
+            <li><b>摆放位置预设</b> 7 个锚点贴边，换分辨率、插拔外接屏也不跑偏</li>
+            <li><b>位置锁定</b> 防止误拖；<b>点击穿透</b> 让鼠标直接穿过去</li>
+            <li><b>全局快捷键</b> 默认关闭，避免和别的软件抢键</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 氛围屏保 ================= -->
+  <section class="sec sec--dark" id="saver">
+    <div class="wrap">
+      <div class="sec-head center reveal">
+        <p class="eyebrow">待机</p>
+        <h2>挂机也不烧屏。</h2>
+        <p class="lead">
+          全屏待机画面统一以纯黑打底 —— 黑像素在 OLED 上不发光，本身就是最省屏的待机态。
+          所有元素压在低亮度并缓慢呼吸，按任意键即退出。
+        </p>
+      </div>
+
+      <div class="grid2">
+        <figure class="reveal" style="--d:0ms">
+          <div class="shot"><img src="assets/saver-particle.png" alt="3D 粒子屏保" loading="lazy" decoding="async"></div>
+          <figcaption><b>3D 粒子</b> · 近两百颗封面主色粒子组成慢速星云</figcaption>
+        </figure>
+        <figure class="reveal" style="--d:80ms">
+          <div class="shot"><img src="assets/saver-minimal.png" alt="极简时钟屏保" loading="lazy" decoding="async"></div>
+          <figcaption><b>极简</b> · 纯黑 + 大时钟，最安静，适合写作业</figcaption>
+        </figure>
+        <figure class="reveal" style="--d:160ms">
+          <div class="shot"><img src="assets/saver-bars.png" alt="音浪屏保" loading="lazy" decoding="async"></div>
+          <figcaption><b>音浪</b> · 底部对称音条随多频正弦缓慢起伏</figcaption>
+        </figure>
+        <figure class="reveal" style="--d:240ms">
+          <div class="shot"><img src="assets/saver-orbits.png" alt="星轨屏保" loading="lazy" decoding="async"></div>
+          <figcaption><b>星轨</b> · 多层同心轨道，内外反向缓慢公转</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 性能 ================= -->
+  <section class="sec sec--dark2">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <p class="eyebrow">性能</p>
+        <h2>快，而且不打扰。</h2>
+        <p class="lead">下面每个数字都用仓库里的诊断脚本量过，不是估算值。</p>
+      </div>
+
+      <div class="stats">
+        <div class="stat reveal" style="--d:0ms">
+          <div class="n">190<span style="font-size:.5em">ms</span></div>
+          <div class="t">冷启动到首帧</div>
+          <div class="o">优化前 486 ms</div>
+        </div>
+        <div class="stat reveal" style="--d:80ms">
+          <div class="n">0.5–0.8<span style="font-size:.5em">s</span></div>
+          <div class="t">抓歌词（冷缓存）</div>
+          <div class="o">优化前 1.3–2.2 s</div>
+        </div>
+        <div class="stat reveal" style="--d:160ms">
+          <div class="n">0<span style="font-size:.5em">%</span></div>
+          <div class="t">空转 CPU（隐藏 / 暂停）</div>
+          <div class="o">画面没变就不重绘</div>
+        </div>
+        <div class="stat reveal" style="--d:240ms">
+          <div class="n">1.0–2.3<span style="font-size:.5em">ms</span></div>
+          <div class="t">每帧渲染耗时</div>
+          <div class="o">33 ms 预算，余量充足</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==========================================================================
+       配置区 —— 部署时只改这一块！
+       把 href="#" 换成你的真实地址即可（其余都不用动）：
+         · 蓝奏云  → 你把 exe 上传到蓝奏云后拿到的分享链接
+         · GitHub  → https://github.com/你的用户名/仓库名/releases
+       改完保存，刷新页面就能看到按钮可点。
+       ========================================================================== -->
+  <section class="sec sec--light" id="download">
+    <div class="wrap">
+      <div class="sec-head center reveal">
+        <p class="eyebrow">下载</p>
+        <h2>现在就可以用上。</h2>
+        <p class="lead">单文件 exe，双击即用，不需要安装 Python 或任何运行库。</p>
+      </div>
+
+      <div class="dl-grid">
+        <a class="dl dl--main reveal" style="--d:0ms" href="#" data-dl="lanzou">
+          <span class="k">推荐 · 国内直连</span>
+          <span class="v">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M7 17a5 5 0 0 1-.6-9.96A6.5 6.5 0 0 1 19 9.5a3.75 3.75 0 0 1-.5 7.5H7Z"/>
+              <path d="M12 12v9m0 0 3.2-3.2M12 21l-3.2-3.2"/>
+            </svg>
+            蓝奏云
+          </span>
+          <span class="d">国内节点，下载速度快，无需登录。若链接失效请在反馈区留言。</span>
+          <span class="go">前往下载</span>
+        </a>
+
+        <a class="dl reveal" style="--d:80ms" href="#" data-dl="github">
+          <span class="k">备选 · 版本齐全</span>
+          <span class="v">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 2C6.48 2 2 6.58 2 12.23c0 4.52 2.87 8.35 6.84 9.7.5.1.68-.22.68-.49l-.01-1.72c-2.78.62-3.37-1.37-3.37-1.37-.46-1.18-1.11-1.5-1.11-1.5-.91-.63.07-.62.07-.62 1 .07 1.53 1.05 1.53 1.05.9 1.57 2.34 1.12 2.91.86.09-.67.35-1.12.63-1.38-2.22-.26-4.55-1.14-4.55-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.79-4.57 5.05.36.32.68.94.68 1.9l-.01 2.81c0 .27.18.6.69.49A10.06 10.06 0 0 0 22 12.23C22 6.58 17.52 2 12 2Z"/>
+            </svg>
+            GitHub Releases
+          </span>
+          <span class="d">历史版本齐全，可查看更新日志与源码。</span>
+          <span class="go">查看版本</span>
+        </a>
+      </div>
+
+      <div class="dl-meta reveal" style="--d:140ms">
+        <span>版本 v2.4.18</span>
+        <span>Windows 10 / 11（64 位）</span>
+        <span>约 42 MB</span>
+        <span>免安装</span>
+        <span>本地运行，不上传任何数据</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FAQ ================= -->
+  <section class="sec sec--dark" id="faq">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <p class="eyebrow">常见问题</p>
+        <h2>你可能想问。</h2>
+      </div>
+
+      <div class="faq reveal">
+        <details open>
+          <summary>需要先安装 Python 吗？</summary>
+          <div class="a">不需要。下载的是一个单文件 exe，双击直接运行，不依赖 Python 或任何运行库。</div>
+        </details>
+        <details>
+          <summary>支持哪些播放器？</summary>
+          <div class="a">凡是接入 Windows 系统媒体控制（SMTC）的播放器都能读到，包括 QQ音乐、网易云音乐、酷狗音乐等。
+              同时开着多个播放器时，跟随正在播放的那一个。</div>
+        </details>
+        <details>
+          <summary>歌词对不上 / 匹配错了怎么办？</summary>
+          <div class="a">两种办法：① 右键菜单或托盘里的「重新获取歌词」，清掉该曲缓存后重抓；
+              ② 用设置面板里的「歌词偏移」校准——歌词比歌声慢就点「提前」，快就点「延后」。</div>
+        </details>
+        <details>
+          <summary>它会联网吗？会上传我的数据吗？</summary>
+          <div class="a">歌词从公开接口获取，所以取词时需要联网；除此之外不联网，也不会向任何服务器上传数据。
+              取到的歌词缓存在本地，下次播放同一首歌时秒开。</div>
+        </details>
+        <details>
+          <summary>为什么歌词里有个别字显示不出来？</summary>
+          <div class="a">程序内置 MiSans 字体且不做子集化（子集化会让生僻字整个消失，比豆腐块更糟）。
+              若某些字仍缺失，可在设置面板的「字体库」里换一款字体，或下载一款覆盖更全的字体。</div>
+        </details>
+        <details>
+          <summary>支持 macOS / Linux 吗？</summary>
+          <div class="a">目前只支持 Windows 10 / 11。核心依赖 Windows 系统媒体控制来获取播放信息。</div>
+        </details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="row">
+      <a class="brand" href="#top" style="color:var(--d-text)">
+        <img src="assets/icon-180.png" alt="">
+        <span>桌面歌词</span>
+      </a>
+      <a href="#download">下载</a>
+      <a href="#faq">常见问题</a>
+      <a href="#" data-dl="github">GitHub</a>
+    </div>
+    <p class="rules">
+      本软件免费提供，仅用于个人学习与使用。歌词内容来自公开接口，版权归原作者与权利方所有，
+      本软件不存储、不传播任何歌词内容。字体版权归各自作者所有（均为免费商用字体）。
+    </p>
+  </div>
+</footer>
+
+<script src="assets/main.js" defer></script>
+</body>
+</html>

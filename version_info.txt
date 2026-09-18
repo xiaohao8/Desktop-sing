@@ -1,0 +1,32 @@
+# -*- coding: utf-8 -*-
+# PyInstaller 版本信息资源：给 exe 填上完整的版本 / 产品名 / 描述。
+# 杀软启发式扫描非常看重「文件没有版本信息」这一特征——补齐它 + 真实图标
+# 是无签名发布时最有效的防误报手段之一。
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+    mask=0x3F,
+    flags=0x0,
+    OS=0x40004,          # VOS_NT_WINDOWS32
+    fileType=0x1,        # VFT_APP
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable('080404b0', [
+        StringStruct('CompanyName', 'Desktop-sing Project'),
+        StringStruct('FileDescription', '桌面歌词 - 常驻桌面的卡拉OK歌词悬浮条'),
+        StringStruct('FileVersion', '1.0.0.0'),
+        StringStruct('InternalName', 'Desktop-sing'),
+        StringStruct('LegalCopyright', 'Copyright (C) 2026 Desktop-sing Project'),
+        StringStruct('OriginalFilename', 'Desktop-sing.exe'),
+        StringStruct('ProductName', '桌面歌词'),
+        StringStruct('ProductVersion', '1.0.0.0'),
+        StringStruct('Comments', '本软件不收集任何个人信息，详见隐私声明。')
+      ])
+    ]),
+    VarFileInfo([VarStruct('Translation', [2052, 1200])])   # 简体中文 + Unicode
+  ]
+)
