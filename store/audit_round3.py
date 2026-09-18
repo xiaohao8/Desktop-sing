@@ -277,6 +277,51 @@ check("P4.6 隐私政策含 SMTC 系统媒体读取说明（PRIVACY.md）",
       "SMTC" in open(os.path.join(ROOT, "PRIVACY.md"), encoding="utf-8").read(),
       "site/privacy.html 里是否也提 SMTC: %s" % ("SMTC" in priv_txt))
 
+# P4.6a 两份隐私声明必须**同时**披露 SMTC。
+# 第 3 轮发现：PRIVACY.md 写清了「通过 SMTC 读取歌曲名/歌手/进度」，
+# 但 site/privacy.html（**真正填进商店表单的那个 URL**）只字未提。
+# 商店审核只读 URL 那份 → 少披露一项系统读取权限，属实质缺失。
+check("P4.6a site/privacy.html 也披露了 SMTC 系统媒体读取", "SMTC" in priv_txt,
+      "商店表单填的是这个 URL，只写在 PRIVACY.md 里等于没披露")
+check("P4.6b 两份隐私声明对「不读取音乐文件」的表述一致",
+      ("不读取你的音乐文件" in priv_txt) and
+      ("不读取你的音乐文件" in open(os.path.join(ROOT, "PRIVACY.md"),
+                                    encoding="utf-8").read()),
+      "用户最关心的边界，两份都要写明")
+
+# P4.7 site/privacy.html 的 HTML 结构必须自洽。
+# 商店表单填的就是这个 URL，标签不配平在浏览器里会「吃掉」后面的内容 ——
+# 审核员打开看到的是一份残缺的隐私政策，直接按 10.5.1 判缺。
+# （本沙箱的 WebEngine 渲染不出内容，所以用标准库 HTMLParser 做结构校验。）
+def _html_balanced(path):
+    from html.parser import HTMLParser
+    VOID = {"br", "img", "meta", "link", "hr", "input", "source"}
+    st, err = [], []
+
+    class _P(HTMLParser):
+        def handle_starttag(self, t, a):
+            if t not in VOID:
+                st.append(t)
+
+        def handle_endtag(self, t):
+            if not st:
+                err.append("多余 </%s>" % t)
+            elif st.pop() != t:
+                err.append("不匹配 </%s>" % t)
+    try:
+        _P().feed(open(path, encoding="utf-8").read())
+    except Exception as e:
+        err.append(str(e))
+    return st, err
+
+
+_priv_path = os.path.join(ROOT, "site", "privacy.html")
+_unclosed, _errs = _html_balanced(_priv_path)
+check("P4.7 site/privacy.html 的 HTML 标签配平",
+      not _unclosed and not _errs,
+      ("未闭合 %s / 错误 %s" % (_unclosed[:3], _errs[:3])) if (_unclosed or _errs) else
+      "结构自洽，浏览器不会吞掉后续段落")
+
 # ---------------------------------------------------------------- P5
 # 政策 10.1.1 / 11.2：界面与文案不得使用他人注册商标、不得暗示与第三方存在关联；
 # 政策 10.2.7 / 10.5.1：用户对本地数据有完整控制权（要能看见、能清理）。
@@ -436,6 +481,57 @@ if os.path.exists(_msix):
              if "LICENSE-THIRD-PARTY" in n or n.endswith("PRIVACY.md")]
     check("P5.12e 已打包的 MSIX 里含许可/隐私声明", bool(_have),
           "找到: %s" % _have if _have else "包内没有 —— 需重新打包")
+
+# ---------------------------------------------------------------- P5.13 多显示器
+head("P5.13 多显示器 / 高 DPI")
+# 悬浮条是「贴着屏幕边」的桌面工具，多显示器是主场景而非边缘场景。
+# 第 3 轮实测发现两处写死 primaryScreen() 的 bug：
+#   ① _preset_point() 用主屏几何算预设坐标 → 副屏用户点「贴底」窗口跳回主屏；
+#   ② AmbientSaver.start() 用主屏中心选屏 → 副屏用户触发屏保，黑的是主屏。
+# 两处都已改为「跟随窗口/歌词条所在屏，取不到再退鼠标屏、退主屏」。
+# 这条检查锁住这个模式：**定位型 API 不许直接用 primaryScreen 当首选**。
+check("P5.13 预设坐标跟随窗口所在屏（不写死主屏）",
+      re.search(r'def _preset_point.*?scr = self\.screen\(\)', ui_src, re.S) is not None,
+      "旧版 g = QApplication.primaryScreen().availableGeometry()")
+check("P5.13a 屏保跟随歌词条所在屏（不写死主屏）",
+      re.search(r'def start\(self\):.*?self\.ov\.screen\(\)', ui_src, re.S) is not None,
+      "旧版用 primaryScreen().geometry().center() 选屏")
+check("P5.13b 取不到窗口屏时有鼠标屏 / 主屏兜底",
+      ui_src.count("QApplication.screenAt(QCursor.pos())") >= 2,
+      "两处（预设坐标 + 屏保）都要有兜底，否则 hide() 状态下会拿到 None")
+# 位置往返一致性：套预设后反查必须回到同一个 key，否则「自由位置」判定会失准
+check("P5.13c 位置反查仍以同一基准计算（预设与反查共用 _preset_point）",
+      ui_src.count("self._preset_point(") >= 2 and
+      "def _current_position_key" in ui_src)
+# DPI：Qt6 默认已启用高 DPI 缩放，不应再去开 Qt5 时代的废弃开关
+_deprecated = [a for a in ("AA_EnableHighDpiScaling", "AA_UseHighDpiPixmaps")
+               if a in ui_src]
+check("P5.13d 未使用 Qt5 时代的废弃 DPI 开关", not _deprecated,
+      "命中: %s（Qt6 里这些已废弃，设置会被告警）" % _deprecated if _deprecated
+      else "Qt6 默认启用高 DPI 缩放，无需手动开")
+
+# ---------------------------------------------------------------- P5.14 卸载残留
+head("P5.14 卸载残留")
+# 卸载不干净是商店审核与用户投诉的双重高发区：
+#   ① 自启项留着 → 每次开机弹「找不到文件」；
+#   ② %APPDATA% 留着 → 配置/缓存变孤儿，重装后又莫名带着旧设置。
+# 第 3 轮实测发现 NSIS 卸载节既没删 Run 键也没碰用户数据目录，已补。
+_nsi_txt = open(os.path.join(ROOT, "installer", "installer.nsi"), encoding="utf-8").read()
+_un = _nsi_txt.split('Section "Uninstall"')[-1]
+check("P5.14 卸载时删除开机自启项（Run 键）",
+      re.search(r'DeleteRegValue\s+HKCU\s+"Software\\Microsoft\\Windows\\CurrentVersion\\Run"',
+                _un) is not None,
+      "留下会在每次开机弹「找不到文件」")
+check("P5.14a 卸载时处理用户数据目录（%APPDATA%\\Desktop-sing）",
+      "$APPDATA\\${DIR_NAME}" in _un or "$APPDATA\\Desktop-sing" in _un,
+      "留下则配置/缓存成孤儿，重装又莫名带旧设置")
+check("P5.14b 删用户数据前有明确询问（不静默删）",
+      "MB_YESNO" in _un and "IDYES" in _un,
+      "默认不问就删会误删用户配置")
+check("P5.14c 卸载前先结束进程（否则 $INSTDIR 删不净）",
+      "taskkill" in _un)
+check("P5.14d 卸载时删快捷方式与开始菜单项",
+      "Delete" in _un and "$SMPROGRAMS" in _un)
 
 # ---------------------------------------------------------------- 汇总
 head("汇总")

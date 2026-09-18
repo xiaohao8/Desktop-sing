@@ -3100,8 +3100,19 @@ class LyricOverlay(QWidget):
             self._shadow.setColor(QColor(0, 0, 0, 160))
 
     def _preset_point(self, key: str):
-        """按预设算出窗口左上角坐标（相对屏幕安全区，任务栏/分辨率变了也贴得住）"""
-        g = QApplication.primaryScreen().availableGeometry()
+        """按预设算出窗口左上角坐标（相对屏幕安全区，任务栏/分辨率变了也贴得住）
+
+        ⚠️ 用 self.screen() 而不是 primaryScreen()：多显示器下窗口当前在哪块屏，
+        预设就该在哪块屏上算。
+        旧实现写死 primaryScreen，导致用户在副屏用贴边/居中预设时，窗口会被
+        move 回主屏（「自己跳回主屏」）；而 _current_position_key() 又按主屏坐标
+        反查，副屏上的位置恒判为 free → 用户拖到副屏后位置也存不住语义。
+        窗口未 show() 时 self.screen() 可能为 None，此时退到「鼠标所在屏」再退主屏。
+        """
+        scr = self.screen()
+        if scr is None:
+            scr = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
+        g = scr.availableGeometry()
         w, h, m = self.width(), self.height(), POSITION_MARGIN
         if key == "top":
             return g.x() + (g.width() - w) // 2, g.y() + m
@@ -5985,8 +5996,22 @@ class AmbientSaver(QWidget):
     # ---------- 生命周期 ----------
 
     def start(self):
-        scr = QApplication.screenAt(QApplication.primaryScreen().geometry().center()) \
-            or QApplication.primaryScreen()
+        # 屏保铺在哪块屏：优先跟随歌词条所在的屏（用户在副屏看歌词，屏保就该盖副屏），
+        # 歌词条没显示时退到鼠标所在屏，再退主屏。
+        # 旧实现写死 primaryScreen().geometry().center()，多显示器下副屏用户按了屏保
+        # 却看到主屏全屏黑掉、副屏毫无动静 —— 像功能没生效。
+        scr = None
+        try:
+            if self.ov is not None and self.ov.isVisible():
+                scr = self.ov.screen()
+        except Exception:
+            scr = None
+        if scr is None:
+            scr = QApplication.screenAt(QCursor.pos())
+        if scr is None:
+            scr = QApplication.primaryScreen()
+        if scr is None:
+            return
         self.setGeometry(scr.geometry())
         self.showFullScreen()
         self.raise_()

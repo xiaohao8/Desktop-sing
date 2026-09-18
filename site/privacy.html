@@ -84,8 +84,24 @@
           系统会一并清除包内数据。</p>
       </section>
 
+      <section id="local-read">
+        <h3>2. 读取的系统信息（只在本机读取，不落盘、不上传）</h3>
+        <p>本软件通过 Windows 提供的
+          <strong>系统媒体传输控制（SMTC，System Media Transport Controls）</strong>
+          读取当前正在播放的媒体信息，包括<strong>歌曲名、歌手名、播放进度与封面地址</strong>。
+          这是 Windows 自带的本地系统能力，任何接入 SMTC 的播放器都会对外提供这些信息。</p>
+        <p>说明几点边界：</p>
+        <ul>
+          <li>只读取「当前正在播放」的媒体信息，<strong>不读取你的音乐文件本身</strong>，
+            也不扫描磁盘上的音乐库；</li>
+          <li>该信息仅用于在悬浮条上显示歌词、并据此去歌词接口查询对应歌词，
+            <strong>不会上传到我们的服务器</strong>（我们也没有服务器）；</li>
+          <li>读取行为只发生在程序运行期间，退出程序即停止。</li>
+        </ul>
+      </section>
+
       <section id="network">
-        <h3>2. 发起网络请求的场景（仅功能所需）</h3>
+        <h3>3. 发起网络请求的场景（仅功能所需）</h3>
         <p>程序在以下场景按需访问网络。请求内容只包含功能所必需的字段，
           <b>不包含你的姓名、联系方式、硬件指纹或任何账户信息</b>（因为我们根本不采集它们）：</p>
         <table>
@@ -112,10 +128,21 @@
           </tr>
         </table>
         <p>Microsoft Store 版本没有「检查更新」行为——更新一律由商店分发。</p>
+
+        <p><b>关于请求头（如实说明）</b>：部分音乐平台的公开接口只对常见客户端类型
+          返回结果，因此程序在请求这些接口时会带上通用的浏览器类型标识，
+          以及标注为「PC 端、客户端版本 2.9.7」的兼容性字段；
+          对 LRCLIB 与更新清单接口，程序使用自己的名称标识
+          <code>Desktop-sing/1.0</code>。这些标识仅用于让接口正常返回歌词数据，
+          <b>不包含也无法包含你的任何个人信息</b>，它们不与你的设备或账号绑定，
+          也不用于任何形式的身份识别或追踪。</p>
+        <p>歌词与封面均来自上述平台的公开接口，程序与这些平台之间不存在从属、
+          代理或合作关系。若你或平台方不希望此类请求发生，可在设置中关闭歌词获取，
+          或停止使用本程序。</p>
       </section>
 
       <section id="never">
-        <h3>3. 我们不做的事</h3>
+        <h3>4. 我们不做的事</h3>
         <ul>
           <li><b>不收集</b>个人身份信息、通讯录、文件、浏览记录；</li>
           <li><b>不上传</b>你的任何本地数据（设置、日志、歌词缓存都只在本机）；</li>
@@ -126,7 +153,7 @@
       </section>
 
       <section id="third-party">
-        <h3>4. 第三方服务</h3>
+        <h3>5. 第三方服务</h3>
         <p>歌词与封面来自上述音乐平台的公开接口，字体与更新文件来自
           GitHub / Gitee / jsDelivr / 蓝奏云等发布渠道。这些服务由各自的运营方控制，
           可能有自己的隐私政策；本程序与它们之间只存在一次性的功能请求，
@@ -134,18 +161,18 @@
       </section>
 
       <section id="children">
-        <h3>5. 儿童</h3>
+        <h3>6. 儿童</h3>
         <p>本程序不面向儿童，也不 knowingly 收集儿童的个人信息。它只是一款本地歌词显示工具。</p>
       </section>
 
       <section id="changes">
-        <h3>6. 政策变更</h3>
+        <h3>7. 政策变更</h3>
         <p>若未来功能变化导致数据处理方式变化，我们会更新本页并更新顶部的生效日期。
           历史版本可在 <a href="https://github.com/xiaohao8/Desktop-sing" target="_blank" rel="noopener">GitHub 仓库</a> 查看。</p>
       </section>
 
       <section id="contact">
-        <h3>7. 联系我们</h3>
+        <h3>8. 联系我们</h3>
         <p>对本政策或程序本身有疑问，欢迎到
           <a href="https://github.com/xiaohao8/Desktop-sing/issues" target="_blank" rel="noopener">GitHub Issues</a>
           提问，或在 <a href="https://gitee.com/xiaohao3/Desktop-sing" target="_blank" rel="noopener">Gitee 仓库</a> 留言。</p>

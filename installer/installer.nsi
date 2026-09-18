@@ -221,14 +221,38 @@ Section "开始菜单快捷方式" SEC_MENU
 SectionEnd
 
 ; ---- 卸载 ----
+; 卸载要「卸干净」：这几项残留用户自己很难清，而且会带来实际困扰 ——
+;   ① 开机自启项留着 → 每次开机弹「找不到文件」报错；
+;   ② %APPDATA%\Desktop-sing 留着 → 配置/缓存/日志成孤儿占空间，
+;      用户重装后又「莫名其妙」带着上次的设置。
+; NSIS 默认不弹窗就问是否保留数据（商店政策也要求用户对本地数据有控制权），
+; 所以这里给一次明确的二选一：想保配置点「否」，想彻底清点「是」。
 Section "Uninstall"
+  ; 先结束进程，否则 $INSTDIR 里的 exe/dll 被占用，RMDir /r 删不干净
+  ExecWait 'taskkill /f /im ${PRODUCT_EXE}'
+  Sleep 800
+
   Delete "$DESKTOP\桌面歌词.lnk"
   Delete "$SMPROGRAMS\桌面歌词\桌面歌词.lnk"
   Delete "$SMPROGRAMS\桌面歌词\卸载桌面歌词.lnk"
   RMDir "$SMPROGRAMS\桌面歌词"
   RMDir /r "$INSTDIR"
+
+  ; 自启项（注册表键名与程序内 APP_NAME 一致；这里用 DIR_NAME，取值相同）
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${DIR_NAME}"
   DeleteRegKey HKCU "Software\Desktop-sing"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Desktop-sing"
+
+  ; 用户数据目录：明确询问，默认不删（避免误删用户的配置）
+  IfFileExists "$APPDATA\${DIR_NAME}\*.*" 0 no_userdata
+    MessageBox MB_YESNO|MB_ICONQUESTION \
+      "是否同时删除本机的配置与歌词缓存？$\r$\n$\r$\n\
+       位置：$APPDATA\${DIR_NAME}$\r$\n$\r$\n\
+       选「否」将保留设置，下次安装可直接沿用。" \
+      IDYES del_userdata IDNO no_userdata
+  del_userdata:
+    RMDir /r "$APPDATA\${DIR_NAME}"
+  no_userdata:
 SectionEnd
 
 LangString DESC_SEC_CORE ${LANG_SIMPCHINESE} "程序本体、内置字体、隐私声明、第三方许可与使用说明。"
