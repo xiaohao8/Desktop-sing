@@ -234,6 +234,107 @@ check("P4.6 隐私政策含 SMTC 系统媒体读取说明（PRIVACY.md）",
       "SMTC" in open(os.path.join(ROOT, "PRIVACY.md"), encoding="utf-8").read(),
       "site/privacy.html 里是否也提 SMTC: %s" % ("SMTC" in priv_txt))
 
+# ---------------------------------------------------------------- P5
+# 政策 10.1.1 / 11.2：界面与文案不得使用他人注册商标、不得暗示与第三方存在关联；
+# 政策 10.2.7 / 10.5.1：用户对本地数据有完整控制权（要能看见、能清理）。
+head("P5 商标风险与本地数据控制权")
+
+# P5.1 界面里不能出现第三方品牌名（内部 key 与代码标识符不算）
+ui_src = open(os.path.join(ROOT, "lyrics_overlay.py"), encoding="utf-8").read()
+# 只看用户可见的中文字符串常量（"…" 里含中文的）
+zh_strings = [s for s in re.findall(r'"([^"\n]*)"', ui_src) if re.search(r'[\u4e00-\u9fff]', s)]
+tm_hits = [s for s in zh_strings
+           if re.search(r'(Spotify|iOS|Apple Music|Musixmatch)', s)]
+check("P5.1 界面文案不含第三方注册商标（Spotify / iOS / …）", not tm_hits,
+      "命中: %s" % tm_hits[:4] if tm_hits else "样式名一律用外观特征命名")
+
+# P5.2 不得暗示与音乐平台存在关联
+check("P5.2 「关于」窗口声明与音乐平台无从属关系",
+      "无从属或合作关系" in ui_src)
+
+# P5.3 缓存必须有上限（否则无限堆积）
+check("P5.3 歌词缓存设了上限常量",
+      ("CACHE_MAX_FILES" in ui_src) and ("CACHE_MAX_BYTES" in ui_src),
+      "上限=%s" % re.findall(r'CACHE_MAX_(?:FILES|BYTES)\s*=\s*([^\n#]+)', ui_src)[:2])
+
+# P5.4 写入缓存后要淘汰
+check("P5.4 写入缓存后调用 prune_cache()", "prune_cache()" in ui_src)
+
+# P5.5 设置面板要给出清理入口（不能只写在隐私政策里）
+check("P5.5 设置面板提供「歌词缓存」清理入口",
+      ("_cache_btn_text" in ui_src) and ("_on_clear_cache" in ui_src)
+      and ("清理缓存" in ui_src))
+
+# P5.6 force 清理必须真的删文件
+check("P5.6 prune_cache(force=True) 会删除 .json", 
+      re.search(r'if force:.*?os\.remove', ui_src, re.S) is not None)
+
+# P5.7 缓存清理按钮要在商店版也存在（不随更新项一起被裁掉）
+check("P5.7 清理入口未挂在商店版被裁的更新区块里",
+      "cache_btn" in ui_src and "update_url_edit" not in
+      ui_src.split("cache_btn")[0][-400:])
+
+# P5.8 站点商品页也不得出现注册商标
+site_txt = open(os.path.join(ROOT, "site", "index.html"), encoding="utf-8").read()
+site_tm = re.findall(r'(Spotify 声波|iOS 音乐卡片|Spotify|Apple Music)', site_txt)
+check("P5.8 官网文案不含第三方注册商标", not site_tm,
+      "命中: %s" % site_tm[:4] if site_tm else "")
+
+# P5.9 官网截图资源必须是当前 UI 生成的（防止旧图与新文案对不上）
+site_img = os.path.join(ROOT, "site", "assets", "anim-fan.png")
+preview_img = os.path.join(ROOT, "preview", "anim_fan_dark.png")
+if os.path.exists(site_img) and os.path.exists(preview_img):
+    check("P5.9 官网动画截图与最新 preview 一致",
+          os.path.getsize(site_img) == os.path.getsize(preview_img),
+          "site=%d preview=%d（不一致说明改过 UI 但没重跑 make_assets.py）"
+          % (os.path.getsize(site_img), os.path.getsize(preview_img)))
+else:
+    warn("P5.9 缺少 anim-fan.png / anim_fan_dark.png，无法比对官网截图新鲜度")
+
+# P5.10 认证说明里给审核员的主路径不能是默认关闭的功能
+notes = open(os.path.join(ROOT, "store", "build_store.py"), encoding="utf-8").read()
+check("P5.10 认证说明用「右键托盘」作打开设置的主路径",
+      "右键点击系统托盘图标" in notes,
+      "旧版曾让审核员按 Ctrl+Alt+S，而该快捷键默认关闭")
+
+# P5.11 功能数量三处口径必须一致（商品页 / 关于窗口 / 代码真源）
+n_style = len(re.findall(r'^\s*"[a-z]+":', re.search(
+    r'STYLE_NAMES = \{(.*?)\n\}', ui_src, re.S).group(1), re.M))
+n_anim = len(re.findall(r'^\s*"[a-z]+":', re.search(
+    r'ANIM_STYLES = \{(.*?)\n\}', ui_src, re.S).group(1), re.M))
+n_preset = len(re.findall(r'\(\"', re.search(
+    r'POSITION_PRESETS = \((.*?)\n\)', ui_src, re.S).group(1)))
+# 屏保风格：只在「菜单构建」那一处按 (key, name) 成对列举，数那个元组。
+# 注意正则要把第一个 `("` 一起吃进 group（否则首项不被计入，永远少 1）。
+m_saver = re.search(r'for key, name in \(\(("particle.*?)\)\):\s*\n\s*a = m_saver_style',
+                    ui_src, re.S)
+n_saver = len(re.findall(r'\("', m_saver.group(1))) + 1 if m_saver else -1
+print("  代码真源: 样式 %d / 动画 %d / 锚点 %d / 屏保 %d"
+      % (n_style, n_anim, n_preset, n_saver))
+
+about_txt = ui_src[ui_src.index('"关于 桌面歌词"'):][:900]
+listing_txt = re.search(r'STORE_LISTING_DESCRIPTION = """(.*?)"""', notes, re.S).group(1)
+
+def _claims(txt):
+    """抽出文案里「N 种 X」的声明"""
+    want = {
+        "样式": n_style, "逐字动画": n_anim, "锚点": n_preset, "氛围屏保": n_saver,
+    }
+    out = {}
+    for key, real in want.items():
+        m = re.search(r'(\d+)\s*种[^\n·]{0,4}' + key, txt) or \
+            re.search(r'(\d+)\s*个' + key, txt)
+        if m:
+            out[key] = (int(m.group(1)), real)
+    return out
+
+for label, txt in (("关于窗口", about_txt), ("商品页描述", listing_txt)):
+    claims = _claims(txt)
+    bad = {k: v for k, v in claims.items() if v[0] != v[1]}
+    check("P5.11 %s 的功能数量与代码一致" % label, not bad,
+          "不一致: %s" % bad if bad else "、".join(
+              "%s%d" % (k, v[0]) for k, v in sorted(claims.items())))
+
 # ---------------------------------------------------------------- 汇总
 head("汇总")
 print("  FAIL: %d   WARN: %d" % (len(FAILS), len(WARNS)))

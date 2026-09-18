@@ -89,6 +89,72 @@ CACHE_DIR = os.path.join(CFG_DIR, "cache")
 CONFIG_PATH = os.path.join(CFG_DIR, "config.json")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
+# 歌词缓存上限：超过就按「最久未访问」淘汰。
+# 不设上限的话缓存会随听歌量无限堆积，而用户在界面里既看不到它有多大、
+# 也没有清理入口——商店政策 10.2.7/10.5.1 要求用户对自己的数据有完整控制权。
+CACHE_MAX_FILES = 3000          # 最多保留多少个歌词文件（约 15~25 MB）
+CACHE_MAX_BYTES = 40 * 1024 * 1024   # 硬上限 40 MB，先到者为准
+
+
+def cache_size() -> tuple:
+    """返回 (文件数, 总字节数)；目录不存在时返回 (0, 0)"""
+    n, total = 0, 0
+    try:
+        for name in os.listdir(CACHE_DIR):
+            if not name.endswith(".json"):
+                continue
+            try:
+                total += os.path.getsize(os.path.join(CACHE_DIR, name))
+                n += 1
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return n, total
+
+
+def prune_cache(force: bool = False):
+    """按「最久未访问」淘汰缓存。
+
+    force=False：只在超过上限时才动手（每次写入缓存后调用，开销可忽略）。
+    force=True ：清空整个缓存（设置面板的「清理缓存」按钮用）。
+    """
+    try:
+        if force:
+            for name in os.listdir(CACHE_DIR):
+                if name.endswith(".json"):
+                    try:
+                        os.remove(os.path.join(CACHE_DIR, name))
+                    except OSError:
+                        pass
+            return
+        entries = []
+        for name in os.listdir(CACHE_DIR):
+            if not name.endswith(".json"):
+                continue
+            p = os.path.join(CACHE_DIR, name)
+            try:
+                st = os.stat(p)
+                entries.append((st.st_atime, st.st_size, p))
+            except OSError:
+                pass
+        n, total = len(entries), sum(e[1] for e in entries)
+        if n <= CACHE_MAX_FILES and total <= CACHE_MAX_BYTES:
+            return
+        entries.sort()                      # 最久未访问的排前面
+        while entries and (n > CACHE_MAX_FILES or total > CACHE_MAX_BYTES):
+            _at, sz, p = entries.pop(0)
+            try:
+                os.remove(p)
+                n -= 1
+                total -= sz
+            except OSError:
+                pass
+        log("cache pruned -> %d files / %.1f MB" % (n, total / 1048576.0))
+    except OSError:
+        pass
+
+
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 
@@ -1579,6 +1645,7 @@ def fetch_lyrics(title: str, artist: str, prefer_netease: bool = False, duration
                 json.dump({"v": 4, "cover": cover_url, "lines": lines, "trans": trans,
                            "words": {str(k): v for k, v in words.items()}},
                           f, ensure_ascii=False)
+            prune_cache()          # 写完顺手控一下总量（超限才会真动手）
         except OSError:
             pass
     return lines, words, cover_url, trans
@@ -1839,9 +1906,9 @@ PILL_RADIUS = 18
 PAD_L, PAD_R, GAP, COVER = 16, 20, 14, 72
 H_NORMAL, H_WAITING = 100, 78
 MARGIN_N, COVER_N, GAP_N = 12, 54, 13   # 原生浮字样式
-# iOS 音乐卡片
+# 专辑卡片
 MARGIN_IOS, IOS_COVER, IOS_GAP, IOS_RADIUS = 20, 84, 16, 24
-# Spotify 声波卡片
+# 声波频谱卡片（内部 key 仍是 spotify，见 STYLE_NAMES 处的说明）
 MARGIN_SP, SP_PAD_L, SP_PAD_R, SP_GAP, SP_COVER, SP_RADIUS = 22, 16, 18, 14, 64, 14
 SPOTIFY_GREEN = QColor("#1DB954")
 # 黑胶唱片
@@ -1890,10 +1957,15 @@ KARAOKE_SOFT_EDGE = True
 STYLE_NAMES = {
     "native": "原生浮字",
     "glass": "玻璃胶囊",
-    "ios": "iOS 音乐卡片",
+    "ios": "专辑卡片",
     "vinyl": "黑胶唱片",
-    "spotify": "Spotify 声波",
+    "spotify": "声波频谱",
 }
+
+# 说明：样式名一律用「外观特征」命名，不使用第三方品牌名。
+# 商店政策 10.1.1 禁止暗示产品与他人存在关联、11.2 要求内容不侵犯第三方权利；
+# 界面里出现「Spotify」「iOS」这类注册商标，会被要求提供授权证明（我们当然没有）。
+# 内部 key（ios / spotify）保持不变——它是配置文件的持久化标识，改了会让老配置失效。
 
 # 主题投影特效总开关（v2.4.13）：所有悬浮主题统一用「原生浮字」那套逻辑——不挂投影。
 #
@@ -3368,12 +3440,12 @@ class LyricOverlay(QWidget):
             "桌面歌词 v%s" % APP_VERSION,
             "跟随系统媒体播放的卡拉OK歌词悬浮条\n"
             "5 种悬浮样式 · 9 种逐字动画 · 翻译歌词 · 氛围光晕\n"
-            "字体库（免费商用字体一键下载）· 氛围屏保（黑底防烧屏）\n"
+            "字体库（免费商用字体一键下载）· 4 种氛围屏保（黑底防烧屏）\n"
             "摆放位置预设（7 个锚点，换分辨率也贴边）\n"
             "多源并行抓词 · 启动约 0.2s · 隐藏后不占 CPU\n"
             + abilities +
             "\n"
-            "SMTC · QQ音乐 / 网易云 / 酷狗 / LRCLIB · PySide6\n"
+            "歌词取自各音乐平台公开接口，与上述平台无从属或合作关系\n"
             "歌词引擎与优化借鉴 Lyricify-Lyrics-Helper（Apache-2.0），详见 NOTICE.md\n\n"
             + tail +
             "[ / ] 歌词偏移 · L 显示隐藏 · S 设置 · T 样式 · D 显示模式\n"
@@ -4957,7 +5029,7 @@ class LyricOverlay(QWidget):
             p.drawEllipse(QPointF(x + w * frac, y + h / 2), kr, kr)
         p.restore()
 
-    # ---------------- iOS 音乐卡片 ----------------
+    # ---------------- 专辑卡片 ----------------
 
     def _paint_ios(self, p: QPainter):
         m = self._margin()
@@ -5151,7 +5223,7 @@ class LyricOverlay(QWidget):
         p.drawEllipse(QPointF(0, 0), r - 0.8, r - 0.8)
         p.restore()
 
-    # ---------------- Spotify 声波卡片 ----------------
+    # ---------------- 声波频谱卡片 ----------------
 
     def _paint_spotify(self, p: QPainter):
         m = self._margin()
@@ -6751,6 +6823,15 @@ class SettingsPanel(QWidget):
         self.hk_check = self._switch(ov.hotkeys_on, ov.set_hotkeys)
         l6.addWidget(make_row("全局快捷键", self.hk_check, hint="默认关闭"))
 
+        # 缓存清理：让用户看得见占用了多少、并且能一键清掉。
+        # 商店政策 10.2.7/10.5.1 要求用户对自己的本地数据有完整控制权，
+        # 光在隐私政策里写「删目录即可」是不够的——界面里得给得出口。
+        self.cache_btn = QPushButton(self._cache_btn_text())
+        self.cache_btn.setObjectName("ghost")
+        self.cache_btn.setCursor(Qt.PointingHandCursor)
+        self.cache_btn.clicked.connect(self._on_clear_cache)
+        l6.addWidget(make_row("歌词缓存", self.cache_btn, hint="按需增长，可随时清理"))
+
         # ---- 更新 ----
         if STORE_MODE:
             # 商店版：更新走商店，不展示更新地址 / 自动检查 / 手动检查
@@ -6954,6 +7035,29 @@ class SettingsPanel(QWidget):
         self.ov.set_saver_style(key)
         self._update_saver_preview()
 
+    def _cache_btn_text(self):
+        """按钮上直接显示缓存占用量，用户不必去翻目录才知道占了多少"""
+        try:
+            n, total = cache_size()
+        except Exception:
+            return "清理缓存"
+        if n <= 0:
+            return "暂无缓存"
+        return "清理缓存（%d 首 / %.1f MB）" % (n, total / 1048576.0)
+
+    def _on_clear_cache(self):
+        try:
+            prune_cache(force=True)
+        except Exception:
+            log("prune_cache(force) failed: " + traceback.format_exc())
+        self.cache_btn.setText(self._cache_btn_text())
+        try:
+            self.ov.tray.showMessage(
+                "桌面歌词", "歌词缓存已清理",
+                QSystemTrayIcon.Information, 2000)
+        except Exception:
+            pass
+
     def _update_saver_preview(self):
         """把当前屏保风格渲染成小预览图，给面板里的切换提供即时可见反馈"""
         ov = self.ov
@@ -7048,7 +7152,9 @@ class SettingsPanel(QWidget):
             if self.ov.status != "PLAYING":
                 t += "（已暂停）"
         else:
-            t = "等待播放…在 QQ音乐 / 网易云 / Spotify 播放歌曲即可显示歌词"
+            # 这里只描述「需要播放器配合」，不点名任何品牌：
+            # 商店政策 10.1.1 禁止暗示与第三方存在关联、11.2 要求不侵犯第三方权利。
+            t = "等待播放…在任意接入系统媒体控制的播放器里播放歌曲即可显示歌词"
         self.song_label.setText(t)
         self.b_toggle.setIcon(make_play_icon(
             bg=self._accent,
