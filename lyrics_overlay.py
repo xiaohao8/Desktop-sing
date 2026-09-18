@@ -2111,7 +2111,14 @@ def spawn_supervisor():
 
     关键点：守护进程不会另起一个主程序（那会被单实例守卫挡下），而是先把自己挂到
     当前 PID 上 —— 当前进程一挂，它才开始接管拉起。所以「保活」对运行中的实例同样有效。
+
+    商店版（MSIX）例外：MSIX 应用执行「包内 exe」会被系统拒绝
+    （CreateProcess 返回 ERROR_ACCESS_DENIED，且不留任何日志），守护进程根本起不来。
+    而且商店应用的生命周期由系统托管，保活本身也不是商店场景需要的能力 ——
+    所以直接跳过，不做无谓的尝试。
     """
+    if STORE_MODE:
+        return
     if os.environ.get(SUPERVISED_ENV):
         return
     if supervisor_alive():
@@ -2849,7 +2856,9 @@ class LyricOverlay(QWidget):
         self.show_time = bool(self.cfg.get("show_time", True))       # 进度时间 mm:ss
         self.locked = bool(self.cfg.get("locked", False))            # 锁定位置（禁止拖动）
         self.hotkeys_on = bool(self.cfg.get("hotkeys", False))       # 全局快捷键（默认关闭，避免和别的软件抢键）
-        self.keepalive = bool(self.cfg.get("keepalive", True))       # 进程保活（守护进程自动拉起）
+        # 进程保活（守护进程自动拉起）。商店版强制关闭：MSIX 不允许执行包内 exe，
+        # 守护进程无法拉起；且商店应用的生命周期由系统托管，本就不需要保活。
+        self.keepalive = bool(self.cfg.get("keepalive", True)) and not STORE_MODE
         # 更新地址：留空时用内置源（GitHub Releases 查版本 + 蓝奏云镜像下载），开箱即用
         self.update_url = (self.cfg.get("update_url") or "").strip() or DEFAULT_UPDATE_URL
         self.update_auto = bool(self.cfg.get("update_auto", True))     # 启动自动检查更新
@@ -2936,6 +2945,7 @@ class LyricOverlay(QWidget):
         self._zorder_timer.start(900)
 
         # 保活：确保有守护进程盯着自己（开机自启走 --supervise 时不会重复拉起）
+        # 商店版 spawn_supervisor 内部会直接返回（MSIX 不允许执行包内 exe）
         if self.keepalive:
             spawn_supervisor()
 
@@ -3244,6 +3254,8 @@ class LyricOverlay(QWidget):
         act_keep = QAction("进程保活（崩溃自动拉起）", menu)
         act_keep.setCheckable(True)
         act_keep.triggered.connect(lambda: self.set_keepalive(act_keep.isChecked()))
+        if STORE_MODE:
+            act_keep.setVisible(False)      # 商店版没有保活（见 spawn_supervisor 注释）
         act_hk = QAction("全局快捷键", menu)
         act_hk.setCheckable(True)
         act_hk.triggered.connect(lambda: self.set_hotkeys(act_hk.isChecked()))
@@ -3339,6 +3351,18 @@ class LyricOverlay(QWidget):
     def _about(self):
         # 用 styled_message 而不是 QMessageBox.about()：静态方法起的是系统原生白底对话框，
         # 不继承任何皮肤，会跟整个深色 UI 格格不入。
+        #
+        # 能力清单按运行环境如实描述（商店策略 10.1.1：元数据/界面都不得宣称
+        # 产品不具备的功能）：商店版没有进程保活（MSIX 不允许拉包内 exe），
+        # 也不能从应用内更新，所以这两项不能出现在商店版的「关于」里。
+        if STORE_MODE:
+            abilities = ("柔和描边（浅色/深色壁纸都清晰）· "
+                         "开机自启（系统「启动」设置里开关）· 全局快捷键（默认关闭）\n")
+            tail = "全局快捷键（Ctrl+Alt+…）：P 播放/暂停 · , / . 上下首 · "
+        else:
+            abilities = ("柔和描边（浅色/深色壁纸都清晰）· "
+                         "开机自启 · 进程保活 · 全局快捷键（默认关闭）\n")
+            tail = "全局快捷键（Ctrl+Alt+…）：P 播放/暂停 · , / . 上下首 · "
         styled_message(
             self, "关于 桌面歌词",
             "桌面歌词 v%s" % APP_VERSION,
@@ -3347,10 +3371,11 @@ class LyricOverlay(QWidget):
             "字体库（免费商用字体一键下载）· 氛围屏保（黑底防烧屏）\n"
             "摆放位置预设（7 个锚点，换分辨率也贴边）\n"
             "多源并行抓词 · 启动约 0.2s · 隐藏后不占 CPU\n"
-            "柔和描边（浅色/深色壁纸都清晰）· 开机自启 · 进程保活 · 全局快捷键（默认关闭）\n\n"
+            + abilities +
+            "\n"
             "SMTC · QQ音乐 / 网易云 / 酷狗 / LRCLIB · PySide6\n"
             "歌词引擎与优化借鉴 Lyricify-Lyrics-Helper（Apache-2.0），详见 NOTICE.md\n\n"
-            "全局快捷键（Ctrl+Alt+…）：P 播放/暂停 · , / . 上下首 · "
+            + tail +
             "[ / ] 歌词偏移 · L 显示隐藏 · S 设置 · T 样式 · D 显示模式\n"
             "G 锁定位置 · B 氛围屏保",
             accent=self.accent1)
@@ -6708,7 +6733,11 @@ class SettingsPanel(QWidget):
             self.auto_check = self._switch(autostart_enabled(), self._on_autostart)
             l6.addWidget(make_row("开机自启", self.auto_check, hint="随登录启动"))
         self.keep_check = self._switch(ov.keepalive, ov.set_keepalive)
-        l6.addWidget(make_row("进程保活", self.keep_check, hint="崩溃自动拉起"))
+        if STORE_MODE:
+            # 商店版没有保活（MSIX 不允许拉包内 exe），开关不展示以免误导
+            self.keep_check.hide()
+        else:
+            l6.addWidget(make_row("进程保活", self.keep_check, hint="崩溃自动拉起"))
         self.hk_check = self._switch(ov.hotkeys_on, ov.set_hotkeys)
         l6.addWidget(make_row("全局快捷键", self.hk_check, hint="默认关闭"))
 

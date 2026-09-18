@@ -35,10 +35,66 @@ MAKEAPPX = r"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\makeapp
 WACK = r"C:\Program Files (x86)\Windows Kits\10\App Certification Kit\appcert.exe"
 
 DISPLAY_NAME = "桌面歌词"
+SHORT_NAME = "桌面歌词"        # 磁贴底部短名称（全名过长会被截断）
 PUBLISHER_DISPLAY_NAME = "Desktop-sing Project"
-DESCRIPTION = ("常驻桌面的卡拉OK歌词悬浮条：跟随 QQ音乐 / 网易云音乐 / 酷狗音乐等"
-               "接入系统媒体栏的播放器自动显示逐字歌词。支持氛围屏保、封面主色换肤、"
-               "翻译与音译显示、进度时间、全局快捷键与开机自启。所有数据仅保存在本机。")
+
+# 清单里的 Description（uap:VisualElements/@Description）：
+# 商店策略 10.1.1 要求准确描述功能与「重要限制」。这里把限制写全，
+# 免得审核员按描述预期去测却发现对不上。
+DESCRIPTION = ("常驻桌面的卡拉OK歌词悬浮条：自动跟随接入 Windows 系统媒体控制（SMTC）"
+               "的播放器（如 QQ音乐 / 网易云音乐 / 酷狗音乐）显示逐字歌词。"
+               "支持 5 种悬浮样式、氛围屏保、封面主色换肤、翻译与音译显示、进度时间、"
+               "全局快捷键（默认关闭）与开机自启（默认关闭）。"
+               "所有数据仅保存在本机，无账号、无广告、无追踪。")
+
+# 商店商品页「描述」字段（比清单 Description 长，可分段）。
+# 受 10.1.1（准确描述重要限制）与 10.7（本地化：界面只有中文需如实说明）约束。
+STORE_LISTING_DESCRIPTION = """桌面歌词是一款常驻桌面的歌词悬浮条：你在 QQ音乐 / 网易云音乐 / 酷狗音乐等播放器里播放歌曲，它就把逐字卡拉OK歌词显示在桌面上，不挡视线、不用切窗口。
+
+【主要功能】
+· 逐字卡拉OK歌词：多源并行获取（QQ音乐 / 网易云音乐 / 酷狗音乐 / LRCLIB），择优显示
+· 5 种悬浮样式 · 9 种逐字动画 · 柔和描边（浅色深色壁纸都清晰）
+· 氛围屏保：长时间空闲自动进入黑底防烧屏画面
+· 封面主色换肤 · 翻译与音译歌词 · 进度时间
+· 摆放位置预设（7 个锚点，换分辨率也贴边）· 可锁定位置防误拖
+· 全局快捷键（默认关闭，可在设置里开启）
+· 开机自启（默认关闭，可在系统「设置 → 应用 → 桌面歌词 → 启动」里开启）
+
+【使用前提（重要限制）】
+· 仅支持 Windows 10（1809 及以上）/ Windows 11，仅 x64
+· 歌词信息来自 Windows 系统媒体控制（SMTC）：播放器必须接入 SMTC 才能读取当前歌曲，VR 类或老式播放器可能读不到
+· 同时打开多个播放器时，跟随正在播放的那一个
+· 需要联网才能获取歌词；已获取的歌词会缓存在本机，断网时可继续显示
+· 界面与歌词界面目前仅有简体中文
+
+【隐私】
+程序没有账号系统、没有广告、没有统计埋点，不收集任何个人身份信息。设置、歌词缓存与日志全部保存在本机 %APPDATA%\\Desktop-sing\\ 目录，不上传任何服务器。仅在获取歌词时按需向上述音乐平台的公开接口发送歌曲名 / 歌手名 / 时长。
+
+【关于更新】
+Microsoft Store 版本由商店统一分发更新，程序内不含任何自更新通道。"""
+
+# 提审时填「受限功能说明」用（runFullTrust）。Partner Center 该字段长度有限，
+# 长文案会被静默截断，所以这里只给两句。
+RUNFULLTRUST_STATEMENT = (
+    "本应用是 Win32 桌面程序（PySide6 打包），需要读取 Windows 系统媒体控制"
+    "（SMTC）提供的当前播放信息、在无边框透明窗口上绘制歌词，并使用全局快捷键、"
+    "系统托盘与开机自启项，这些必须运行在完全信任模式下。"
+    "应用不修改系统文件，不安装其他软件，所有数据仅保存在本机用户目录。")
+
+# 提审时填「认证说明」（Notes for certification）。帮审核员知道怎么测。
+CERTIFICATION_NOTES = """测试指引（桌面歌词 v{version}）
+1. 本应用无账号、无需登录，安装后直接可用。
+2. 启动后在系统托盘出现图标（可能被折叠到托盘溢出区，请展开查看），
+   托盘图标右键即是主菜单；左键单击可显示 / 隐藏歌词浮层。
+3. 核心功能需要播放器的配合：用 Windows 自带的「媒体播放器」或任意接入
+   Windows 系统媒体控制（SMTC）的播放器播放一首歌，歌词就会自动出现。
+   若手边没有播放器，可先用系统「媒体播放器」打开任意本地音频文件。
+4. 测试歌词抓取需要联网（访问音乐平台的公开歌词接口）。
+5. 歌词浮层初始位于屏幕底部中央；可拖动改变位置，右键菜单可锁定。
+6. 设置面板：托盘右键 → 设置…（或快捷键 Ctrl+Alt+S，需先在设置里开启快捷键）。
+7. 商店版本说明：程序内无更新检查；「开机自启」在系统
+   设置 → 应用 → 桌面歌词 → 启动 里管理。
+8. 若歌词未出现，多为播放器未接入 SMTC 所致，属预期行为，非崩溃。"""
 
 # 商店版不要带的文件（卸载器没有意义：商店应用从系统设置里卸载）
 EXCLUDE_FILES = {"卸载桌面歌词.bat"}
@@ -112,6 +168,7 @@ def write_manifest(name: str, publisher: str, version: str) -> str:
               .replace("{{PUBLISHER}}", publisher)
               .replace("{{VERSION}}", version)
               .replace("{{DISPLAY_NAME}}", DISPLAY_NAME)
+              .replace("{{SHORT_NAME}}", SHORT_NAME)
               .replace("{{PUBLISHER_DISPLAY_NAME}}", PUBLISHER_DISPLAY_NAME)
               .replace("{{DESCRIPTION}}", DESCRIPTION))
     # 模板注释里有「{{占位符}}」之类的说明文字，发布清单不需要它们——
@@ -142,19 +199,23 @@ def run_makeappx(msix_path: str) -> bool:
 
 
 def verify_msix(msix_path: str, identity_is_placeholder: bool) -> bool:
-    """出包后的自检：结构完整 + 关键文件都在 + 大小合理。"""
+    """出包后的自检：结构完整 + 关键文件都在 + 清单引用资产齐全 + 大小合理。"""
+    import re
     import zipfile
     ok = True
     with zipfile.ZipFile(msix_path) as z:
         names = z.namelist()
+        nameset = set(names)
         must = ["AppxManifest.xml", "Assets/StoreLogo.png",
                 "Assets/Square150x150Logo.png", "Assets/Square44x44Logo.png",
+                "Assets/Square71x71Logo.png", "Assets/Square310x310Logo.png",
+                "Assets/Wide310x150Logo.png",
                 "Desktop-sing/Desktop-sing.exe"]
         for m in must:
-            if m not in names:
+            if m not in nameset:
                 print("  [FAIL] 包里缺 %s" % m)
                 ok = False
-        if "Desktop-sing/卸载桌面歌词.bat" in names:
+        if "Desktop-sing/卸载桌面歌词.bat" in nameset:
             print("  [FAIL] 商店包里不该有卸载脚本")
             ok = False
         mf = z.read("AppxManifest.xml").decode("utf-8")
@@ -167,6 +228,20 @@ def verify_msix(msix_path: str, identity_is_placeholder: bool) -> bool:
                 print("  [警告] 占位标识（预期，仅供本地看结构，不能上传）")
             else:
                 print("  [FAIL] 已填真实标识但清单里仍有 PLACEHOLDER 残留")
+                ok = False
+
+        # 清单里引用的每个资产都必须真的在包里（商店最常见的静态拒审原因）
+        refs = set(re.findall(r'Assets\\([A-Za-z0-9._\-]+\.png)', mf))
+        missing = sorted(r for r in refs if ("Assets/" + r) not in nameset)
+        if missing:
+            print("  [FAIL] 清单引用了但包里没有的资产：%s" % ", ".join(missing))
+            ok = False
+        else:
+            print("  [OK] 清单引用的 %d 个资产全部就位" % len(refs))
+        # 宣称支持「多档缩放」的关键资产要有 scale-400（官方建议 100/200/400）
+        for base in ("Square44x44Logo", "Square150x150Logo"):
+            if "Assets/%s.scale-400.png" % base not in nameset:
+                print("  [FAIL] %s 缺 scale-400 变体" % base)
                 ok = False
         print("  [OK] 包内 %d 个文件，%.1f MB" % (len(names), os.path.getsize(msix_path) / 1048576))
     return ok
@@ -191,6 +266,84 @@ def run_wack(msix_path: str):
     print(out[-1500:] if out.strip() else "[WACK] 无输出，退出码 %d" % r.returncode)
 
 
+def export_listing(version: str) -> str:
+    """把提审要往上贴的文案导出成一个 Markdown，免得到时手忙脚乱。
+
+    Partner Center 各字段是分散的表单，这里按「字段名 → 内容」整理，
+    复制粘贴即可。文件落在 store/out/listing-v<ver>.md。
+    """
+    os.makedirs(OUTDIR, exist_ok=True)
+    path = os.path.join(OUTDIR, "listing-v%s.md" % version)
+    txt = f"""# 桌面歌词 微软商店提审材料（v{version}）
+
+> 由 `store/build_store.py --listing` 自动生成，内容取自 build_store.py 的常量，
+> 改文案请改常量后重新生成，别直接编辑本文件。
+
+## 1. 程序包
+`store/out/Desktop-sing-{version}-x64.msix`（**未签名**，商店会重签）
+
+> 每次提交版本号必须递增；版本号来自 `lyrics_overlay.py` 的 `APP_VERSION`，
+> 会自动补成四段（{version}）。
+
+## 2. 属性 / 类别
+- 产品类别：**音乐（Music）**；次级建议：实用工具（Utilities）
+- 支持设备：PC（Windows 10 1809+ / Windows 11，x64）
+- 语言：**简体中文**（声明几种就要本地化几种描述的文本）
+
+## 3. 商品页「描述」
+```
+{STORE_LISTING_DESCRIPTION}
+```
+
+## 4. 搜索词（≤ 7 个，不得含价格词、不得用他人品牌名）
+`桌面歌词、歌词、悬浮歌词、卡拉OK、逐字歌词、桌面工具、音乐`
+
+## 5. 版本说明（首次提交留空）
+首次提交留空即可。
+
+## 6. 受限功能说明（runFullTrust）★ 必填，别贴长的
+Partner Center 提示「需要请求批准才能使用受限功能 runFullTrust」，这是正常预警。
+在该字段填下面这**两句话**（字段有长度限制，长文案会被静默截断）：
+```
+{RUNFULLTRUST_STATEMENT}
+```
+
+## 7. 认证说明（Notes for certification）
+```
+{CERTIFICATION_NOTES.format(version=version)}
+```
+
+## 8. 隐私政策 URL（必填）
+`https://<你的域名>/privacy.html`
+（对应仓库 `site/privacy.html`，发布官网后把真实 URL 填进来。
+ 商店策略 10.5.1 特别点名：Desktop Bridge 与 Win32 产品**必须**始终具备隐私政策。）
+
+## 9. 截图（至少 1 张，建议 1366×768 及以上）
+需人工用运行中的程序截图。建议拍这几张：
+1. 歌词浮层在桌面底部的实际效果（含封面与逐字高亮）；
+2. 设置面板（体现功能丰富度）；
+3. 氛围屏保效果；
+4. 托盘菜单。
+⚠️ 截图里不要出现第三方播放器的受版权保护的界面素材（用纯色壁纸 + 本程序窗口）。
+
+## 10. 年龄分级（IARC 问卷）
+按实填写：无用户生成内容、无社交、无付费、无暴力色情内容 →
+通常得到 PEGI 3 / ESRB Everyone / 中国「全年龄」。
+
+## 11. 提交选项
+建议选「认证通过后尽快发布」以便发现问题及时处理。
+
+## 12. 提交前的自检命令
+```bash
+.buildenv\\Scripts\\python.exe store\\audit_round3.py     # 商店模式离线自检 + 材料完整性
+.buildenv\\Scripts\\python.exe store\\build_store.py --fresh   # 全量重打包
+```
+"""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(txt)
+    return path
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--fresh", action="store_true", help="先重跑 build_exe.py --dir")
@@ -198,7 +351,15 @@ def main():
     ap.add_argument("--publisher", default="", help="Partner Center 的发布者 CN=…")
     ap.add_argument("--version", default="", help="覆盖版本号（默认取 APP_VERSION）")
     ap.add_argument("--wack", action="store_true", help="打完包跑 WACK 认证")
+    ap.add_argument("--listing", action="store_true",
+                    help="只导出提审文案（store/out/listing-v*.md），不打 MSIX")
     args = ap.parse_args()
+
+    if args.listing:
+        ver = args.version or app_version()
+        p = export_listing(ver)
+        print("[提审材料] %s" % p)
+        return
 
     sys.path.insert(0, BASE)
 
