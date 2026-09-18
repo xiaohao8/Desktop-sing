@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.buildenv/
+
+# 构建产物（发版产物不入库，走 GitHub Releases / 蓝奏云 / 商店分发）
+build/
+dist/
+store/build/
+store/out/
+
+# 本机私有配置（含 Partner Center 包标识，勿提交）
+store/identity.local.json
+
+# 诊断沙箱
+.tmp_appdata/

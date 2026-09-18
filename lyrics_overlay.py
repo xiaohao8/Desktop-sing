@@ -1945,6 +1945,35 @@ WAVE_AMP = 0.11         # 波浪振幅，相对字号
 
 APP_VERSION = "1.0.0"
 
+
+# ---------------- 商店版（MSIX）识别 ----------------
+# Microsoft Store 打包后运行环境不同，两处行为必须切换：
+#   ① 内置更新检查要关——商店政策要求更新一律走商店，应用内自己下载安装会被拒审；
+#   ② 注册表 Run 自启无效——MSIX 对注册表写入做私有视图，系统开机时看不到，
+#     商店版自启由清单里的 startupTask 扩展 + 系统「启动」设置页管理。
+def is_msix_packaged() -> bool:
+    """检测当前进程是否运行在 MSIX 包里（即 Microsoft Store 版）。
+
+    非打包环境下 GetCurrentPackageFullName 返回 15700（ERROR_NOT_FOUND）；
+    打包环境返回 122（ERROR_INSUFFICIENT_BUFFER，缓冲区给小了但包名存在）。
+    """
+    try:
+        import ctypes
+        n = ctypes.c_uint32(0)
+        rc = ctypes.windll.kernel32.GetCurrentPackageFullName(ctypes.byref(n), None)
+        return rc != 15700
+    except Exception:
+        return False
+
+
+STORE_MODE = is_msix_packaged()
+
+
+def open_startup_settings():
+    """打开系统「启动应用」设置页——商店版的开机自启开关在这里。"""
+    QDesktopServices.openUrl(QUrl("ms-settings:startupapps"))
+
+
 # ---------------- 内置更新源 ----------------
 # 分工：GitHub Releases API 负责回答「有没有新版本、版本号是多少」，
 # 真正下载默认走蓝奏云镜像（国内直连更快）。两者都内置，用户不用手填地址。
@@ -3205,9 +3234,13 @@ class LyricOverlay(QWidget):
 
         # 系统
         m_sys = menu.addMenu("系统")
-        act_auto = QAction("开机自启", menu)
-        act_auto.setCheckable(True)
-        act_auto.triggered.connect(self._toggle_autostart)
+        act_auto = QAction("开机自启（系统设置）" if STORE_MODE else "开机自启", menu)
+        if STORE_MODE:
+            # 商店版：自启由 startupTask + 系统「启动」设置页管理，这里只做跳转
+            act_auto.triggered.connect(lambda: open_startup_settings())
+        else:
+            act_auto.setCheckable(True)
+            act_auto.triggered.connect(self._toggle_autostart)
         act_keep = QAction("进程保活（崩溃自动拉起）", menu)
         act_keep.setCheckable(True)
         act_keep.triggered.connect(lambda: self.set_keepalive(act_keep.isChecked()))
@@ -3261,8 +3294,9 @@ class LyricOverlay(QWidget):
             lambda reason: self._toggle_visible() if reason == QSystemTrayIcon.Trigger else None)
         self.tray.show()
 
-        # 启动后自动检查更新（用户开启且已配置地址时才跑，避免无谓联网）
-        if self.update_auto and self.update_url:
+        # 启动后自动检查更新（用户开启且已配置地址时才跑，避免无谓联网；
+        # 商店版不做内置检查——更新走商店）
+        if self.update_auto and self.update_url and not STORE_MODE:
             QTimer.singleShot(4000, lambda: self.check_update(manual=False))
 
     def _sync_tray_menu(self):
@@ -3282,7 +3316,8 @@ class LyricOverlay(QWidget):
         self._a_glow.setChecked(self.glow)
         self._a_pfade.setChecked(self.pause_fade)
         self._a_time.setChecked(self.show_time)
-        self._a_auto.setChecked(autostart_enabled())
+        if not STORE_MODE:      # 商店版该项不可勾选（跳转到系统设置），没有 checked 状态
+            self._a_auto.setChecked(autostart_enabled())
         self._a_hk.setChecked(self.hotkeys_on)
         self._a_keep.setChecked(self.keepalive)
         self._a_saver_auto.setChecked(self.idle_saver)
@@ -3325,6 +3360,14 @@ class LyricOverlay(QWidget):
     def check_update(self, manual: bool = False):
         """检查更新：manual=True 表示用户手动触发（无论有无更新都给提示）；
         manual=False 仅用于启动自动检查（无更新时静默）。"""
+        if STORE_MODE:
+            # 商店版：更新由 Microsoft Store 统一分发，应用内更新通道停用
+            if manual:
+                self.tray.showMessage(
+                    "桌面歌词",
+                    "Microsoft Store 版本：请在商店「库 → 获取更新」里升级本应用",
+                    QSystemTrayIcon.Information, 4500)
+            return
         url = self.update_url or DEFAULT_UPDATE_URL
         if not url:
             if manual:
@@ -6650,32 +6693,52 @@ class SettingsPanel(QWidget):
 
         # ---- 系统 ----
         c6, l6 = make_card("系统")
-        self.auto_check = self._switch(autostart_enabled(), self._on_autostart)
-        l6.addWidget(make_row("开机自启", self.auto_check, hint="随登录启动"))
+        if STORE_MODE:
+            # 商店版：注册表 Run 项在 MSIX 里是私有视图，系统看不到；
+            # 自启交给 startupTask 扩展，开关在系统「启动」设置页里
+            b_auto = QPushButton("打开「启动」设置")
+            b_auto.setObjectName("ghost")
+            b_auto.setCursor(Qt.PointingHandCursor)
+            b_auto.clicked.connect(open_startup_settings)
+            l6.addWidget(make_row("开机自启", b_auto, hint="商店版由系统统一管理"))
+            # 占位开关：refresh() 会同步它的状态，商店版下隐藏不展示
+            self.auto_check = self._switch(False, lambda _on: None)
+            self.auto_check.hide()
+        else:
+            self.auto_check = self._switch(autostart_enabled(), self._on_autostart)
+            l6.addWidget(make_row("开机自启", self.auto_check, hint="随登录启动"))
         self.keep_check = self._switch(ov.keepalive, ov.set_keepalive)
         l6.addWidget(make_row("进程保活", self.keep_check, hint="崩溃自动拉起"))
         self.hk_check = self._switch(ov.hotkeys_on, ov.set_hotkeys)
         l6.addWidget(make_row("全局快捷键", self.hk_check, hint="默认关闭"))
 
         # ---- 更新 ----
-        self.update_url_edit = QLineEdit()
-        self.update_url_edit.setPlaceholderText("留空 = 内置源（GitHub 查版本 + 蓝奏云镜像下载）")
-        self.update_url_edit.setText((ov.cfg.get("update_url") or "").strip())
-        self.update_url_edit.setMinimumWidth(280)
-        self.update_url_edit.editingFinished.connect(self._on_update_url)
-        l6.addWidget(make_row("更新地址", self.update_url_edit, hint="留空即用内置源"))
-        self.update_auto_check = self._switch(ov.update_auto, self._on_update_auto)
-        l6.addWidget(make_row("启动自动检查", self.update_auto_check,
-                              hint="上传新版本后自动提示"))
-        self.update_check_btn = QPushButton("立即检查更新")
-        self.update_check_btn.setObjectName("ghost")
-        self.update_check_btn.setCursor(Qt.PointingHandCursor)
-        self.update_check_btn.clicked.connect(lambda: ov.check_update(manual=True))
-        l6.addWidget(self.update_check_btn)
-        upd_tip = QLabel("内置更新源：GitHub / Gitee 查版本号 · 下载默认走蓝奏云镜像（国内更快）")
-        upd_tip.setObjectName("rowhint")
-        upd_tip.setWordWrap(True)
-        l6.addWidget(upd_tip)
+        if STORE_MODE:
+            # 商店版：更新走商店，不展示更新地址 / 自动检查 / 手动检查
+            st_tip = QLabel("Microsoft Store 版本：更新由商店统一分发，"
+                            "请在商店「库 → 获取更新」里升级。")
+            st_tip.setObjectName("rowhint")
+            st_tip.setWordWrap(True)
+            l6.addWidget(st_tip)
+        else:
+            self.update_url_edit = QLineEdit()
+            self.update_url_edit.setPlaceholderText("留空 = 内置源（GitHub 查版本 + 蓝奏云镜像下载）")
+            self.update_url_edit.setText((ov.cfg.get("update_url") or "").strip())
+            self.update_url_edit.setMinimumWidth(280)
+            self.update_url_edit.editingFinished.connect(self._on_update_url)
+            l6.addWidget(make_row("更新地址", self.update_url_edit, hint="留空即用内置源"))
+            self.update_auto_check = self._switch(ov.update_auto, self._on_update_auto)
+            l6.addWidget(make_row("启动自动检查", self.update_auto_check,
+                                  hint="上传新版本后自动提示"))
+            self.update_check_btn = QPushButton("立即检查更新")
+            self.update_check_btn.setObjectName("ghost")
+            self.update_check_btn.setCursor(Qt.PointingHandCursor)
+            self.update_check_btn.clicked.connect(lambda: ov.check_update(manual=True))
+            l6.addWidget(self.update_check_btn)
+            upd_tip = QLabel("内置更新源：GitHub / Gitee 查版本号 · 下载默认走蓝奏云镜像（国内更快）")
+            upd_tip.setObjectName("rowhint")
+            upd_tip.setWordWrap(True)
+            l6.addWidget(upd_tip)
 
         keys_box = QWidget()
         keys_box.setObjectName("keys")

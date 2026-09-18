@@ -13,7 +13,7 @@ a = Analysis(
     ['C:/Users/35436/Desktop/代码/desktop-lyrics/lyrics_overlay.py'],
     pathex=['C:/Users/35436/Desktop/代码/desktop-lyrics'],
     binaries=[],
-    datas=[('C:/Users/35436/Desktop/代码/desktop-lyrics/icon.png', '.'), ('C:/Users/35436/AppData/Local/Temp/dl_fonts_94hkby21', 'fonts')],
+    datas=[('C:/Users/35436/Desktop/代码/desktop-lyrics/icon.png', '.'), ('C:/Users/35436/AppData/Local/Temp/dl_fonts_sjmrxniz', 'fonts')],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

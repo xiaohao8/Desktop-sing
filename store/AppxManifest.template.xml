@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  桌面歌词 Desktop-sing —— Microsoft Store (MSIX) 包清单模板
+  =====================================================================
+  不要直接改这份文件去发布：构建时 build_store.py 会把 {{占位符}}
+  替换成 store/identity.local.json 或命令行参数里的真实值。
+
+  两个必须来自 Partner Center 的值（应用 → 产品管理 → 产品标识）：
+    {{IDENTITY_NAME}}   包名（Package/Identity/Name），预留应用名称后生成
+    {{PUBLISHER}}       发布者（Package/Identity/Publisher），形如 CN=1A2B3C...，
+                        与账号绑定，写错包就装不上
+  其余占位符有默认值，可用参数覆盖。
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
+
+  <!-- ProcessorArchitecture 必须与包内二进制一致（PyInstaller 产物是 x64） -->
+  <Identity Name="{{IDENTITY_NAME}}"
+            Publisher="{{PUBLISHER}}"
+            Version="{{VERSION}}"
+            ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>{{DISPLAY_NAME}}</DisplayName>
+    <PublisherDisplayName>{{PUBLISHER_DISPLAY_NAME}}</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <!-- 界面目前只有简体中文，如实声明；别虚报 en-US，商店会按语言给用户预期 -->
+  <Resources>
+    <Resource Language="zh-CN" />
+  </Resources>
+
+  <Dependencies>
+    <!-- 17763 = 1809，desktop:startupTask 与打包桌面应用的最低基线 -->
+    <TargetDeviceFamily Name="Windows.Desktop"
+                        MinVersion="10.0.17763.0"
+                        MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Capabilities>
+    <!-- 打包的桌面应用（原 Win32）标准能力，也是唯一需要的能力：
+         不申请 internetClient——网络访问对桌面应用默认可用，声明了反而多要权限 -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+  <Applications>
+    <!-- EntryPoint=Windows.FullTrustApplication 是桌面桥应用的固定写法 -->
+    <Application Id="DesktopSing"
+                 Executable="Desktop-sing\Desktop-sing.exe"
+                 EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="{{DISPLAY_NAME}}"
+        Description="{{DESCRIPTION}}"
+        BackgroundColor="#14171F"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png"
+        AppListEntry="default" />
+
+      <Extensions>
+        <!-- 商店版的开机自启：MSIX 里写注册表 Run 项是私有视图、系统看不到，
+             必须用 startupTask 扩展（注意：Category=windows.startupTask 的
+             Extension/StartupTask 元素属于基础 desktop 命名空间，不是 desktop4，
+             写错前缀 makeappx 直接报 C00CE169 枚举校验失败）。
+             Enabled=false 让用户在
+             「设置 → 应用 → 桌面歌词 → 启动」/ 任务管理器里自己打开，
+             默认不偷偷自启（这也是商店审核的偏好姿势） -->
+        <desktop:Extension Category="windows.startupTask"
+                            Executable="Desktop-sing\Desktop-sing.exe"
+                            EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="DesktopSingStartup"
+                                Enabled="false"
+                                DisplayName="桌面歌词 开机自启" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+</Package>

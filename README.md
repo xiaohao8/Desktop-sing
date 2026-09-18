@@ -170,10 +170,13 @@ pkg_portable.py            打包便携版 zip
 sign_release.py            发布完整性校验与代码签名（无证书时自动跳过签名）
 check_ver.py               产物版本信息校验
 installer/installer.nsi    NSIS 安装器源码
+store/                     Microsoft Store（MSIX）发布线（清单模板 / 资产生成 / 打包脚本 / 提审指南）
+store/README-STORE.md      商店提审完整指南（包标识配置、本地自签测试、WACK、材料清单）
 NOTICE.md                  第三方来源与许可说明
 启动桌面歌词.bat            双击启动（pythonw，无控制台）
 卸载桌面歌词.bat            自搬迁后清理程序目录与配置
 site/                      官网落地页（纯静态，无构建、无 CDN 依赖）
+site/privacy.html          隐私政策页（商店提审必填 URL，与 PRIVACY.md 同源）
 site/tools/make_assets.py  官网图片资源生成器（从 preview/ 派生 assets/）
 fonts/                     随程序分发的 MiSans（缺失时回落系统字体）
 preview/                   预览图输出目录
@@ -233,6 +236,18 @@ python sign_release.py --sign     :: 给所有 exe 签名（配了证书才真�
 
 补充：**EV 证书能立刻建立声誉**（几乎不再弹 SmartScreen），**OV 证书仍需要积累下载量**
 才会逐步消失拦截，两者都需要组织/个人实名鉴证。
+
+### Microsoft Store 发布线
+
+商店版走独立的 MSIX 流水线，与上面的 GitHub/蓝奏云分发互不干扰：
+
+```bat
+.buildenv\Scripts\python.exe store\build_store.py --fresh   :: 重建 + 出 MSIX
+```
+
+商店版在运行时自动切换行为（`lyrics_overlay.py` 的 `STORE_MODE`）：
+更新一律走商店（内置更新通道停用，符合商店政策）、开机自启交给 startupTask 扩展 +
+系统「启动」设置页、卸载走系统设置。完整提审步骤见 `store/README-STORE.md`。
 
 ## 已知限制
 
