@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-桌面歌词（BetterLyrics 风格）
+桌面歌词（Desktop-sing）
 
 读取 Windows 系统媒体控制（SMTC）中正在播放的歌曲（QQ音乐 / 网易云 / Spotify / 浏览器
 均可，只要播放器接入了系统媒体栏），自动获取专辑封面与歌词，以悬浮条形式显示在桌面：
