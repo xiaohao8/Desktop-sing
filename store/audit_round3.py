@@ -11,6 +11,8 @@
 
 用法：.buildenv\\Scripts\\python.exe store\\audit_round3.py
 """
+import glob
+import json
 import os
 import re
 import sys
@@ -868,6 +870,68 @@ if _ss is not None:
         _miss = [p for p in _site_pages if not os.path.isfile(os.path.join(_dst, p))]
         check("P5.19e 部署副本根目录有首页与中英文隐私政策三个页面",
               not _miss, "缺: %s" % _miss if _miss else "、".join(_site_pages))
+
+# ---------------------------------------------------------------- P5.20 提审前置
+# 「上传了一个占位标识包」是提审里最致命也最容易犯的低级错误：包名对不上直接被拒，
+# 而这一步常常是借来的机器/换了台电脑就忘。这里把「Partner Center 那两串标识填了没」
+# 和「out/ 里的包是不是占位包」摆到台面上 —— 缺了只 WARN，不挡本地出包，
+# 但**上传前必须是 0**（见 store/提审上线手册.md §2 通过判据）。
+head("P5.20 提审前置（包标识 + 隐私政策地址 + 包内标识一致性）")
+
+_ident_p = os.path.join(ROOT, "store", "identity.local.json")
+_ident = {}
+if os.path.isfile(_ident_p):
+    try:
+        with open(_ident_p, encoding="utf-8") as _f:
+            _ident = json.load(_f)
+    except Exception as _ex:
+        warn("P5.20a identity.local.json 解析失败",
+             "%s —— 修好后重出包，否则发出去的是占位包" % _ex)
+        _ident = {}
+
+_name = str(_ident.get("name") or "").strip()
+_pub = str(_ident.get("publisher") or "").strip()
+_site = str(_ident.get("site_url") or "").strip()
+_ident_is_placeholder = (not _name) or (not _pub) or ("PLACEHOLDER" in _name + _pub)
+
+if _ident_is_placeholder:
+    warn("P5.20a 还没填包标识（store/identity.local.json）",
+         "不填只能出占位包、上传必被拒；Partner Center → 产品管理 → 产品标识，"
+         "抄 Package/Identity/Name 与 Publisher 两行，见 store/提审上线手册.md §1.3")
+else:
+    check("P5.20a 包标识已填（非占位）", True, "name=%s" % _name)
+
+if not _site:
+    warn("P5.20b 还没配 site_url（隐私政策页的站点根地址）",
+         "商店表单必填隐私政策 URL，缺了直接拒审（政策 10.5.1）；"
+         "把官网地址写进 identity.local.json 的 site_url 后重跑 --listing")
+else:
+    check("P5.20b 站点根地址已配", _site.startswith("https://"),
+          "site_url=%s（中英 listing 各取 /privacy.html 与 /privacy.en.html）" % _site)
+
+# out/ 里的包必须与本地标识「档位一致」：本地没填→包应当是占位包；本地填了→包不该还是占位包。
+# 后者正是「填完没重出包就上传」的现场，必须 FAIL。
+_msixes = sorted(glob.glob(os.path.join(ROOT, "store", "out", "*.msix")))
+if not _msixes:
+    warn("P5.20c store/out/ 里还没有 .msix",
+         "跑 .buildenv\\Scripts\\python.exe store\\build_store.py --fresh")
+else:
+    _newest = max(_msixes, key=os.path.getmtime)
+    try:
+        import zipfile
+        with zipfile.ZipFile(_newest) as _z:
+            _mf = _z.read("AppxManifest.xml").decode("utf-8", "replace")
+        _m = re.search(r'<Identity[^>]*\bName="([^"]*)"', _mf)
+        _pkg_name = _m.group(1) if _m else ""
+        _pkg_is_placeholder = (not _pkg_name) or ("PLACEHOLDER" in _pkg_name)
+        check("P5.20c out/ 里最新的包与 identity.local.json 档位一致",
+              _pkg_is_placeholder == _ident_is_placeholder,
+              "包内 Identity=%s ｜ 本地=%s%s" % (
+                  _pkg_name or "(读不到)", _name or "(未填)",
+                  "  ← 填了标识但包还是旧的，**重出包再传**"
+                  if (_ident_is_placeholder is False and _pkg_is_placeholder) else ""))
+    except Exception as _ex:
+        check("P5.20c 能读出 out/ 里最新包的清单", False, repr(_ex))
 
 # ---------------------------------------------------------------- 汇总
 head("汇总")

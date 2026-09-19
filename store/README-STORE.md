@@ -15,7 +15,7 @@ store/
 ├── build_store.py              一键打包 / 导出提审材料
 ├── audit_round3.py             商店模式离线自检（政策合规 + 运行时行为 + 材料完整性）
 ├── assets/                     生成的图标资产（提交仓库，免得每次重渲染）
-├── identity.local.json         ★ 你的包标识（本机填一次，勿提交、勿外传）
+├── identity.local.json         ★ 你的包标识 + 隐私政策站点地址（本机填一次，勿提交、勿外传）
 ├── build/layout/               打包工作目录（可随时删）
 └── out/
     ├── Desktop-sing-x.y.z.w-x64.msix    最终产物（未签名）
@@ -67,11 +67,19 @@ store/
    ```json
    {
      "name": "12345Desktop-sing",
-     "publisher": "CN=1A2B3C4D-5E6F-..."
+     "publisher": "CN=1A2B3C4D-5E6F-...",
+     "site_url": "https://xxx.netlify.app"
    }
    ```
 
    不填也能出包（占位标识），但**只能本地看结构，不能上传**。
+
+   `site_url` 是隐私政策页所在的站点根（§1.4 部署后拿到）：填了之后出包会打印
+   `隐私页 : …/privacy.html`，`build_store.py --listing` 也会把中英两个真实地址
+   直接写进提审文案。三项都可用 `--name` / `--publisher` / `--site-url` 临时覆盖。
+
+   出包脚本与自检都会盯着这件事：`audit_round3.py` 的 `P5.20a/b` 在没填时给 WARN，
+   **填了标识却没重出包**则由 `P5.20c` 直接 FAIL（那正是「上传占位包」的现场）。
 
 ## 2. 打包
 
@@ -151,7 +159,7 @@ WACK（Windows App Certification Kit，`appcert.exe`）就是商店审核用的�
 | 图标 | 商店 listing 图标 | 300×300 PNG，可复用 assets 里的方形图 |
 | 类别 | 音乐 / Music（次级：实用工具） | |
 | 年龄分级 | 完成 IARC 问卷 | 无用户内容、无社交 → 通常全年龄 |
-| **隐私政策 URL** | 中文 listing 填 `site/privacy.html`；**英文 listing 填 `site/privacy.en.html` 的地址** | **必填**，缺失直接拒审。商店是全球分发的，英文页区只填中文隐私页等于英文用户读不到声明 |
+| **隐私政策 URL** | **中文 listing** 填 `site_url` + `/privacy.html`；**英文 listing** 填 `site_url` + `/privacy.en.html` | **必填**，缺失直接拒审。商店是全球分发的，英文页区只填中文隐私页等于英文用户读不到声明。站点部署在独立仓库 `xiaohao8/music`（Netlify），改完站点记得 `python sync_site.py --apply --push` |
 | **随包文档语言** | 中英各一份（`使用说明.txt`/`USAGE.en.txt`、`PRIVACY.md`/`PRIVACY.en.md`） | 两条渠道同一套清单，`P5.12h` 会逐渠道校验 |
 | **受限功能说明** | `RUNFULLTRUST_STATEMENT` | **必填**，只填两句，见 §6 |
 | 认证说明 | `CERTIFICATION_NOTES` | 帮审核员知道怎么测，见 §6 |
@@ -214,7 +222,7 @@ WACK（Windows App Certification Kit，`appcert.exe`）就是商店审核用的�
 
 | 拒审原因 | 本项目的规避 |
 |---|---|
-| 缺隐私政策（10.5.1） | `site/privacy.html` 已备，提审时填 URL |
+| 缺隐私政策（10.5.1） | 站点已就绪（`xiaohao8/music` → Netlify），提审时填 `site_url` 的两个地址 |
 | 应用内自更新绕过商店（10.2.5） | `STORE_MODE` 短路 + 设置面板无更新入口 |
 | 名称/描述与实际不符（10.1.1） | 描述如实写明 SMTC / 联网 / 语言三项限制；「关于」也按商店模式裁剪 |
 | 启动即崩溃（10.4.2） | `audit_round3.py` offscreen 实例化 + refresh 全过；本地 `Add-AppxPackage` 实测 |

@@ -10,6 +10,16 @@
     2) store/identity.local.json      （本机填一次即可，勿提交仓库）
     3) 占位值                          （能出包，仅供本地看结构，**不能上传**）
 
+隐私政策站点根地址（--site-url 或 identity.local.json 的 "site_url"）用来把提审文案里的
+`/privacy.html`、`/privacy.en.html` 填成真实地址 —— 政策 10.5.1 要求 Win32 / Desktop Bridge
+产品必须始终具备隐私政策，缺 URL 直接拒审。identity.local.json 完整长这样：
+
+    {
+      "name": "12345Desktop-sing",
+      "publisher": "CN=1A2B3C4D-5E6F-...",
+      "site_url": "https://xxx.netlify.app"
+    }
+
 输出：store/out/Desktop-sing-<版本>-x64.msix（未签名——Store 提审就传未签名包，
       微软会用它自己的证书重签；本地自签测试见 README-STORE.md）。
 """
@@ -166,6 +176,23 @@ def load_identity(args):
     return name, publisher
 
 
+def load_site_url(args) -> str:
+    """隐私政策页所在的**站点根地址**：命令行 --site-url → identity.local.json 的 site_url。
+
+    商店表单里中英文 listing 要分别填 `/privacy.html` 与 `/privacy.en.html`（政策 10.5.1
+    硬要求，缺 URL 直接拒审），所以把站点根写在一处，出包与提审文案都不会漏填。
+    返回已去掉末尾 `/` 的地址；没配就返回空串。
+    """
+    url = (getattr(args, "site_url", "") or "").strip()
+    if not url and os.path.isfile(IDENTITY_LOCAL):
+        try:
+            with open(IDENTITY_LOCAL, encoding="utf-8") as f:
+                url = (json.load(f).get("site_url", "") or "").strip()
+        except Exception as ex:
+            print("[警告] identity.local.json 解析失败：%s" % ex)
+    return url.rstrip("/")
+
+
 def stage_layout():
     """组装 MSIX 布局：清单 + 资产 + onedir 程序本体（去掉商店版不该带的文件）。"""
     if not os.path.isdir(ONEDIR):
@@ -304,7 +331,7 @@ def run_wack(msix_path: str):
     print(out[-1500:] if out.strip() else "[WACK] 无输出，退出码 %d" % r.returncode)
 
 
-def export_listing(version: str) -> str:
+def export_listing(version: str, site_url: str = "") -> str:
     """把提审要往上贴的文案导出成一个 Markdown，免得到时手忙脚乱。
 
     Partner Center 各字段是分散的表单，这里按「字段名 → 内容」整理，
@@ -313,6 +340,25 @@ def export_listing(version: str) -> str:
     os.makedirs(OUTDIR, exist_ok=True)
     pkgver = package_version(version)     # MSIX 文件名里是四段版本
     path = os.path.join(OUTDIR, "listing-v%s.md" % version)
+
+    # 隐私政策 URL：站点根已知就把两个真实地址直接写出来，省得临场拼
+    if site_url:
+        privacy_block = (
+            "- **中文 listing**（Properties → 隐私政策 URL）：`%s/privacy.html`\n"
+            "- **英文 listing**：`%s/privacy.en.html`\n\n"
+            "（对应仓库 `site/privacy.html` / `site/privacy.en.html`。商店策略 10.5.1 特别点名：\n"
+            " Desktop Bridge 与 Win32 产品**必须**始终具备隐私政策；URL 须长期有效，\n"
+            "下架前后的审核都可能来访问 —— **发布后别改这两个文件名**。）"
+            % (site_url, site_url)
+        )
+    else:
+        privacy_block = (
+            "`https://<你的域名>/privacy.html`\n\n"
+            "⚠️ **站点根地址还没配**：把官网地址写进 `store/identity.local.json` 的\n"
+            '`"site_url": "https://xxx.netlify.app"`，再重跑 `build_store.py --listing`，\n'
+            "本节会自动填成两个真实地址（中文 `/privacy.html`、英文 `/privacy.en.html`）。"
+        )
+
     txt = f"""# 桌面歌词 微软商店提审材料（v{version}）
 
 > 由 `store/build_store.py --listing` 自动生成，内容取自 build_store.py 的常量，
@@ -353,9 +399,7 @@ Partner Center 提示「需要请求批准才能使用受限功能 runFullTrust�
 ```
 
 ## 8. 隐私政策 URL（必填）
-`https://<你的域名>/privacy.html`
-（对应仓库 `site/privacy.html`，发布官网后把真实 URL 填进来。
- 商店策略 10.5.1 特别点名：Desktop Bridge 与 Win32 产品**必须**始终具备隐私政策。）
+{privacy_block}
 
 ## 9. 截图（至少 1 张，建议 1366×768 及以上）
 现成素材：`store/out/shots/` —— 3 张 **1600×900**，由 `store/render_shots.py` 离屏生成：
@@ -394,6 +438,8 @@ def main():
     ap.add_argument("--fresh", action="store_true", help="先重跑 build_exe.py --dir")
     ap.add_argument("--name", default="", help="Partner Center 的包标识名")
     ap.add_argument("--publisher", default="", help="Partner Center 的发布者 CN=…")
+    ap.add_argument("--site-url", default="",
+                    help="隐私政策页所在站点根地址（默认取 identity.local.json 的 site_url）")
     ap.add_argument("--version", default="", help="覆盖版本号（默认取 APP_VERSION）")
     ap.add_argument("--wack", action="store_true", help="打完包跑 WACK 认证")
     ap.add_argument("--listing", action="store_true",
@@ -402,7 +448,7 @@ def main():
 
     if args.listing:
         ver = args.version or app_version()
-        p = export_listing(ver)
+        p = export_listing(ver, load_site_url(args))
         print("[提审材料] %s" % p)
         return
 
@@ -419,11 +465,14 @@ def main():
     ver = package_version(args.version or app_version())
     name, publisher = load_identity(args)
     identity_is_placeholder = "PLACEHOLDER" in (name + publisher)
+    site_url = load_site_url(args)
 
     print("== 桌面歌词 MSIX 打包 ==")
     print("版本   : %s" % ver)
     print("标识   : %s" % name)
     print("发布者 : %s" % publisher)
+    print("隐私页 : %s" % (("%s/privacy.html" % site_url) if site_url
+                           else "（未配 site_url，提审文案里会留占位地址）"))
 
     stage_layout()
     write_manifest(name, publisher, ver)
