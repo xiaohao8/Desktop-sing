@@ -676,6 +676,95 @@ check("P5.16c 商品页描述写明界面仅有简体中文",
       "仅有简体中文" in _src_bs,
       "不写＝英文页区用户按描述预期一个不存在的英文界面")
 
+# ---------------------------------------------------------------- P5.17 商店截图素材
+head("P5.17 商店截图素材（生成器 + 产物）")
+
+
+def _img_detail_hits(img, step=3, gap=4, thresh=25):
+    """粗略统计「高频边缘」像素数，用来识破「抓成纯背景」的空白图。
+
+    为什么不能用透明度判空白：这几张截图是「合成壁纸 + 控件」的合成图，
+    整张 alpha 都是 255，空白图的 alpha 也是 255，判不出来。
+    改用相邻像素亮度突变（文字笔画、卡片边界会产生大量突变，
+    平滑渐变背景几乎为 0）。
+    """
+    hits = 0
+    for _y in range(0, img.height() - gap, step):
+        for _x in range(0, img.width() - gap, step):
+            if abs(img.pixelColor(_x, _y).lightness()
+                   - img.pixelColor(_x + gap, _y).lightness()) > thresh:
+                hits += 1
+    return hits
+
+
+# 阈值实测标定（step=3 / gap=4 / thresh=25 这组参数下）：
+#   纯壁纸（空白基线）= 46   idle = 179   hero = 468   settings = 3870
+# 取 120 作分界：空白图 46 远低于它，最「素」的 idle 图也有 179。
+_BLANK_HITS_MIN = 120
+
+
+_shots_py = os.path.join(ROOT, "store", "render_shots.py")
+_shots_dir = os.path.join(ROOT, "store", "out", "shots")
+_SHOT_NAMES = ("store-shot-1-idle.png", "store-shot-2-hero.png",
+               "store-shot-3-settings.png")
+
+check("P5.17a 截图生成脚本存在", os.path.isfile(_shots_py))
+_src_shots = open(_shots_py, encoding="utf-8").read() if os.path.isfile(_shots_py) else ""
+
+# 截图会进商品页 —— 属**对外发布物**，不能嵌真实歌曲的歌名与歌词。
+# （上一版 hero 图用的是真实歌曲及其歌词，属不必要的版权暴露。）
+_REAL_SONG_WORDS = ("起风了", "买辣椒也用券")
+_hit_words = [w for w in _REAL_SONG_WORDS if w in _src_shots]
+check("P5.17b 截图用自写占位歌词（无真实歌曲歌名/歌词）", not _hit_words,
+      "命中: %s" % _hit_words if _hit_words else "")
+
+# offscreen 回填守卫：下面四处漏掉任何一处，都会「静默」抓到空白或缺行的图
+# （不抛异常、文件也在，只有肉眼看才发现 —— 曾经的 hero / settings 就是这样）。
+for _tag, _needle, _why in (
+        ("P5.17c 切行动画推到终态（_line_anim.stop + _line_t）", "_line_anim.stop()",
+         "否则 _line_t 停在 0 → 整行歌词透明，只剩歌名"),
+        ("P5.17d 面板淡入推到终态（_fx.setOpacity(1.0)）", "_fx.setOpacity(1.0)",
+         "否则 opacity 停在 0 → 设置面板抓成纯背景图"),
+        ("P5.17e 手动喂当前行文本（_current_text）", "_current_text =",
+         "绘制读缓存文本而非 lines[cur_idx]，不喂则当前行是空的"),
+        ("P5.17f 设置播放锚点时间（anchor_ts）", "anchor_ts = time.monotonic()",
+         "初值 0.0 + status=PLAYING → 时间轴飞到天外，行号全乱")):
+    check(_tag, _needle in _src_shots, "" if _needle in _src_shots else _why)
+
+check("P5.17g 抓图后有「全透明图」自证", "_has_content(" in _src_shots,
+      "grab() 的全透明结果 isNull() 判不出来，必须自证")
+
+if os.path.isdir(_shots_dir):
+    from PySide6.QtGui import QImage  # noqa: E402
+    _bad, _hits = [], []
+    for _n in _SHOT_NAMES:
+        _p = os.path.join(_shots_dir, _n)
+        if not os.path.isfile(_p):
+            _bad.append("%s 缺失" % _n)
+            continue
+        _img = QImage(_p)
+        if _img.width() < 1366 or _img.height() < 768:
+            _bad.append("%s 尺寸 %dx%d 不足 1366x768" % (_n, _img.width(), _img.height()))
+            continue
+        _h = _img_detail_hits(_img)
+        _hits.append("%s=%d" % (_n.split("-")[-1].replace(".png", ""), _h))
+        if _h < _BLANK_HITS_MIN:
+            _bad.append("%s 疑似空白图（细节像素仅 %d，空白基线约 46）" % (_n, _h))
+    check("P5.17h 已生成的 3 张截图尺寸达标且非空白", not _bad,
+          "; ".join(_bad) if _bad else "细节像素 " + ", ".join(_hits))
+else:
+    warn("P5.17h 截图还没生成（store/out/ 按 .gitignore 不进仓库）",
+         "跑 .buildenv\\Scripts\\python.exe store\\render_shots.py")
+
+# 提审材料不能再声称「没有现成截图 / 需人工截图」——那是旧状态，会让人白跑一趟
+_stale = []
+for _f in ("store/README-STORE.md", "store/build_store.py"):
+    _t = open(os.path.join(ROOT, _f), encoding="utf-8").read()
+    for _c in ("需人工截图", "仓库里没有现成"):
+        if _c in _t:
+            _stale.append("%s 里的「%s」" % (_f, _c))
+check("P5.17i 提审材料不再声称「没有现成截图」", not _stale, "; ".join(_stale))
+
 # ---------------------------------------------------------------- 汇总
 head("汇总")
 print("  FAIL: %d   WARN: %d" % (len(FAILS), len(WARNS)))
