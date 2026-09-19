@@ -453,19 +453,20 @@ Partner Center 提示「需要请求批准才能使用受限功能 runFullTrust�
 ## 8. 隐私政策 URL（必填）
 {privacy_block}
 
-## 9. 截图（至少 1 张，建议 1366×768 及以上）
-现成素材：`store/out/shots/` —— 3 张 **1600×900**，由 `store/render_shots.py` 离屏生成：
-1. `store-shot-1-idle.png`     等待播放态（审核员装完第一眼看到的画面）
-2. `store-shot-2-hero.png`     有歌词时的浮层（逐字高亮）
-3. `store-shot-3-settings.png` 设置面板（体现功能丰富度）
+## 9. 截图（至少 1 张；Partner Center 要求 PNG、≥1366×768、<50MB、≤10 张）
+**主素材 = 真机截屏**：`store/shots/real-*.png` —— 5 张 **1920×1080**（进仓库）：
+1. `real-1-overlay-card.png` 卡片浮层（核心形态）
+2. `real-2-native-float.png` 原生浮字（无边框歌词铺在桌面）
+3. `real-3-screensaver.png` 全屏屏保（时间 + 歌词）
+4. `real-4-settings.png`    设置面板 ×2 并排
+5. `real-5-idle.png`        等待播放态
 
-重新生成：`.buildenv\\Scripts\\python.exe store\\render_shots.py`
-（`store/out/` 按 .gitignore 不进仓库，换机器/清过产物后要重跑一次。）
+重合成（原图留档在 `store/shots/src/`）：
+`.buildenv\\Scripts\\python.exe store\\make_real_shots.py`
 
-⚠️ 这三张是**离屏合成图**（真实控件渲染 + 合成壁纸），不是真机截屏 ——
-   提审前建议至少补一张真机桌面截图，审核员与用户都更信服。
-⚠️ 截图属**对外发布物**：只用自写占位歌词，不要出现真实歌曲歌词、
-   第三方播放器界面或受版权保护的素材。
+备用素材：`store/out/shots/` —— 3 张 **1600×900** 离屏合成图
+（`store\\render_shots.py` 生成，`store/out/` 不进仓库，换机器要重跑）；
+只用自写占位歌词。真机图被审核质疑时用它顶上，listing 其余不动。
 
 ## 10. 年龄分级（IARC 问卷）
 按实填写：无用户生成内容、无社交、无付费、无暴力色情内容 →
