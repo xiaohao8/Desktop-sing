@@ -133,6 +133,30 @@
 - 文档出口：README「发布与安全」+ 使用说明「安全与放行」+ 官网 dl-meta 提示行与 FAQ；用户验真 `certutil -hashfile`。
 - **将来买证书**：EV 立刻建立声誉（几乎不再被拦），OV 仍需靠下载量积累；买后设好环境变量重跑 `--sign` 即可。
 
+## 磁盘清理：哪些能删、哪些绝对不能删（2026-09-19 实测，4.5 GB → 547 MB）
+
+- **可放心删（全部可再生，合计约 3.8 GB）**：
+  `store/build/layout.old-*` ×20（MSIX 打包舞台的历史副本，**注意 `store/build/layout` 是活的要留**）、
+  `dist/archive/`（`*.prev.<时间戳>` 旧 onedir 副本）、`build/`（PyInstaller 工作目录）、
+  `_trash_待删/`、`store/__pycache__`、`.tmp_appdata` / `_t_appdata` / `_verify_appdata`（测试残留）。
+  过时的老版本：`dist/DesktopLyrics-v2.4.15*` 三件套（改名前的老一代，179 MB）。
+- **绝对不能删**：`dist/release/`（**含自动更新的三个发布物 + SHA256SUMS**）、
+  `store/out/Desktop-sing-1.0.0.0-x64.msix`（商店版提审包）、`store/assets/`（91 个商店图标）、
+  `icon.png` / `icon.ico` / `site/assets/`（图标与官网图）、`fonts/`（内置字体，程序要用）、
+  `.buildenv/`（构建环境）、`dist/Desktop-sing-v1.0.0/`（当前 onedir，重出 MSIX 与 zip 的源）。
+- **★ `preview/` 里 5 张是官网图源，删了官网就再也生不出来**：
+  `anim_fan_dark.png`（→ `site/assets/anim-fan.png`，**且被自检 P5.9 拿来比对新鲜度**）、
+  `controls.png`、`menu.png`、`settings_panel.png`（→ `panel.png`）、
+  `style_glass_dark.png`（→ `hero.png`）。其余 39 张是诊断渲染图，可用 `preview_render.py` 再生。
+- **程序运行时的数据不必动**：`%APPDATA%\Desktop-sing` 只有约 305 KB，
+  歌词缓存才 10 个文件（且有 `CACHE_MAX_FILES=3000` / 40MB 上限自动淘汰）；
+  要清就用设置面板里的「歌词缓存」入口，别手工删。
+- **回收站删除的坑**（复用脚本 `C:\Users\35436\AppData\Local\Temp\_recycle_batched.py`）：
+  `SHFileOperationW` 对大目录**只删一部分就返回**（ret=120/124），要**循环重试到 exists 为假**；
+  小对象可能 ret=2 但**其实已删**。👉 **返回码不可信，只看 `os.path.exists`。**
+  同时传父+子目录会行为异常，要先剔除嵌套；3.8 GB 约 3 分半，必须后台跑。
+- 流程上：这是个人目录（`Desktop\代码\`）→ **先只读盘点出清单，让用户圈定范围后再动手**，走回收站。
+
 ## 微软商店（MSIX）发布线（2026-09-18 建成，三轮复盘审计后定稿）
 - **打包**：`.buildenv\Scripts\python.exe store\build_store.py --fresh` → `store\out\Desktop-sing-<v四段>-x64.msix`
   （**提审就传未签名包**，微软自己重签）。布局 = onedir 去掉卸载脚本 + Assets + 生成的清单。
