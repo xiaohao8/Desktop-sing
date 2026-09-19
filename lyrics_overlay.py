@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import codecs
 import ctypes
 import hashlib
 import json
@@ -411,6 +412,44 @@ def log(msg: str):
             pass
 
 
+def ensure_idna_codec() -> bool:
+    """保证 idna 编码可用。
+
+    socket.gethostbyname / getaddrinfo 内部会做 host.encode('idna')，一旦这个 codec
+    找不到，所有联网请求都会在解析域名那一步就 LookupError 掉。PyInstaller 打包的
+    程序里 encodings.idna 偶尔没被带进来（它在 base_library.zip 里，依赖的
+    stringprep 却只进了 PYZ），这里在启动早期于主线程预热一次；真缺失时注册一个
+    ASCII 直通版兜底——歌词接口全是纯 ASCII 域名，够用。
+    """
+    try:
+        codecs.lookup("idna")
+        return True
+    except Exception:
+        pass
+    try:
+        import encodings.idna  # noqa: F401
+        codecs.lookup("idna")
+        return True
+    except Exception:
+        pass
+    try:
+        def _idna_search(encoding):
+            if encoding.replace("-", "_").lower() != "idna":
+                return None
+            def _encode(text, errors="strict"):
+                return text.encode("ascii", errors), len(text)
+            def _decode(data, errors="strict"):
+                return data.decode("ascii", errors), len(data)
+            return codecs.CodecInfo(name="idna", encode=_encode, decode=_decode)
+        codecs.register(_idna_search)
+        codecs.lookup("idna")
+        log("idna 编码缺失，已注册 ASCII 兜底实现（联网不受影响）")
+        return True
+    except Exception as e:
+        log("idna 编码兜底失败: %r" % (e,))
+        return False
+
+
 # 播放控制：注入系统媒体键（等价于按下键盘的 播放/暂停、上一首、下一首键，
 # QQ音乐 / 网易云 / Spotify / 浏览器 等接入系统媒体栏的播放器都会响应）
 _MEDIA_KEY = {"toggle": 0xB3, "next": 0xB0, "prev": 0xB1}
@@ -537,10 +576,58 @@ class GlobalHotkeys(QObject):
 # 歌词获取：QQ音乐 / 网易云（含逐字 YRC）-> LRCLIB 兜底
 # ======================================================================
 
-def http_get(url: str, headers=None, timeout: float = 6.0) -> bytes:
+# ---- 网络出口：直连优先，失败再退回系统代理 ----
+# 背景：不少用户开着 Clash 之类的本地代理（注册表 ProxyEnable=1），urllib 会自动走它；
+# 而这类代理常把歌词接口的 HTTPS 连接掐断（RemoteDisconnected / 握手超时），
+# 结果一个字都出不来。歌词接口都是短小的公开 HTTPS，直连最稳；直连不通时再借代理救一次。
+_DIRECT_OPENER = None
+_PROXY_OPENER = None
+_HAS_PROXY = None
+_NET_MODE = "direct"          # 上次成功的出口，新请求先试它
+_net_lock = threading.Lock()
+
+
+def _opener(use_proxy: bool):
+    global _DIRECT_OPENER, _PROXY_OPENER
+    if use_proxy:
+        if _PROXY_OPENER is None:
+            _PROXY_OPENER = urllib.request.build_opener()
+        return _PROXY_OPENER
+    if _DIRECT_OPENER is None:
+        _DIRECT_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return _DIRECT_OPENER
+
+
+def _system_proxy_set() -> bool:
+    """本机是否配置了系统代理（环境变量 or 注册表）"""
+    global _HAS_PROXY
+    if _HAS_PROXY is None:
+        try:
+            _HAS_PROXY = bool(urllib.request.getproxies())
+        except Exception:
+            _HAS_PROXY = False
+    return _HAS_PROXY
+
+
+def http_get(url: str, headers=None, timeout: float = 8.0) -> bytes:
+    """取回响应字节。默认直连；直连失败且本机有系统代理时，自动退回代理再试一次。"""
     req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA, **(headers or {})})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read()
+    global _NET_MODE
+    order = ("direct", "proxy") if _NET_MODE == "direct" else ("proxy", "direct")
+    first_err = None
+    for mode in order:
+        if mode == "proxy" and not _system_proxy_set():
+            continue
+        try:
+            with _opener(mode == "proxy").open(req, timeout=timeout) as resp:
+                data = resp.read()
+            with _net_lock:
+                _NET_MODE = mode
+            return data
+        except Exception as e:
+            if first_err is None:
+                first_err = e
+    raise first_err
 
 
 # ======================================================================
@@ -691,7 +778,7 @@ def is_info_line(text: str) -> bool:
 
 
 
-def fetch_qq_search(query: str, timeout: float = 6.0):
+def fetch_qq_search(query: str, timeout: float = 8.0):
     """在QQ音乐搜索，返回 [{mid, albummid, name, singer}, ...]"""
     payload = json.dumps({
         "req": {
@@ -727,7 +814,7 @@ def _b64_text(v):
         return ""
 
 
-def fetch_qq_lyric(songmid: str, timeout: float = 6.0):
+def fetch_qq_lyric(songmid: str, timeout: float = 8.0):
     """通过 songmid 拿 (原文 LRC, 翻译 LRC)（无登录态，绝大多数歌曲可取）"""
     url = ("https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?"
            "pcachetime=%d&songmid=%s&g_tk=5381&loginUin=0&hostUin=0&format=json"
@@ -755,7 +842,7 @@ _WEAPI_IV = b"0102030405060708"
 _WEAPI_PRESET_KEY = "0CoJUm6Qyw8W8jud"
 
 
-def _weapi_post(path: str, payload: dict, timeout: float = 6.0):
+def _weapi_post(path: str, payload: dict, timeout: float = 8.0):
     """网易云 weapi 加密 POST（AES-CBC x2 + RSA 无填充），返回 JSON"""
     from Crypto.Cipher import AES      # 延迟导入：只有真走网易云加密接口才付这 ~80ms
 
@@ -795,7 +882,7 @@ def netease_pic_id_to_url(pic_id) -> str:
         return ""
 
 
-def fetch_netease_search(query: str, timeout: float = 6.0):
+def fetch_netease_search(query: str, timeout: float = 8.0):
     """网易云搜索，返回 [{id, name, singer, pic_url}, ...]"""
     songs = []
     if _crypto_ready():
@@ -826,7 +913,7 @@ def fetch_netease_search(query: str, timeout: float = 6.0):
     return results
 
 
-def fetch_netease_search_plain(query: str, timeout: float = 6.0):
+def fetch_netease_search_plain(query: str, timeout: float = 8.0):
     """老版网易云搜索接口（未加密；未登录时排序差，仅作降级）"""
     body = urllib.parse.urlencode(
         {"s": query, "type": 1, "offset": 0, "limit": 20, "total": "true"}).encode("utf-8")
@@ -840,7 +927,7 @@ def fetch_netease_search_plain(query: str, timeout: float = 6.0):
     return (data.get("result") or {}).get("songs") or []
 
 
-def fetch_netease_lyric(song_id: str, timeout: float = 6.0):
+def fetch_netease_lyric(song_id: str, timeout: float = 8.0):
     """网易云歌词老接口，返回 (原文 LRC, 翻译 LRC)"""
     url = "https://music.163.com/api/song/lyric?id=%s&lv=1&kv=1&tv=-1" % urllib.parse.quote(song_id)
     data = json.loads(http_get(url, headers={"Referer": "https://music.163.com/"},
@@ -849,7 +936,7 @@ def fetch_netease_lyric(song_id: str, timeout: float = 6.0):
             ((data.get("tlyric") or {}).get("lyric")) or "")
 
 
-def fetch_netease_lyric_full(song_id: str, timeout: float = 6.0):
+def fetch_netease_lyric_full(song_id: str, timeout: float = 8.0):
     """网易云歌词：优先逐字 YRC，返回 (lines, words, trans)"""
     if _crypto_ready():
         try:
@@ -883,7 +970,7 @@ def fetch_netease_lyric_full(song_id: str, timeout: float = 6.0):
 _LRCLIB_UA = "Desktop-sing/1.0"
 
 
-def fetch_lrclib_candidates(title: str, artist: str, timeout: float = 6.0):
+def fetch_lrclib_candidates(title: str, artist: str, timeout: float = 8.0):
     """LRCLIB 候选（免费、无需鉴权）：返回 [{lines, words, trans, duration, raw, name, artist}]
 
     LRCLIB 是社区库，海外/独立音乐的覆盖率明显好于国内平台，放进来做候选更稳。
@@ -1019,7 +1106,7 @@ def parse_krc(text: str):
     return lines, words, trans
 
 
-def fetch_kugou_search(query: str, timeout: float = 6.0):
+def fetch_kugou_search(query: str, timeout: float = 8.0):
     """酷狗搜索：返回 [{hash, duration(秒), name, singer}]（歌词接口要用 hash+时长对齐）"""
     url = ("http://mobilecdn.kugou.com/api/v3/search/song?format=json&keyword=%s"
            "&page=1&pagesize=10&showtype=1" % urllib.parse.quote(query))
@@ -1035,7 +1122,7 @@ def fetch_kugou_search(query: str, timeout: float = 6.0):
     return out
 
 
-def fetch_kugou_lyric(name: str, duration: int, file_hash: str, timeout: float = 6.0):
+def fetch_kugou_lyric(name: str, duration: int, file_hash: str, timeout: float = 8.0):
     """酷狗歌词：取候选里的 KRC 逐字 -> (lines, words, trans)；失败退回 LRC 文本"""
     url = ("https://lyrics.kugou.com/search?ver=1&man=yes&client=pc&keyword=%s&duration=%d&hash=%s"
            % (urllib.parse.quote(name), duration, file_hash))
@@ -7534,7 +7621,20 @@ def main():
 
     _load_fonts()
 
+    # 联网前置：解析域名要用 idna 编码，先在预热一次；顺便把网络出口策略记进日志，
+    # 以后排查「为什么没歌词」一眼就能看出是不是被系统代理坑了。
+    _idna_ok = ensure_idna_codec()
+    _proxy_hint = ""
+    if _system_proxy_set():
+        try:
+            _proxies = urllib.request.getproxies()
+            _proxy_hint = "，检测到系统代理 %s" % (
+                _proxies.get("https") or _proxies.get("http") or "")
+        except Exception:
+            _proxy_hint = "，检测到系统代理"
+
     log("桌面歌词 v%s 启动（python %s）" % (APP_VERSION, platform.python_version()))
+    log("联网准备：idna=%s，出口=直连优先%s" % ("可用" if _idna_ok else "缺失", _proxy_hint))
     watcher = MediaWatcher()
     watcher.start()
 
