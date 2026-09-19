@@ -186,6 +186,10 @@ Section "核心文件（必装）" SEC_CORE
   ; 保留许可说明。用户装的是这个 exe，看不到 GitHub 仓库 → 必须随包。
   File /oname=第三方许可.txt "..\LICENSE-THIRD-PARTY.txt"
   File "..\使用说明.txt"
+  ; 英文文档：商店是全球分发的，英文用户也要能看到英文的隐私声明与使用说明。
+  ; 用 ASCII 文件名，避免非英文系统解压/编码问题。
+  File /oname=Privacy-EN.txt "..\PRIVACY.en.md"
+  File /oname=Usage-EN.txt "..\USAGE.en.txt"
   File "..\卸载桌面歌词.bat"
   ; 注册安装信息（控制面板可卸载 / 重装记忆位置）
   WriteRegStr HKCU "Software\Desktop-sing" "InstallDir" "$INSTDIR"
@@ -255,7 +259,7 @@ Section "Uninstall"
   no_userdata:
 SectionEnd
 
-LangString DESC_SEC_CORE ${LANG_SIMPCHINESE} "程序本体、内置字体、隐私声明、第三方许可与使用说明。"
+LangString DESC_SEC_CORE ${LANG_SIMPCHINESE} "程序本体、内置字体、隐私声明、第三方许可与使用说明（中英各一份）。"
 LangString DESC_SEC_DESK ${LANG_SIMPCHINESE} "在桌面创建 桌面歌词 快捷方式。"
 LangString DESC_SEC_MENU ${LANG_SIMPCHINESE} "在开始菜单创建程序与卸载入口。"
 

@@ -144,7 +144,8 @@ WACK（Windows App Certification Kit，`appcert.exe`）就是商店审核用的�
 | 图标 | 商店 listing 图标 | 300×300 PNG，可复用 assets 里的方形图 |
 | 类别 | 音乐 / Music（次级：实用工具） | |
 | 年龄分级 | 完成 IARC 问卷 | 无用户内容、无社交 → 通常全年龄 |
-| **隐私政策 URL** | `site/privacy.html` 发布后的地址 | **必填**，缺失直接拒审 |
+| **隐私政策 URL** | 中文 listing 填 `site/privacy.html`；**英文 listing 填 `site/privacy.en.html` 的地址** | **必填**，缺失直接拒审。商店是全球分发的，英文页区只填中文隐私页等于英文用户读不到声明 |
+| **随包文档语言** | 中英各一份（`使用说明.txt`/`USAGE.en.txt`、`PRIVACY.md`/`PRIVACY.en.md`） | 两条渠道同一套清单，`P5.12h` 会逐渠道校验 |
 | **受限功能说明** | `RUNFULLTRUST_STATEMENT` | **必填**，只填两句，见 §6 |
 | 认证说明 | `CERTIFICATION_NOTES` | 帮审核员知道怎么测，见 §6 |
 | 联系信息 | 邮箱 / 网站 | 审核沟通用 |
@@ -186,7 +187,7 @@ WACK（Windows App Certification Kit，`appcert.exe`）就是商店审核用的�
 | **10.5.1** | **Desktop Bridge 与 Win32 产品必须始终具备隐私政策** | `site/privacy.html` + `PRIVACY.md`，且 `PRIVACY.md` **随包分发** |
 | **11.2** | 不得侵犯第三方权利（含许可合规） | 随包 `LICENSE-THIRD-PARTY.txt`：Apache-2.0 归属（Lyricify-Lyrics-Helper）+ 内置 MiSans 许可说明 + FluentFlyout「未使用源码」声明。**三条分发渠道都要带**（MSIX / 便携 zip / NSIS 安装包） |
 | **10.6** | 声明的能力必须与实际功能相关，不得绕过系统检查 | 仅 `runFullTrust`，名副其实 |
-| **10.7** | 声明支持的语言必须本地化其描述文本；功能不全须说明 | 清单 `Resources` **只声明 `zh-CN`**（不虚报 en-US），描述里也写了「界面仅简体中文」 |
+| **10.7** | 声明支持的语言必须本地化其描述文本；功能不全须说明 | 清单 `Resources` **只声明 `zh-CN`**（不虚报 en-US）；**商品页描述**（`STORE_LISTING_DESCRIPTION`）里写明「界面与歌词界面目前仅有简体中文」。注意：清单 `@Description` 因长度限制**没有**这句，别把两者混为一谈 |
 | **10.9** | 通知须标注来源、不夹带无关推广、尊重系统开关 | 仅用托盘气泡提示自身状态，无推广、无 WNS |
 | **11.1** | 元数据内容须符合 PEGI 12 / ESRB E10+ 或更低 | 全部为工具功能描述，无任何敏感内容 |
 | **11.11** | 提交时须完成 IARC 年龄分级问卷并保持最新 | 见 §5 |

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy Policy · Desktop-sing</title>
+<meta name="description" content="Desktop-sing privacy policy: runs locally, no account, no ads, no tracking; network requests are limited to fetching lyrics and artwork on demand.">
+<meta name="theme-color" content="#000000">
+<meta property="og:title" content="Privacy Policy · Desktop-sing">
+<meta property="og:description" content="Runs locally. No account, no ads, no tracking. Network requests are limited to fetching lyrics and artwork on demand.">
+<meta property="og:type" content="website">
+<link rel="icon" href="assets/favicon-32.png" sizes="32x32">
+<link rel="icon" href="assets/icon-256.png" sizes="256x256">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+/* 隐私政策页专用排版（不动共享的 style.css） */
+.policy { max-width: 820px; }
+.policy section { margin-top: 44px; }
+.policy h3 { font-size: clamp(20px, 2.4vw, 26px); }
+.policy p, .policy li { font-size: 15.5px; line-height: 1.75; color: var(--l-dim); margin: 10px 0; }
+.policy b { color: var(--l-text); font-weight: 600; }
+.policy ul, .policy ol { padding-left: 22px; margin: 10px 0; }
+.policy code {
+  font-family: ui-monospace, Consolas, monospace; font-size: 13.5px;
+  background: rgba(0,0,0,.055); border: 1px solid var(--l-line);
+  border-radius: 6px; padding: 1px 7px; word-break: break-all;
+}
+.policy table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14.5px; }
+.policy th, .policy td { text-align: left; padding: 9px 12px; border: 1px solid var(--l-line); vertical-align: top; }
+.policy th { background: rgba(0,0,0,.035); color: var(--l-text); font-weight: 600; white-space: nowrap; }
+.policy td { color: var(--l-dim); line-height: 1.6; }
+.policy a { color: #0369a1; text-decoration: underline; text-underline-offset: 3px; }
+.policy a:hover { color: #0284c7; }
+.meta-line { font-size: 14px; color: var(--l-dim); margin-top: 14px; }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html">
+      <img src="assets/icon-180.png" alt="">
+      <span>Desktop-sing</span>
+    </a>
+    <nav class="nav-links">
+      <a href="index.html#features">Features</a>
+      <a href="index.html#download">Download</a>
+      <a href="index.html#faq">FAQ</a>
+      <a href="privacy.html" hreflang="zh-CN" lang="zh-CN">简体中文</a>
+    </nav>
+    <a class="nav-cta" href="index.html#download">Download</a>
+  </div>
+</header>
+
+<main id="top">
+
+  <section class="sec sec--dark">
+    <div class="wrap policy">
+      <p class="eyebrow">Privacy Policy</p>
+      <h1 style="font-size:clamp(32px,5vw,58px)">Privacy Policy</h1>
+      <p class="lead" style="max-width:640px">
+        Desktop-sing is a desktop lyric overlay that runs locally. There is no account system,
+        no advertising and no analytics. We do not collect any personally identifiable information.
+      </p>
+      <p class="meta-line">Effective date: 18 September 2026 · Applies to Desktop-sing v1.0.0 and later</p>
+    </div>
+  </section>
+
+  <section class="sec sec--light">
+    <div class="wrap policy">
+
+      <section id="local">
+        <h3>1. Data stored on your computer</h3>
+        <p>All settings, caches and logs live in the
+          <code>%APPDATA%\Desktop-sing\</code> folder on your own machine and are never uploaded
+          to any server:</p>
+        <table>
+          <tr><th>File / folder</th><th>Content</th><th>Notes</th></tr>
+          <tr><td><code>config.json</code></td><td>Your preferences</td><td>Style, font size, hotkeys, toggles</td></tr>
+          <tr><td><code>cache\</code></td><td>Lyric cache</td><td>Caches fetched lyrics per song to avoid repeat requests</td></tr>
+          <tr><td><code>fonts\</code></td><td>Downloaded fonts</td><td>Downloaded from the built-in font library; all free for commercial use</td></tr>
+          <tr><td><code>t2s.tsv</code></td><td>Traditional→Simplified mapping</td><td>Optional user-supplied file</td></tr>
+          <tr><td><code>desktop-lyrics.log</code></td><td>Runtime log</td><td>For troubleshooting; records only the program's own behaviour</td></tr>
+        </table>
+        <p>To delete it: close the program and remove that folder. When the Microsoft Store version is
+          uninstalled, the system clears the package's data along with it.</p>
+      </section>
+
+      <section id="local-read">
+        <h3>2. System information we read (on your machine only — never stored, never uploaded)</h3>
+        <p>The software reads information about the media currently playing through the
+          <strong>Windows System Media Transport Controls (SMTC)</strong>: the
+          <strong>track title, artist, playback position and artwork address</strong>.
+          This is a local system capability built into Windows, and any player that integrates with
+          SMTC exposes the same information.</p>
+        <p>A few boundaries worth stating:</p>
+        <ul>
+          <li>It reads only the media that is <em>currently playing</em>. It does
+            <strong>not read your music files</strong> and does not scan your disk for a music
+            library;</li>
+          <li>That information is used solely to display lyrics in the overlay and to query the
+            matching lyrics from lyric endpoints. It is
+            <strong>never uploaded to our servers</strong> (we do not operate any servers);</li>
+          <li>Reading happens only while the program is running, and stops when you exit.</li>
+        </ul>
+      </section>
+
+      <section id="network">
+        <h3>3. When the program makes network requests (only as required by its features)</h3>
+        <p>The program accesses the network in the situations below. Requests contain only the fields
+          the feature needs, and <b>never your name, contact details, hardware fingerprint or any
+          account information</b> — because none of that is collected in the first place:</p>
+        <table>
+          <tr><th>Purpose</th><th>Service contacted</th><th>What is sent</th></tr>
+          <tr>
+            <td>Fetching lyrics</td>
+            <td>The public lyric endpoints of QQ Music, NetEase Cloud Music, Kugou Music and LRCLIB
+              (queried in parallel, best result wins)</td>
+            <td>The <b>title, artist and duration / track ID</b> of the current song</td>
+          </tr>
+          <tr>
+            <td>Displaying artwork</td>
+            <td>The artwork image URL provided by the player</td>
+            <td>Downloads that image only; nothing else attached</td>
+          </tr>
+          <tr>
+            <td>Downloading fonts</td>
+            <td>The font distribution channel built into the program</td>
+            <td>Downloads only the font file you selected</td>
+          </tr>
+          <tr>
+            <td>Update check<br>(non-Store builds only)</td>
+            <td>The version manifest endpoints on GitHub / Gitee / jsDelivr</td>
+            <td>Compares version numbers only; sends no local data</td>
+          </tr>
+        </table>
+        <p>The Microsoft Store version has no update-check behaviour — updates are always delivered
+          by the Store.</p>
+
+        <p><b>About request headers (disclosed in full)</b>: some music platforms' public endpoints
+          only return results for common client types, so when requesting those endpoints the program
+          sends a generic browser-type identifier along with a compatibility field marked
+          "PC client, client version 2.9.7". For LRCLIB and the update manifest endpoints the program
+          identifies itself by its own name, <code>Desktop-sing/1.0</code>. These identifiers exist
+          only so the endpoints return lyric data normally. They
+          <b>do not and cannot contain any of your personal information</b>, are not linked to your
+          device or account, and are never used for identification or tracking.</p>
+        <p>Lyrics and artwork both come from the public endpoints of the platforms listed above, and
+          the program has no affiliation, agency or partnership relationship with those platforms.
+          If you or a platform operator would prefer these requests not to happen, you can turn off
+          lyric fetching in the settings, or simply stop using the program.</p>
+      </section>
+
+      <section id="never">
+        <h3>4. What we do not do</h3>
+        <ul>
+          <li><b>We do not collect</b> personally identifying information, contacts, files or browsing history;</li>
+          <li><b>We do not upload</b> any of your local data (settings, logs and lyric caches all stay on your machine);</li>
+          <li><b>We do not integrate</b> analytics, advertising or third-party tracking SDKs;</li>
+          <li><b>We do not sell</b> data or provide it to any third party (there is no data to sell);</li>
+          <li><b>We do not request</b> sensitive permissions such as camera, microphone or location.</li>
+        </ul>
+      </section>
+
+      <section id="third-party">
+        <h3>5. Third-party services</h3>
+        <p>Lyrics and artwork come from the public endpoints of the music platforms named above, and
+          fonts and update files come from distribution channels such as GitHub, Gitee, jsDelivr and
+          Lanzou Cloud. Those services are controlled by their own operators and may have their own
+          privacy policies. The only interaction between this program and them is a one-off functional
+          request; no account or device information of yours is ever provided to them.</p>
+      </section>
+
+      <section id="children">
+        <h3>6. Children</h3>
+        <p>This program is not directed at children and does not knowingly collect personal
+          information from children. It is simply a local lyric display tool.</p>
+      </section>
+
+      <section id="changes">
+        <h3>7. Changes to this policy</h3>
+        <p>If future changes to the software alter how data is handled, we will update this page and
+          the effective date at the top. Previous versions are available in the
+          <a href="https://github.com/xiaohao8/Desktop-sing" target="_blank" rel="noopener">GitHub repository</a>.</p>
+      </section>
+
+      <section id="contact">
+        <h3>8. Contact us</h3>
+        <p>If you have questions about this policy or the program itself, please open an issue on
+          <a href="https://github.com/xiaohao8/Desktop-sing/issues" target="_blank" rel="noopener">GitHub Issues</a>,
+          or leave a message on the
+          <a href="https://gitee.com/xiaohao3/Desktop-sing" target="_blank" rel="noopener">Gitee repository</a>.</p>
+      </section>
+
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <p class="small">Desktop-sing · Runs locally, uploads nothing ·
+      <a href="index.html" style="text-decoration:underline;text-underline-offset:3px">Back to home</a>
+      &nbsp;·&nbsp;
+      <a href="privacy.html" hreflang="zh-CN" lang="zh-CN" style="text-decoration:underline;text-underline-offset:3px">简体中文版</a></p>
+  </div>
+</footer>
+
+</body>
+</html>

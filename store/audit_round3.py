@@ -473,14 +473,34 @@ check("P5.12f NSIS 安装包随包许可文件",
 check("P5.12g 便携 zip 随包许可文件",
       "LICENSE-THIRD-PARTY.txt" in _pkg)
 # 已打出的包要真的带上（没跑过打包就跳过，不误报）
+_BUNDLE = ("LICENSE-THIRD-PARTY.txt", "PRIVACY.md", "使用说明.txt",
+           "PRIVACY.en.md", "USAGE.en.txt")
 _msix = os.path.join(ROOT, "store", "out", "Desktop-sing-1.0.0.0-x64.msix")
 if os.path.exists(_msix):
     import zipfile as _zf
+    from urllib.parse import unquote as _unq
+    # ⚠️ makeappx 会把清单里的**非 ASCII 路径做百分号编码**（如 使用说明.txt 变成
+    #    %E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E.txt）。安装后 Windows 会解码回原名，
+    #    所以这里必须先 unquote 再比对，否则中文文件名永远「像是没打进包」。
     _names = _zf.ZipFile(_msix).namelist()
-    _have = [n for n in _names
-             if "LICENSE-THIRD-PARTY" in n or n.endswith("PRIVACY.md")]
-    check("P5.12e 已打包的 MSIX 里含许可/隐私声明", bool(_have),
-          "找到: %s" % _have if _have else "包内没有 —— 需重新打包")
+    _base = {_unq(n).rsplit("/", 1)[-1] for n in _names}
+    _miss = [f for f in _BUNDLE if f not in _base]
+    check("P5.12e 已打包的 MSIX 里含全部随包文档", not _miss,
+          "缺: %s（需重新打包）" % _miss if _miss else "共 %d 份" % len(_BUNDLE))
+
+# P5.12h 三条渠道必须带**同一套**随包文档。
+# 早先 MSIX 只带 LICENSE + PRIVACY.md，漏了使用说明 → 商店用户装完找不到任何使用说明，
+# 与便携版/安装版不一致。这里改成「一套清单，三处都验」，漏一处立刻 FAIL。
+for _chan, _txt in (("build_store.py", notes), ("pkg_portable.py", _pkg),
+                    ("installer.nsi", _nsi)):
+    _lacking = [f for f in _BUNDLE if f not in _txt]
+    check("P5.12h %s 随包全部 %d 份文档" % (_chan, len(_BUNDLE)), not _lacking,
+          "缺: %s" % _lacking if _lacking else "")
+
+# P5.12i 英文文档也必须真的存在（渠道清单写了名字但文件不存在 = 静默漏发）
+_absent = [f for f in _BUNDLE if not os.path.exists(os.path.join(ROOT, f))]
+check("P5.12i 随包清单里的文档在仓库中都存在", not _absent,
+      "缺文件: %s" % _absent if _absent else "")
 
 # ---------------------------------------------------------------- P5.13 多显示器
 head("P5.13 多显示器 / 高 DPI")
@@ -532,6 +552,129 @@ check("P5.14c 卸载前先结束进程（否则 $INSTDIR 删不净）",
       "taskkill" in _un)
 check("P5.14d 卸载时删快捷方式与开始菜单项",
       "Delete" in _un and "$SMPROGRAMS" in _un)
+
+# ---------------------------------------------------------------- P5.15 中英文档
+head("P5.15 中英文档")
+# 英文版不是「顺手加一份」——它有两个硬约束：
+#   ① **英文版必须存在且与中文版口径一致**（商店是全球分发的，英文用户要能读懂声明）；
+#   ② **英文版必须如实说明界面当前只有简体中文**，否则等于暗示有英文界面，
+#      按政策 10.1.1（准确描述功能与重要限制）是会被判的。
+_zh_en = [("README.md", "README.en.md"), ("PRIVACY.md", "PRIVACY.en.md"),
+          ("NOTICE.md", "NOTICE.en.md"), ("使用说明.txt", "USAGE.en.txt")]
+for _zh, _en in _zh_en:
+    check("P5.15 存在英文版 %s（对应 %s）" % (_en, _zh),
+          os.path.exists(os.path.join(ROOT, _en)))
+
+_en_readme = os.path.join(ROOT, "README.en.md")
+if os.path.exists(_en_readme):
+    _ert = open(_en_readme, encoding="utf-8").read()
+    check("P5.15a 英文 README 如实说明界面只有简体中文",
+          "Simplified Chinese only" in _ert,
+          "不写这句＝暗示有英文界面，商店会按 10.1.1 判「描述不准确」")
+    check("P5.15b 英文 README 保留已知限制章节",
+          "Known limitations" in _ert)
+    check("P5.15c 英文 README 保留许可与致谢章节",
+          "Credits and licensing" in _ert)
+
+# P5.15d 英文隐私声明必须同时覆盖本地数据、SMTC 读取、网络请求三块
+_en_priv = os.path.join(ROOT, "PRIVACY.en.md")
+if os.path.exists(_en_priv):
+    _ept = open(_en_priv, encoding="utf-8").read()
+    check("P5.15d 英文隐私声明覆盖 SMTC 系统媒体读取", "SMTC" in _ept)
+    check("P5.15e 英文隐私声明覆盖本地数据目录",
+          "%APPDATA%" in _ept)
+    check("P5.15f 英文隐私声明覆盖请求头如实披露",
+          "request headers" in _ept.lower(),
+          "合规要求，与中文版同源")
+
+# P5.15g 官网英文隐私页 + 中英互链
+_site_en = os.path.join(ROOT, "site", "privacy.en.html")
+check("P5.15g 存在英文隐私政策页 site/privacy.en.html", os.path.exists(_site_en))
+if os.path.exists(_site_en):
+    _sp_en = open(_site_en, encoding="utf-8").read()
+    _sp_zh = open(os.path.join(ROOT, "site", "privacy.html"), encoding="utf-8").read()
+    check("P5.15h 英文隐私页含 SMTC 章节", "SMTC" in _sp_en)
+    check("P5.15i 中英隐私页互相链接（语言切换）",
+          "privacy.en.html" in _sp_zh and 'href="privacy.html"' in _sp_en,
+          "只放一份等于另一语言用户找不到自己的版本")
+    check("P5.15j 英文隐私页 lang 属性为 en",
+          re.search(r'<html lang="en"', _sp_en) is not None)
+    # 结构自洽（与 P4.7 同一套 HTMLParser 校验）
+    _u2, _e2 = _html_balanced(_site_en)
+    check("P5.15k 英文隐私页 HTML 标签配平", not _u2 and not _e2,
+          ("未闭合 %s / 错误 %s" % (_u2[:3], _e2[:3])) if (_u2 or _e2) else "")
+
+# ---------------------------------------------------------------- P5.16 对外文档口径
+head("P5.16 对外文档口径（该说的说、不该说的不说）")
+# 「面向用户与商店的文档」不等于「开发者文档」。下面这些词属于**不该出现在对外文档**的类别：
+#   · 逆向 / 绕过技术措施：3DES、weapi、zlib、具体加密方案
+#   · 第三方代理服务点名：ghfast.top / ghproxy.net（脆弱且易被质疑）
+#   · 对具体艺人 / 平台版权状况的举例：把「某歌手在某平台无版权」写进对外文档毫无必要
+# 注意 NOTICE.md **不在**扫描范围：那里列函数名是 Apache-2.0 归属义务要求的「指明了什么被借用」，
+# 属于「该说」；但同样不该出现破解手法描述。
+_PUBLIC_DOCS = ["README.md", "README.en.md", "使用说明.txt", "USAGE.en.txt",
+                "PRIVACY.md", "PRIVACY.en.md"]
+_FORBIDDEN = ("3DES", "weapi", "ghfast.top", "ghproxy.net", "周杰伦",
+              "AES-CBC", "RSA 无填充")
+_hits = {}
+for _f in _PUBLIC_DOCS:
+    _p = os.path.join(ROOT, _f)
+    if not os.path.exists(_p):
+        continue
+    _t = open(_p, encoding="utf-8").read()
+    _h = [k for k in _FORBIDDEN if k in _t]
+    if _h:
+        _hits[_f] = _h
+check("P5.16 对外文档不含逆向/密评/代理点名等不该公开的内容", not _hits,
+      ("命中: %s" % _hits) if _h else "扫描 %d 份对外文档，均干净" % len(_PUBLIC_DOCS))
+
+# 反向：对外文档必须**说到**该说的 —— 已知限制与许可归属不能为了「好看」被删掉
+for _f, _need in (("README.md", ("已知限制", "致谢与许可")),
+                  ("README.en.md", ("Known limitations", "Credits and licensing"))):
+    _p = os.path.join(ROOT, _f)
+    if os.path.exists(_p):
+        _t = open(_p, encoding="utf-8").read()
+        _lack = [s for s in _need if s not in _t]
+        check("P5.16a %s 保留「已知限制」与「许可归属」" % _f, not _lack,
+              "缺: %s" % _lack if _lack else "")
+
+# P5.16b 中英 README 的**功能数量口径**必须一致（英文版少写/多写数字同样是描述不准确）。
+# 用「精确短语」而不是宽泛正则：短语是文档里真实存在的固定说法，改了就会立刻发现，
+# 且把数字与**代码真源**（上面的 n_style / n_anim / n_preset / n_saver）绑在一起，
+# 改功能数量而忘了改文案时这里会亮。
+if os.path.exists(_en_readme):
+    _ert2 = open(_en_readme, encoding="utf-8").read()
+    _zht = open(os.path.join(ROOT, "README.md"), encoding="utf-8").read()
+    for _key, _n, _zh_need, _en_need in (
+            ("悬浮样式", n_style, "5 种悬浮样式", "5 overlay styles"),
+            ("逐字动画", n_anim, "9 种逐字动画", "9 word-by-word animations"),
+            ("位置锚点", n_preset, "7 个锚点", "7 anchors"),
+            ("氛围屏保", n_saver, "4 种氛围屏保", "4 styles")):
+        _ok_zh = _zh_need in _zht
+        _ok_en = _en_need in _ert2
+        # 短语里的数字必须与代码真源一致（防止「文档写 5、代码有 6」）
+        _num_ok = ("%d" % _n) in _zh_need
+        check("P5.16b 中英 README 都声明「%d 种%s」" % (_n, _key),
+              _ok_zh and _ok_en and _num_ok,
+              ("中文%s 英文%s 与代码一致%s"
+               % ("有" if _ok_zh else "**缺**", "有" if _ok_en else "**缺**",
+                  "" if _num_ok else " **数字与代码不符**")) if not (_ok_zh and _ok_en and _num_ok)
+              else "")
+
+# P5.16c 界面语言必须如实声明（政策 10.7）
+# 应用界面目前只有简体中文。两处都要对：
+#   ① 清单 Resources **只**声明 zh-CN（不虚报 en-US，否则等于声明了一个不存在的本地化）；
+#   ② 商品页描述里要写明「界面仅有简体中文」，否则英文页区的用户会按描述预期一个英文界面。
+# 注意 ① 的 `Resources` 在**清单模板**里，不在 build_store.py 里 —— 第一版查错了文件。
+_src_bs = open(os.path.join(ROOT, "store", "build_store.py"), encoding="utf-8").read()
+_tpl = open(os.path.join(ROOT, "store", "AppxManifest.template.xml"),
+            encoding="utf-8").read()
+_langs = re.findall(r'<Resource\s+Language="([^"]+)"', _tpl)
+check("P5.16c 清单只声明 zh-CN（不虚报 en-US）",
+      _langs == ["zh-CN"], "实际声明: %s" % (_langs or "无"))
+check("P5.16c 商品页描述写明界面仅有简体中文",
+      "仅有简体中文" in _src_bs,
+      "不写＝英文页区用户按描述预期一个不存在的英文界面")
 
 # ---------------------------------------------------------------- 汇总
 head("汇总")

@@ -121,7 +121,13 @@ EXCLUDE_FILES = {"卸载桌面歌词.bat"}
 # 内置的 MiSans 也要求保留许可说明。商店用户只拿到 .msix，看不到 GitHub 仓库，
 # 所以这些文件必须真的进包，否则是实打实的许可违规。
 # （来源：仓库根目录，打包时复制到程序目录，用户可在安装目录里查看。）
-BUNDLED_LICENSES = ("LICENSE-THIRD-PARTY.txt", "PRIVACY.md")
+#
+# 中英各一份：Microsoft Store 是全球分发的，商店页/审核语言可能是英文，
+# 只给中文声明等于英文用户拿不到可读的隐私说明。
+# 使用说明也一并带上：MSIX 的布局来自 onedir，而 onedir 里**没有**使用说明，
+# 早先只有便携版/安装版才有 → 商店用户装完找不到任何使用说明，两条渠道不一致。
+BUNDLED_LICENSES = ("LICENSE-THIRD-PARTY.txt", "PRIVACY.md",
+                    "使用说明.txt", "PRIVACY.en.md", "USAGE.en.txt")
 
 
 def app_version() -> str:

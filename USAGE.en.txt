@@ -1,0 +1,72 @@
+Desktop-sing 1.0 - User Guide
+=============================
+
+Note: the application interface is currently Simplified Chinese only.
+      The Chinese version of this guide is 使用说明.txt in the same folder.
+
+[Getting started]
+1. Double-click Desktop-sing.exe to launch. (With the installer build you can also start it from
+   the "桌面歌词" shortcut on the desktop or in the Start menu.)
+2. Play a song in any player that integrates with the Windows system media controls - for example
+   QQ Music, NetEase Cloud Music or Kugou. The lyric overlay appears on the desktop by itself.
+3. Hover over the overlay to reveal the control strip: previous / play-pause / next / screensaver /
+   lock / settings.
+4. Right-click the overlay or the tray icon to change the style, adjust the font size, or turn on
+   translated lyrics.
+
+[Frequently asked questions]
+- "No write permission on drive D" during installation? The installer automatically switches to your
+  user directory (C:\Users\<your name>\AppData\Local\Desktop-sing). To install somewhere else, pick a
+  writable location at the "Install location" step.
+- Where should I unpack the portable build? Anywhere you have write permission, for example the
+  desktop or C:\Users\<your name>\Desktop-sing. Unpacking to a read-only location will stop it from
+  starting.
+- No lyrics? Lyrics come from public endpoints. Instrumental tracks and obscure songs may have none.
+  Right-click and use "Re-fetch lyrics" to try again.
+- Want a different font? Settings panel -> Font library. One click downloads MiSans and others into
+  %APPDATA%\Desktop-sing\ on your own machine. Nothing is uploaded.
+- Run at startup? There is a toggle in the settings panel.
+- Stuck at launch, or want to confirm this is not a tampered build? See "Security and allowing the
+  app" and "Checking for updates" below.
+
+[Where your data lives]
+- Configuration / cache / fonts: %APPDATA%\Desktop-sing\
+- Everything stays on your computer, and uninstalling removes it. You can also delete the
+  configuration folder manually.
+
+[Uninstalling]
+- Installer build: use "Uninstall a program" in Control Panel, or the Start menu entry
+  "桌面歌词 -> 卸载桌面歌词". The uninstaller also clears the autostart entry and asks whether to
+  delete your local configuration and cache.
+- Portable / green build: run "卸载桌面歌词.bat" from the program folder. It closes the app and
+  removes both the configuration folder and the entire program folder, with no installer needed.
+
+[Checking for updates]
+- Update sources are built in, so **no URL needs to be filled in**: GitHub Releases is the primary
+  source, falling back automatically to Gitee Releases, then the Gitee manifest, then the jsDelivr
+  manifest. The highest version number wins.
+- To point it at your own repository or manifest: Settings panel -> System -> Update URL. Leave it
+  empty to restore the built-in sources.
+- With "Check for updates on launch" enabled, the version is compared on every start. When a new
+  version is found a dialog appears offering two download channels: a mirror and GitHub.
+- You can also right-click the tray icon -> System -> Check for updates, or click "Check now" in the
+  settings panel.
+- Manifest JSON format: {"version":"x.y.z","url":"download link","notes":"release notes"}.
+  You may also include the two mirror fields "lanzou_setup" and "lanzou_portable".
+
+[Security and allowing the app]
+- This program has no code-signing certificate yet, so on first run Windows may show the blue
+  "Windows protected your PC" prompt. Click [More info] -> [Run anyway]. It only appears once.
+- If Edge or Chrome warns about the file, click [... -> Keep] in the download bar. If it was deleted
+  automatically, restore it from the downloads list.
+- A few antivirus engines produce heuristic false positives (common for unsigned PyInstaller builds).
+  Add the whole program folder to your trusted / allowed list.
+- To confirm the file was not replaced, find SHA256SUMS.txt among the release assets and run:
+      certutil -hashfile <filename> SHA256
+  If the hash matches, the file is the original build output.
+- The program collects no information at all (see PRIVACY.en.md / 隐私声明.txt).
+
+[Privacy statement and licences]
+- Privacy statement: PRIVACY.en.md (English) or 隐私声明.txt (Chinese) in this folder.
+- Third-party licences: 第三方许可.txt in this folder lists the licences and attribution for the
+  bundled fonts and the open-source projects this app drew on.

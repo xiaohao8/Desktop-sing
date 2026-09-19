@@ -28,9 +28,14 @@ with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED) as z:
     # ⚠️ LICENSE-THIRD-PARTY.txt 是**许可合规要求**，不能只在仓库里放一份：
     #    Apache-2.0 第 4 条要求向接收者提供 NOTICE，内置 MiSans 也要求保留许可说明。
     #    用户拿到的是 zip，看不到 GitHub 仓库，所以必须真的打进去。
+    #
+    # 文档中英各一份：商店是全球分发的，英文用户拿到 zip 后要能看到英文的隐私声明与使用说明。
+    # 文件名用 ASCII（-EN 后缀）而不是 "隐私声明(EN).txt"，避免跨平台解压时的编码问题。
     docs = [("使用说明.txt", "使用说明.txt"),
             ("隐私声明.txt", "PRIVACY.md"),
-            ("第三方许可.txt", "LICENSE-THIRD-PARTY.txt")]
+            ("第三方许可.txt", "LICENSE-THIRD-PARTY.txt"),
+            ("Usage-EN.txt", "USAGE.en.txt"),
+            ("Privacy-EN.txt", "PRIVACY.en.md")]
     for arcname, srcname in docs:
         sp = os.path.join(BASE, srcname)
         if os.path.isfile(sp):
