@@ -241,7 +241,7 @@ LICENSE-THIRD-PARTY.txt    third-party licences and attribution shipped with the
 site/                      landing page (plain static HTML/CSS/JS, no build step, no CDN dependencies)
 site/privacy.html          privacy policy page (the URL required for Store submission; same source as PRIVACY.md)
 site/privacy.en.html       English privacy policy page (same source as PRIVACY.en.md)
-site/tools/make_assets.py  landing-page image generator (derives assets/ from preview/)
+site/tools/make_assets.py  landing-page image generator (icons from icon.png, screenshots from preview/)
 fonts/                     MiSans shipped with the app (falls back to a system font if missing)
 preview/                   preview image output
 ```

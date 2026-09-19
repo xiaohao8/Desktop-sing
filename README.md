@@ -198,7 +198,7 @@ LICENSE-THIRD-PARTY.txt    随包分发的第三方许可与归属声明
 site/                      官网落地页（纯静态，无构建、无 CDN 依赖）
 site/privacy.html          隐私政策页（商店提审必填 URL，与 PRIVACY.md 同源）
 site/privacy.en.html       隐私政策页英文版（与 PRIVACY.en.md 同源）
-site/tools/make_assets.py  官网图片资源生成器（从 preview/ 派生 assets/）
+site/tools/make_assets.py  官网图片资源生成器（图标取自根目录 icon.png，截图从 preview/ 派生）
 fonts/                     随程序分发的 MiSans（缺失时回落系统字体）
 preview/                   预览图输出目录
 ```

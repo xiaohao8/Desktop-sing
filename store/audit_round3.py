@@ -967,6 +967,33 @@ if _msixes and _local_dn:
     except Exception as _ex2:
         check("P5.20d 能读出 out/ 包内的 DisplayName", False, repr(_ex2))
 
+# P5.20e 官网品牌名必须与产品名（＝商店预留名）一致。
+# 「程序与商店叫 A、官网叫 B」会让用户以为是两个产品；改名时最容易漏掉的就是官网 ——
+# 图标那次就是这么漏的（主程序与 MSIX 换了新品牌图，官网还在自己重画旧图标）。
+# 同一个「产品名」在三处出现：顶栏品牌、页脚品牌、<title>；一页里所有品牌标记必须一致。
+for _rel in ("site/index.html", "site/privacy.html", "site/privacy.en.html"):
+    _pp = os.path.join(ROOT, *_rel.split("/"))
+    if not os.path.isfile(_pp):
+        check("P5.20e %s 存在" % _rel, False, "缺文件")
+        continue
+    _html = open(_pp, encoding="utf-8").read()
+    _brands = [b.strip() for b in re.findall(
+        r'<a class="brand"[^>]*>\s*<img[^>]*>\s*<span>([^<]*)</span>', _html)]
+    _t = re.search(r"<title>([^<]*)</title>", _html)
+    _title = (_t.group(1) if _t else "").strip()
+    _bad = [b for b in _brands if b != _local_dn]
+    _ok = bool(_brands) and not _bad and (_local_dn in _title)
+    _why = []
+    if not _brands:
+        _why.append("读不到品牌标记")
+    if _bad:
+        _why.append("品牌名=%r（应为 %r）" % (_bad[0], _local_dn))
+    if _local_dn not in _title:
+        _why.append("<title> 里没有产品名：%r" % _title)
+    check("P5.20e %s 品牌名与产品名一致" % _rel, _ok,
+          "；".join(_why) if _why else "%d 处品牌标记 + <title> 均为 %r"
+          % (len(_brands), _local_dn))
+
 # ---------------------------------------------------------------- 汇总
 head("汇总")
 print("  FAIL: %d   WARN: %d" % (len(FAILS), len(WARNS)))

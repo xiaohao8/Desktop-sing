@@ -86,6 +86,17 @@ h3 { font-size: clamp(19px, 2vw, 24px); letter-spacing: -.012em; line-height: 1.
 .small { font-size: 14px; color: var(--d-dim2); }
 .sec--light .small { color: var(--l-dim); }
 
+/* 隐私政策里的说明表格：窄屏不许把整页撑出横向滚动条。
+   英文页列里有长文件名（t2s.tsv / 下载字体 / Downloaded from…），360px 视口下
+   表格最小宽度 434px，会把页面撑到 459px —— 页面本体横向滚动，正文右侧被切。
+   表格自身改成可横向滚动的块，溢出留在表内，页面宽度不受影响。 */
+.policy table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* ---------- 区块 ---------- */
 
 .sec { position: relative; padding: clamp(72px, 11vw, 148px) 0; }
@@ -108,8 +119,13 @@ h3 { font-size: clamp(19px, 2vw, 24px); letter-spacing: -.012em; line-height: 1.
 }
 .nav .wrap { display: flex; align-items: center; gap: 26px; height: 56px; }
 
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 16px; letter-spacing: -.01em; }
-.brand img { width: 26px; height: 26px; border-radius: 7px; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0;
+         font-weight: 600; font-size: 16px; letter-spacing: -.01em; }
+.brand img { width: 26px; height: 26px; border-radius: 7px; flex: 0 0 auto; }
+/* 产品名「桌面歌词|Desktop-sing」比原来的「桌面歌词」长了近一倍，窄屏（≤390px）
+   会被挤成两三行 —— 宁可省略号也不能换行：换行会把 56px 的导航栏撑高，
+   观感也垮。min-width:0 是让 flex 项能被压下去、省略号才生效的前提。 */
+.brand span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .nav-links { display: flex; gap: 26px; margin-left: auto; font-size: 14px; color: var(--d-dim); }
 .nav-links a { transition: color .2s; }
@@ -124,6 +140,13 @@ h3 { font-size: clamp(19px, 2vw, 24px); letter-spacing: -.012em; line-height: 1.
 .nav-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(125, 211, 252, .3); }
 
 @media (max-width: 720px) { .nav-links { display: none; } }
+/* 小屏（360/375 这类）上品牌 + 右侧按钮本就紧张，英文页按钮写着「Download」更宽：
+   收一收字号与间距，让完整产品名尽量不被省略号截掉。320px 才轮到省略号兜底。 */
+@media (max-width: 430px) {
+  .nav .wrap { gap: 14px; }
+  .brand { font-size: 14px; }
+  .nav-cta { padding: 7px 12px; }
+}
 
 /* ---------- 按钮 ---------- */
 

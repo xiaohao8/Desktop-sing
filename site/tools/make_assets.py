@@ -2,12 +2,18 @@
 """官网图片资源生成器：从项目 preview/ 与主程序派生 site/assets/ 下的图。
 
 为什么要有这个脚本而不是直接把 png 拷进去：
-  · App 图标要以高分辨率重画（主程序的 make_app_icon 只画了 64px，放大就糊）；
   · 设置面板预览是一张 548x1842 的长条，官网里得裁成合适的比例；
   · 一次性把命名规整好，以后改了 UI 重跑一次脚本即可刷新官网截图。
 
+**图标来源＝项目根的 `icon.png`**（与主程序 `make_app_icon()`、MSIX 的
+`make_store_assets.py` 用的是同一张品牌图）。早先这里是自己重画「渐变底+音符」，
+换了品牌图之后官网就一直是旧图标 —— 三处同源才不会各画各的。
+`icon.png` 缺失时才回退到程序绘制的旧画法。
+
 用法（在项目根目录）：
-    python site/tools/make_assets.py
+    python site/tools/make_assets.py                # 图标 + 截图
+    python site/tools/make_assets.py --only=icons    # 只刷图标（改图标时用）
+    python site/tools/make_assets.py --only=shots    # 只刷截图
 """
 import os
 import shutil
@@ -20,6 +26,16 @@ SITE = os.path.dirname(HERE)                               # site
 ROOT = os.path.dirname(SITE)                               # 项目根
 OUT = os.path.join(SITE, "assets")
 PREVIEW = os.path.join(ROOT, "preview")
+ICON_SRC = os.path.join(ROOT, "icon.png")                  # 品牌图（三处图标同源）
+
+_ONLY = ""
+for _a in sys.argv[1:]:
+    if _a.startswith("--only="):
+        _ONLY = _a.split("=", 1)[1].strip()
+_do_icons = _ONLY in ("", "icons", "all")
+_do_shots = _ONLY in ("", "shots", "all")
+if not (_do_icons or _do_shots):
+    raise SystemExit("--only= 只认 icons / shots / all")
 
 sys.path.insert(0, ROOT)
 
@@ -70,8 +86,8 @@ def draw_note(p: QPainter, size: float, col: QColor, k: float = 0.74):
     p.restore()
 
 
-def app_icon(size: int) -> QPixmap:
-    """高分辨率重画应用图标：渐变圆角方块 + 深色音符（与主程序同设计）。"""
+def _app_icon_drawn(size: int) -> QPixmap:
+    """回退画法（仅当根目录 icon.png 缺失时才会走到）：渐变圆角方块 + 深色音符。"""
     pm = QPixmap(size, size)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
@@ -96,6 +112,21 @@ def app_icon(size: int) -> QPixmap:
     return pm
 
 
+def app_icon(size: int) -> QPixmap:
+    """品牌图标：把项目根 icon.png 等比缩放到 size×size。
+
+    主程序 `make_app_icon()` 与 MSIX 的 `make_store_assets.py` 都吃这张图，
+    官网必须同源，否则又会出现「程序里是新图标、网页上是旧图标」。
+    源图自带透明外边距与圆角，直接缩放即可，不要再叠圆角/底色。
+    """
+    src = QImage(ICON_SRC)
+    if src.isNull():
+        print("  [警告] 读不到 %s，回退到程序绘制的旧图标" % ICON_SRC)
+        return _app_icon_drawn(size)
+    return QPixmap.fromImage(
+        src.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+
 def crop(name: str, x: int, y: int, w: int, h: int) -> QImage:
     return QImage(os.path.join(PREVIEW, name)).copy(x, y, w, h)
 
@@ -106,11 +137,21 @@ def save(img, name: str):
     print("  %-26s %d x %d" % (name, img.width(), img.height()))
 
 
-print("图标：")
-for s in (512, 256, 180, 32):
-    app_icon(s).save(os.path.join(OUT, "icon-%d.png" % s))
-    print("  icon-%d.png" % s)
-app_icon(256).save(os.path.join(OUT, "icon.ico"), "ICO")
+if _do_icons:
+    print("图标（源：%s）：" % os.path.relpath(ICON_SRC, ROOT))
+    for s in (512, 256, 180, 32):
+        app_icon(s).save(os.path.join(OUT, "icon-%d.png" % s))
+        print("  icon-%d.png" % s)
+    app_icon(256).save(os.path.join(OUT, "icon.ico"), "ICO")
+    print("  icon.ico")
+    # 站点图标（favicon / 苹果触屏图标直接复用上面两个尺寸，别各画一套）
+    shutil.copy2(os.path.join(OUT, "icon-32.png"), os.path.join(OUT, "favicon-32.png"))
+    shutil.copy2(os.path.join(OUT, "icon-180.png"), os.path.join(OUT, "apple-touch-icon.png"))
+    print("  favicon-32.png / apple-touch-icon.png")
+
+if not _do_shots:
+    print("\n完成 →", OUT)
+    raise SystemExit(0)
 
 print("截图：")
 # 主视觉：玻璃胶囊样式（深色桌面底，最像 macOS 暗色桌面）
@@ -136,7 +177,4 @@ for key, out in (("particle", "saver-particle.png"), ("minimal", "saver-minimal.
                  ("bars", "saver-bars.png"), ("orbits", "saver-orbits.png")):
     save(QImage(os.path.join(PREVIEW, "saver_%s.png" % key)), out)
 
-# 站点图标（favicon 直接复用苹果触屏尺寸）
-shutil.copy2(os.path.join(OUT, "icon-32.png"), os.path.join(OUT, "favicon-32.png"))
-shutil.copy2(os.path.join(OUT, "icon-180.png"), os.path.join(OUT, "apple-touch-icon.png"))
 print("\n完成 →", OUT)
