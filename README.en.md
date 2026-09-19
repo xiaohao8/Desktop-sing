@@ -11,6 +11,21 @@ scheme is derived from the album art automatically.
 > English files in this repository (`README.en.md`, `USAGE.en.txt`, `PRIVACY.en.md`, `NOTICE.en.md`)
 > document the app for English-speaking users, but the UI strings themselves are not translated yet.
 
+## Download
+
+| Channel | File | Notes |
+|---|---|---|
+| **[GitHub Releases](https://github.com/xiaohao8/Desktop-sing/releases/latest)** | `Desktop-sing-v<version>-setup.exe` | **Recommended** — installer wizard, creates shortcuts, optional launch-at-login, clean uninstall from Control Panel |
+| Same page | `Desktop-sing-v<version>-portable.zip` | Portable — unzip and run, writes nothing to the registry, handy on a USB stick |
+| Chinese mirror (Lanzou) | — | Use it if GitHub is slow from your network; the link comes from the built-in update manifest and is also offered in the in-app "Check for updates" dialog |
+
+- **Verify your download:** `SHA256SUMS.txt` on the same page lists the SHA256 of every release
+  artifact. Note that the file names on the Releases page are **ASCII**; the mapping to the
+  Chinese names used on the mirror channel is written at the top of `SHA256SUMS.txt`.
+  Check with `certutil -hashfile <file> SHA256` (see "Releases and security" below).
+- **No update URL to configure:** the app ships with a built-in update source (GitHub Releases
+  first, automatic fallback to a domestic mirror), so it works out of the box.
+
 ## Features
 
 - **Follows playback automatically** — reads the current track (title / artist / album / artwork /

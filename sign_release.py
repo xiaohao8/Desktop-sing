@@ -31,6 +31,14 @@ SUMS = os.path.join(RELEASE, "SHA256SUMS.txt")
 
 PATTERNS = ("*.exe", "*.zip")
 
+# 本地文件名 → GitHub Release 上的 asset 名。{v} 会替换成 APP_VERSION。
+# 为什么要别名：GitHub 服务端会把非 ASCII 的 asset 名剥成空壳，
+# 所以发布页上是 ASCII 名，而本地/网盘渠道用的是中文名。
+_ASSET_ALIASES = (
+    ("桌面歌词-v{v}-安装版.exe", "Desktop-sing-v{v}-setup.exe"),
+    ("桌面歌词-v{v}-免安装极速版.zip", "Desktop-sing-v{v}-portable.zip"),
+)
+
 # 只有这些扩展名存在 Authenticode 签名概念
 _SIGNED_EXTS = (".exe", ".dll", ".msi", ".sys")
 
@@ -62,6 +70,18 @@ def sha256(path, block=1 << 20):
         for chunk in iter(lambda: f.read(block), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _version():
+    """从主程序读 APP_VERSION —— 只用于校验清单的表头注释，读不到就写 ?。"""
+    try:
+        with open(os.path.join(BASE, "lyrics_overlay.py"), encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("APP_VERSION"):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return "?"
 
 
 # ------------------------------------------------- Authenticode 签名状态
@@ -195,6 +215,7 @@ def sign_files(files):
 # ------------------------------------------------------------------ 校验
 def check_files(files, write_sums=True):
     rows, signed, unsigned, broken = [], 0, 0, 0
+    rel_abs = os.path.abspath(RELEASE)
     for f in files:
         if not os.path.isfile(f):
             continue
@@ -210,20 +231,48 @@ def check_files(files, write_sums=True):
                 broken += 1
         else:
             code, text = None, "—（压缩包，只看校验值）"
-        rows.append((os.path.basename(f), os.path.getsize(f), sha256(f), code, text))
+        # 是否就在 dist/release/（= 真正的发布物）。
+        # 不在的不写进校验清单：onedir 的 Desktop-sing.exe 在 dist\Desktop-sing-v<v>\
+        # 里，只写 basename 会得到一行「用户永远找不到对应文件」的清单项。
+        in_rel = os.path.dirname(os.path.abspath(f)) == rel_abs
+        rows.append((os.path.basename(f), os.path.getsize(f), sha256(f), code, text, in_rel))
     width = max(dw(r[0]) for r in rows) if rows else 10
     print(align("文件", width) + "  " +
           align("SHA256（前 32 位）", 34) + "签名状态")
     print("-" * (width + 60))
-    for name, size, digest, code, text in rows:
+    for name, size, digest, code, text, _pub in rows:
         print(align(name, width) + "  " + align(digest[:32], 34) + text)
-    if write_sums and rows:
+    pub_rows = [r for r in rows if r[5]]
+    if write_sums and pub_rows:
         os.makedirs(RELEASE, exist_ok=True)
         with open(SUMS, "w", encoding="utf-8") as fp:
-            for name, _size, digest, _c, _t in rows:
+            # '#' 开头是注释行，`sha256sum -c` 会忽略，不影响任何解析。
+            # 表头把「下载到的 asset 名 ↔ 本地文件名」写在**文件自己里面**：
+            # 这个文件是单独下载的，指路到别处（README/发布页）用户很可能看不到。
+            ver = _version()
+            names = [r[0] for r in pub_rows]
+            lines = ["# 桌面歌词 Desktop-sing v%s 发布物 SHA256 校验值" % ver,
+                     "# 核对方式：certutil -hashfile <文件> SHA256"]
+            alias = [(t.format(v=ver), a.format(v=ver)) for t, a in _ASSET_ALIASES
+                     if t.format(v=ver) in names]
+            if alias:
+                lines.append("# GitHub Releases 上的 asset 名是 ASCII"
+                             "（非 ASCII 会被服务端剥成空壳），对应关系：")
+                for local, asset in alias:
+                    lines.append("#   %-34s ← %s" % (asset, local))
+            if "桌面歌词-v%s-安装版.zip" % ver in names:
+                lines.append("# 桌面歌词-v%s-安装版.zip 是上面两个文件的合集"
+                             "（仅网盘渠道提供）。" % ver)
+            fp.write("\n".join(lines) + "\n")
+            for name, _size, digest, _c, _t, _pub in pub_rows:
                 fp.write("%s  %s\n" % (digest, name))
-        print("\n已写出校验值清单：%s" % SUMS)
+        print("\n已写出校验值清单：%s（%d 项，仅 dist/release/ 内的发布物）"
+              % (SUMS, len(pub_rows)))
         print("核对命令：certutil -hashfile <文件> SHA256")
+    skipped = [r[0] for r in rows if not r[5]]
+    if skipped:
+        print("注：%s 不在 dist/release/ 内，未写入清单（它已含在免安装 zip 里）。"
+              % "、".join(skipped))
     other = len(rows) - signed - unsigned - broken   # 压缩包等不适用签名的文件
     print("\n签名有效 %d · 未签名 %d · 不适用签名 %d · 签名异常 %d"
           % (signed, unsigned, other, broken))

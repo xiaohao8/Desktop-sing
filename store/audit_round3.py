@@ -765,6 +765,59 @@ for _f in ("store/README-STORE.md", "store/build_store.py"):
             _stale.append("%s 里的「%s」" % (_f, _c))
 check("P5.17i 提审材料不再声称「没有现成截图」", not _stale, "; ".join(_stale))
 
+# ---------------------------------------------------------------- P5.18 发布物料自洽性
+head("P5.18 发布物料（下载指引 + 校验清单自洽）")
+
+_sums = os.path.join(ROOT, "dist", "release", "SHA256SUMS.txt")
+_rel_dir = os.path.join(ROOT, "dist", "release")
+_src_sr = open(os.path.join(ROOT, "sign_release.py"), encoding="utf-8").read()
+
+# 已发布的校验清单里，每一行引用的文件都必须真实存在于 dist/release/。
+# 踩过：sign_release 把 onedir 的 dist\Desktop-sing-v<v>\Desktop-sing.exe 也写进清单，
+# 只用 basename → 多出一行「用户永远找不到对应文件」的清单项，而脚本自己毫无察觉。
+if os.path.isfile(_sums):
+    _missing = []
+    for _line in open(_sums, encoding="utf-8"):
+        _line = _line.strip()
+        if not _line or _line.startswith("#"):
+            continue                      # '#' 是说明行，sha256sum -c 会忽略
+        _parts = _line.split(None, 1)
+        if len(_parts) != 2:
+            _missing.append("格式不对: %s" % _line[:40])
+            continue
+        if not os.path.isfile(os.path.join(_rel_dir, _parts[1].strip())):
+            _missing.append(_parts[1].strip())
+    check("P5.18a 已发布的 SHA256SUMS 每行都指向真实存在的发布物", not _missing,
+          "清单里有找不到的文件: %s" % _missing if _missing else
+          "共 %d 项" % sum(1 for l in open(_sums, encoding="utf-8")
+                           if l.strip() and not l.startswith("#")))
+else:
+    warn("P5.18a 还没生成 SHA256SUMS.txt",
+         "跑 sign_release.py（发版时必须刷新并随 Release 发布）")
+
+# 生成逻辑本身要保证「只收录 dist/release/ 内的文件」，否则下次还会复发
+check("P5.18b 校验清单只收录 dist/release/ 内的发布物",
+      "in_rel" in _src_sr and "pub_rows" in _src_sr and "if r[5]" in _src_sr,
+      "应排除 onedir 里的 Desktop-sing.exe（已含在免安装 zip 内）")
+
+# 发布页的文件名是 ASCII（GitHub 会剥掉非 ASCII asset 名），
+# 清单里必须给出「asset 名 ← 本地中文名」的映射，否则用户对不上号
+check("P5.18c 校验清单带 ASCII asset 名映射", "_ASSET_ALIASES" in _src_sr and
+      "setup.exe" in _src_sr and "portable.zip" in _src_sr,
+      "用户下载到的是 ASCII 名，清单里却是中文名，不写映射无法对照")
+if os.path.isfile(_sums):
+    _head = open(_sums, encoding="utf-8").read().splitlines()[:8]
+    _has_map = any("←" in l and ".exe" in l for l in _head)
+    check("P5.18d 清单表头真的写出了映射行", _has_map,
+          "" if _has_map else "表头没有「asset 名 ← 本地名」这一行")
+
+# 仓库首页必须让人知道去哪下载（README.md 是仓库门面）
+for _f, _name in (("README.md", "中文"), ("README.en.md", "英文")):
+    _txt = open(os.path.join(ROOT, _f), encoding="utf-8").read()
+    _ok = ("releases/latest" in _txt) and ("setup.exe" in _txt)
+    check("P5.18e %s README 有下载指引（指向 Releases + 说明 asset 名）" % _name, _ok,
+          "" if _ok else "仓库首页没有下载入口，访客找不到安装包")
+
 # ---------------------------------------------------------------- 汇总
 head("汇总")
 print("  FAIL: %d   WARN: %d" % (len(FAILS), len(WARNS)))
