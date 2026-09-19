@@ -21,10 +21,30 @@
   Gitee 资源字段走 `browser_download_url` / `download_url` 兜底（不用裸 `url`，那是 API 地址）。
 - **双仓库**：GitHub 是当前唯一能 push 的远端（本机只存了 GitHub 凭据）；改代码后 Gitee 需用户自行同步，
   或让用户提供 Gitee token/SSH 后由本地推送。
-- **发版必改（6 处）**：`APP_VERSION` → `lyrics_overlay.py` 里 `LANZOU_MIRRORS` 加新版蓝奏云链接（不加则弹窗只剩 GitHub 渠道）→
+- **发版必改（7 处）**：`APP_VERSION` → `lyrics_overlay.py` 里 `LANZOU_MIRRORS` 加新版蓝奏云链接（不加则弹窗只剩 GitHub 渠道）→
   仓库根 `update.json`（version + 两个蓝奏云链接；jsDelivr 有 CDN 缓存）→ 官网三张卡 href → 官网版本号 →
-  GitHub Release（含 asset 重传）→ 跑 `sign_release.py` 刷新 `SHA256SUMS.txt` 并随 Release 一并发布。
+  GitHub Release（**asset 必须重传**）→ 跑 `sign_release.py` 刷新 `SHA256SUMS.txt` 并随 Release 一并发布 →
+  **新 Release 的说明里要提一句 `SHA256SUMS.txt`**（不然没人知道有这个校验文件）。
 - **GitHub release asset 名必须用 ASCII**：中文会被服务端剥成空壳，且 PATCH 改中文名无效（返回 200 但不生效）。
+  当前三个 asset：`Desktop-sing-v<v>-setup.exe` / `Desktop-sing-v<v>-portable.zip` / `SHA256SUMS.txt`。
+- **`SHA256SUMS.txt` 的规则（2026-09-19 修过 bug）**：
+  ① 只收录**确实位于 `dist/release/`** 的文件 —— `sign_release.py` 会把 onedir 里的
+  `dist\Desktop-sing-v<v>\Desktop-sing.exe` 也算进来，只取 basename 就会写出一行
+  「用户永远找不到对应文件」的清单项（已用 `in_rel` 判定排除，但仍会在报告里打印其签名状态）；
+  ② 表头（`#` 开头，`sha256sum -c` 会忽略）必须写出**ASCII asset 名 ← 本地中文名**的映射：
+  发布页是 `Desktop-sing-v1.0.0-setup.exe`、本地/网盘是 `桌面歌词-v1.0.0-安装版.exe`，
+  不给映射用户对不上号。映射来源是 `_ASSET_ALIASES` 常量，随版本自动填；
+  ③ 重新生成是**确定性**的，内容不变就不会影响已上传文件的 digest。
+- **仓库首页要有下载入口**：中英 README 都有「下载 / Download」章节，指向
+  `releases/latest` 并写明两个 asset 名（版本号用 `<版本>` 占位，免得每版维护）。
+  审计 `P5.18e` 守着这条 —— 改版时曾整段丢失，访客找不到安装包。
+- **发布说明（release body）也是对外文档**：同样受「不该说的别说」约束，
+  且**改代码后要回头核对它是否过期**（踩过：说明里还在教用户手动填更新地址，
+  而程序早已内置更新源）。
+- ⚠️ **本机上传 Release asset 没有 `gh` CLI**，且 Git Credential Manager 在沙箱里起不来：
+  用 ctypes `CredReadW("git:https://github.com")` 读凭据 → 走 REST API
+  （`DELETE /releases/assets/<id>` 再 `POST <upload_url>?name=`）。
+  可复用脚本：`%TEMP%\_gh_upload.py`。
 
 ## 打包与产物
 - **一条龙命令**（Python 用 `.buildenv\Scripts\python.exe`，PyInstaller 6）：
