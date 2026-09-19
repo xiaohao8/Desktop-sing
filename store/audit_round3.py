@@ -163,7 +163,10 @@ check("P3.1 清单引用的每个资产都在 store/assets/ 里", not missing,
 
 all_assets = [f for f in os.listdir(assets_dir) if f.lower().endswith(".png")]
 check("P3.2 资产总数 ≥ 90（含多倍率与主题变体）", len(all_assets) >= 90,
-      "实际 %d" % len(all_assets))
+      "实际 %d" % len(all_assets) if len(all_assets) >= 90 else
+      "实际只有 %d 个：多倍率与主题变体是**生成**出来的，不入库（仓库只跟踪 23 个基础图），"
+      "所以在克隆出来的干净仓库里跑审计必然是这个结果 —— "
+      "先跑 `python store/make_store_assets.py` 生成 91 个资产再审计" % len(all_assets))
 
 # 商店 listing 图标 300x300 需要单独准备吗？（复用 300x300 的方形基础图）
 need_listing = ["StoreLogo.png"]  # 300x300 是商店 listing 图标推荐尺寸
@@ -817,6 +820,54 @@ for _f, _name in (("README.md", "中文"), ("README.en.md", "英文")):
     _ok = ("releases/latest" in _txt) and ("setup.exe" in _txt)
     check("P5.18e %s README 有下载指引（指向 Releases + 说明 asset 名）" % _name, _ok,
           "" if _ok else "仓库首页没有下载入口，访客找不到安装包")
+
+# ---------------------------------------------------------------- P5.19 站点部署副本
+# 商店表单里填的隐私政策 URL 指向**独立仓库**（xiaohao8/music → Netlify）而不是主仓库。
+# 于是"改了主仓库 site/ 却没同步过去"就会变成：商店里挂着一份过期的隐私政策。
+# 这里复用 sync_site.py 的一致性规则（归一化换行后逐字节比），避免两套标准打架。
+head("P5.19 站点独立仓库（Netlify 部署副本）一致性")
+
+_sync_py = os.path.join(ROOT, "sync_site.py")
+check("P5.19a 存在站点同步脚本 sync_site.py（文档承诺的同步方式）",
+      os.path.isfile(_sync_py),
+      "README 写了「跑 sync_site.py 同步」，脚本却不存在 = 承诺落空、改站必漂移")
+
+_site_pages = ("index.html", "privacy.html", "privacy.en.html")
+try:
+    import sync_site as _ss  # noqa: E402
+except Exception as _e:                                        # pragma: no cover
+    check("P5.19b 可导入 sync_site 复用其一致性规则", False, repr(_e))
+    _ss = None
+
+if _ss is not None:
+    _dst = _ss.DEFAULT_DST
+    if not os.path.isdir(_dst):
+        warn("P5.19b 站点部署仓库工作副本不在本机，跳过一致性校验", _dst)
+    else:
+        _s, _d, _todo, _same, _extra = _ss.collect(_ss.SRC_DIR, _dst)
+        check("P5.19b 部署副本与主仓库 site/ 归一化后逐字节一致",
+              not _todo,
+              ("有漂移: %s" % [t[0] for t in _todo]) if _todo
+              else "%d 个文件一致" % len(_same))
+        check("P5.19c 部署副本没有 site/ 之外的杂物",
+              not _extra, "多余文件: %s" % _extra)
+
+        _nt = os.path.join(_dst, "netlify.toml")
+        if os.path.isfile(_nt):
+            _ntt = open(_nt, encoding="utf-8").read()
+            _m = re.search(r'^\s*publish\s*=\s*"([^"]*)"', _ntt, re.M)
+            _pub_ok = bool(_m) and _m.group(1).strip() in (".", "./")
+            _no_cmd = not re.search(r'^\s*command\s*=', _ntt, re.M)
+            check("P5.19d netlify.toml 发布目录=仓库根、且没有构建命令",
+                  _pub_ok and _no_cmd,
+                  "纯静态站点：有构建命令或发布目录写错，Netlify 会部署出空站")
+        else:
+            check("P5.19d 部署副本里有 netlify.toml", False,
+                  "没有部署配置，Netlify 只能猜发布目录")
+
+        _miss = [p for p in _site_pages if not os.path.isfile(os.path.join(_dst, p))]
+        check("P5.19e 部署副本根目录有首页与中英文隐私政策三个页面",
+              not _miss, "缺: %s" % _miss if _miss else "、".join(_site_pages))
 
 # ---------------------------------------------------------------- 汇总
 head("汇总")

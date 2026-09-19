@@ -58,7 +58,22 @@
         BackgroundColor="#14171F"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png"
-        AppListEntry="default" />
+        AppListEntry="default">
+        <!-- 磁贴：Square71 小 / Square150 中 / Square310 大 / Wide310x150 宽。
+             中磁贴是商店发布的最低要求，其余在 Win10 开始菜单里用；
+             Win11 不显示磁贴，但声明了不会有害。
+             ShortName 显示在磁贴底部（全名太长会被截断）。 -->
+        <uap:DefaultTile ShortName="{{SHORT_NAME}}"
+                         Square71x71Logo="Assets\Square71x71Logo.png"
+                         Square310x310Logo="Assets\Square310x310Logo.png"
+                         Wide310x150Logo="Assets\Wide310x150Logo.png">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo" />
+            <uap:ShowOn Tile="wide310x150Logo" />
+            <uap:ShowOn Tile="square310x310Logo" />
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
+      </uap:VisualElements>
 
       <Extensions>
         <!-- 商店版的开机自启：MSIX 里写注册表 Run 项是私有视图、系统看不到，

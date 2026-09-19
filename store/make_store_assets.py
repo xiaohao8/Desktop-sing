@@ -4,14 +4,21 @@
 用 QImage + QPainter 离屏渲染，不弹窗、不需要显示器，也不依赖 PIL：
 跑任何 Qt 绘制前设 QT_QPA_PLATFORM=offscreen 即可（本项目惯例）。
 
-清单（MSIX VisualElements / DefaultTile 引用到的全部尺寸）：
-  列表与商店：StoreLogo 50 + scale-200(100)
-              Square44x44 44 + scale-200(88) + targetsize 16~256 一档
-  磁贴：      Square71x71(71) Square150x150(150)+scale-200(300)
-              Square310x310(310) Wide310x150(310x150)+scale-200(620x300)
+资产清单依据官方文档「Construct your Windows app's icon」：
+  https://learn.microsoft.com/windows/apps/design/style/iconography/app-icon-construction
 
-磁贴类带品牌底色（#14171F，与应用暗色主题一致）；
-列表/商店类保持透明底（图标本身带圆角方形轮廓，直接用）。
+  ① 商店列表（required）：StoreLogo 50 → scale-100/125/150/200/400
+  ② 应用列表（required）：Square44x44Logo 44 → scale-100/200/400
+     + targetsize 16~256 全套（Windows 用它画任务栏/右键菜单，避免加底板）
+     + altform-unplated 深浅主题变体（缺失时图标会被系统加底板，观感变差）
+  ③ 磁贴：Square71(SmallTile) / Square150(MedTile，Win11 发布最低要求)
+     / Wide310x150 / Square310x310(LargeTile)，各带 100/125/150/200/400
+  ④ 启动屏（可选，桌面桥应用不显示，但补齐防审核提问）：SplashScreen 620x300 → 各档
+
+两套画法（与应用的暗色品牌一致）：
+  - 磁贴类：带品牌底色 #14171F，图标留出安全边距（磁贴要被系统裁切）
+  - 列表/商店类：透明底，图标本身带圆角方形轮廓，直接用
+  - altform-unplated：透明底且不留边距（系统按原始像素贴，不加底板）
 """
 import os
 
@@ -27,22 +34,28 @@ OUT = os.path.join(BASE, "assets")          # 生成物落在 store/assets/，�
 BRAND_BG = QColor("#14171F")
 TRANSPARENT = QColor(0, 0, 0, 0)
 
-# (文件名, 宽, 高, 底色None=透明, 图标占比)
-_TILES = [
-    ("StoreLogo.png",              50,  50, None,          0.92),
-    ("StoreLogo.scale-200.png",   100, 100, None,          0.92),
-    ("Square44x44Logo.png",        44,  44, None,          0.92),
-    ("Square44x44Logo.scale-200.png", 88, 88, None,       0.92),
-    ("Square71x71Logo.png",        71,  71, BRAND_BG,      0.66),
-    ("Square150x150Logo.png",     150, 150, BRAND_BG,      0.62),
-    ("Square150x150Logo.scale-200.png", 300, 300, BRAND_BG, 0.62),
-    ("Square310x310Logo.png",     310, 310, BRAND_BG,      0.60),
-    ("Wide310x150Logo.png",       310, 150, BRAND_BG,      0.74),
-    ("Wide310x150Logo.scale-200.png", 620, 300, BRAND_BG,  0.74),
+# 官方缩放档位：100% 是基准，125/150/200/250/300/400 按显示 DPI 取用。
+# 文档建议至少 100/200/400；这里把 125/150 也备上，省得系统拉伸。
+_SCALES = (100, 125, 150, 200, 400)
+
+# (基准名, 基准宽, 基准高, 底色None=透明, 图标占比)
+_BASES = [
+    ("StoreLogo",             50,  50, None,      0.92),   # 商店列表（required）
+    ("Square44x44Logo",       44,  44, None,      0.92),   # 应用列表 / 任务栏（required）
+    ("Square71x71Logo",       71,  71, BRAND_BG,  0.66),   # 小磁贴
+    ("Square150x150Logo",    150, 150, BRAND_BG,  0.62),   # 中磁贴（Win11 发布最低要求）
+    ("Square310x310Logo",    310, 310, BRAND_BG,  0.60),   # 大磁贴（Win10）
+    ("Wide310x150Logo",      310, 150, BRAND_BG,  0.74),   # 宽磁贴（required）
+    ("SplashScreen",         620, 300, BRAND_BG,  0.42),   # 启动屏（可选，桌面桥不显示）
 ]
 
-# Square44 的 targetsize 一档（应用列表/任务栏在不同 DPI 下取用）
-_TARGETS = [16, 20, 24, 30, 36, 40, 48, 60, 64, 72, 80, 96, 256]
+# Square44 的 targetsize 一档：Windows 用精确像素尺寸画任务栏 / 右键菜单 / 搜索结果
+_TARGETS = [16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 256]
+
+
+def _scaled(base: int, scale: int) -> int:
+    """按缩放档位换算像素尺寸（125% 会有小数，向上取整避免糊）。"""
+    return (base * scale + 99) // 100
 
 
 def render(src: str, w: int, h: int, bg, ratio: float) -> QImage:
@@ -62,22 +75,40 @@ def render(src: str, w: int, h: int, bg, ratio: float) -> QImage:
     return canvas
 
 
-def generate(out_dir: str = OUT, src: str = ICON) -> list:
+def _plan(bases=None, scales=_SCALES, targets=None):
+    """算出要产出的 (文件名, 宽, 高, 底色, 占比) 全表。"""
+    bases = _BASES if bases is None else bases
+    targets = _TARGETS if targets is None else targets
+    out = []
+    for name, bw, bh, bg, ratio in bases:
+        for sc in scales:
+            fn = "%s.png" % name if sc == 100 else "%s.scale-%d.png" % (name, sc)
+            out.append((fn, _scaled(bw, sc), _scaled(bh, sc), bg, ratio))
+    # Square44 的精确像素变体（三套主题：默认 / 深色 / 浅色）
+    for t in targets:
+        out.append(("Square44x44Logo.targetsize-%d.png" % t, t, t, None, 0.92))
+    for t in targets:
+        out.append(("Square44x44Logo.targetsize-%d_altform-unplated.png" % t, t, t, None, 0.92))
+    for t in targets:
+        out.append(("Square44x44Logo.targetsize-%d_altform-lightunplated.png" % t, t, t, None, 0.92))
+    # AppList 别名（Windows 10 的 all-apps 列表读这一组）
+    for t in targets:
+        out.append(("AppList.targetsize-%d.png" % t, t, t, None, 0.92))
+    return out
+
+
+def generate(out_dir: str = OUT, src: str = ICON, plan=None) -> list:
     """生成全部资产，返回写入的文件列表。"""
     os.makedirs(out_dir, exist_ok=True)
     written = []
-    for name, w, h, bg, ratio in _TILES:
+    for name, w, h, bg, ratio in (plan or _plan()):
         path = os.path.join(out_dir, name)
         render(src, w, h, bg, ratio).save(path)
-        written.append(path)
-    for t in _TARGETS:
-        path = os.path.join(out_dir, "Square44x44Logo.targetsize-%d.png" % t)
-        render(src, t, t, None, 0.92).save(path)
         written.append(path)
     return written
 
 
-def verify(out_dir: str = OUT) -> bool:
+def verify(out_dir: str = OUT, plan=None) -> bool:
     """检查资产齐全且尺寸正确（构建前的门禁）。"""
     import struct
 
@@ -89,9 +120,7 @@ def verify(out_dir: str = OUT) -> bool:
         w, h = struct.unpack(">II", head[16:24])
         return w, h
 
-    need = {name: (w, h) for name, w, h, _b, _r in _TILES}
-    for t in _TARGETS:
-        need["Square44x44Logo.targetsize-%d.png" % t] = (t, t)
+    need = {name: (w, h) for name, w, h, _b, _r in (plan or _plan())}
     ok = True
     for name, size in sorted(need.items()):
         path = os.path.join(out_dir, name)
