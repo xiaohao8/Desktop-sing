@@ -15,6 +15,18 @@
 - **蓝奏云**：国内主分发 + **程序内置更新下载镜像**（安装版 / 免安装极速版两个 zip），**链接每版都变**，见当日工作日志。
 - **官网**：`site/index.html` 下载区 3 张卡（蓝奏云安装版 / 蓝奏云免安装版 / GitHub Releases）+ `dl-meta` 版本号；
   `site/assets/style.css` 的 `.dl-grid` 为 3 列（960px→2 列、720px→1 列）。
+- **官网品牌名＝`桌面歌词|Desktop-sing`**（与商店预留名逐字一致，用户选定）：
+  三页顶栏/页脚 `<span>`、`<title>`、`og:title` 全用这一个串。由 `audit_round3.py` 的
+  `P5.20e`（3 项）守住 —— 改产品名时最容易漏的就是官网（图标那次就这么漏的）。
+  **窄屏约定**：这串比「桌面歌词」长近一倍，`.brand` 必须 `min-width:0` + 文字
+  `nowrap+ellipsis`（折行会把 56px 导航栏撑高），`≤430px` 收字号/间距；
+  隐私页表格要 `.policy table{display:block;overflow-x:auto}`（否则 360px 整页横向溢出）。
+- **图标只认一个源＝根目录 `icon.png`**（深色底＋青色歌词条＋`Desktop-sing` 字样）：
+  主程序 `make_app_icon()`、MSIX 的 `store/make_store_assets.py`、官网的
+  `site/tools/make_assets.py` **三处都从它派生**。⚠️ 官网那份原先**自己重画**了一套旧设计
+  （浅蓝紫渐变＋黑音符），换品牌图后官网就成了唯一没跟上的 —— 2026-09-19 已改为同源。
+  改图标只需 `python site/tools/make_assets.py --only=icons`（`--only=shots` 只刷截图，
+  不带参数＝两者都刷）；**改 UI 后仍要跑一次全量**刷新截图。
 - **更新机制（2026-09-18 内置）**：更新地址留空 = 内置源。多源探测顺序＝GitHub Releases API →
   **Gitee Releases API → Gitee raw `update.json` → jsDelivr `update.json`**，取版本号最高者，任一失败不影响其它源。
   下载弹窗默认「蓝奏云下载」主按钮 + GitHub 备选。自建清单可直接带 `lanzou_setup`/`lanzou_portable` 键。
@@ -155,7 +167,7 @@
   ⚠️ **半角 `|`(U+007C) 与全角 `｜`(U+FF5C) 不同字符**；清单 DisplayName 对不上预留名会被拒
   （*name found in the package is not one of your reserved app names*）。实测 `|` 能过 `makeappx`。
 - **上线自检**：`store\audit_round3.py`（强制 STORE_MODE=True 真实实例化浮层+设置面板走 refresh()，
-  核对资产完整性、隐私政策与代码行为一致性）。**2026-09-19 共 119 项**；通过判据＝
+  核对资产完整性、隐私政策与代码行为一致性）。**2026-09-19 共 122 项**；通过判据＝
   **FAIL 0，且上传前 WARN 也要 0**（WARN 通常就是「还没填 Partner Center 信息」那两条）。
   原有 P5 组：商标禁用、本地数据控制权（缓存上限/清理入口）、功能数量口径一致、
   官网截图新鲜度、认证说明主路径。**P5.18 发布物料自洽 6 项**（校验清单每行指向真实文件、
@@ -165,7 +177,9 @@
   **P5.20 提审前置 5 项**：`P5.20a` 包标识是否已填、`P5.20b` 站点地址是否已配 → 缺了给 WARN；
   **`P5.20c` 直接读 `out/` 最新 .msix 的清单与本地标识比"档位"** —— 填了标识却没重出包就 FAIL
   （守住「上传占位包」这个最致命的低级错误）；**`P5.20d` 两项盯应用名** —— 清单 DisplayName
-  必须与本地配置一致，**改了名没重出包也 FAIL**（守住「包名对不上预留名」）。
+  必须与本地配置一致，**改了名没重出包也 FAIL**（守住「包名对不上预留名」）；
+  **`P5.20e` 三项盯官网品牌名** —— 三页的品牌标记必须 == 产品名、`<title>` 须含产品名
+  （`<title>` 判「包含」不判「开头」：隐私页是「隐私政策 · 产品名」）。
   **复用产物快招**：`build_store.py` **不带 `--fresh`** 会复用 `dist/Desktop-sing-v<v>` 只重铺
   layout + makeappx（秒级），改 UI/名字后想快速重出包验证就用它，别每次都重跑 PyInstaller。
   功能数量检查**从源码常量直接计数**
