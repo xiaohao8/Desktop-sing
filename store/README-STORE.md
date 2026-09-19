@@ -13,6 +13,7 @@ store/
 ├── make_store_assets.py        生成全部商店图标资产（91 个，已跑通）
 ├── render_shots.py             离屏生成商店截图素材（3 张 1600×900）
 ├── build_store.py              一键打包 / 导出提审材料
+├── make_localtest.py           ★ 自签一份已签名副本，本机装上看商店版真实效果（§3）
 ├── audit_round3.py             商店模式离线自检（政策合规 + 运行时行为 + 材料完整性）
 ├── assets/                     生成的图标资产（提交仓库，免得每次重渲染）
 ├── identity.local.json         ★ 包标识 + 发布者显示名 + PFN + 应用名 + 隐私政策站点地址
@@ -134,35 +135,78 @@ store/
 > `makeappx pack` **默认就做完整语义校验**（清单 schema + 文件存在性），
 > 不要加 `/nv`。没有 `makeappx validate` 这个子命令。
 
-## 3. 本地安装测试（自签名）
+## 3. 本地安装测试（自签名）——「想看商店版真实效果」的正规做法
 
-未签名的 MSIX 装不上，本地测试需要自签证书：
+未签名的 MSIX 装不上（提审包必须保持未签名，微软拿到后自己重签），
+可是商店版和普通版**界面不一样**（更新区、保活开关、自启入口都被裁掉了），
+提审前应该真机看一遍。做法：把包**复制一份**自签，装那份副本。
 
-```powershell
-# ① 建自签证书（Subject 必须与清单 Publisher 逐字符一致！）
-$cert = New-SelfSignedCertificate -Type Custom -Subject "CN=1A2B3C4D-5E6F-..." `
-  -KeyUsage DigitalSignature -FriendlyName "Desktop-sing 本地测试" `
-  -CertStoreLocation "Cert:\CurrentUser\My" -TextExtension @(
-    "2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+### 3.1 一条命令搞定（推荐）
 
-# ② 用它签 MSIX（证书在「用户级」存储时不要加 /sm，那是机器级）
-signtool sign /fd SHA256 /sha1 <证书指纹> store\out\Desktop-sing-1.0.0.0-x64.msix
-
-# ③ 信任该证书（仅本机测试用，需管理员）
-Export-Certificate -Cert $cert -FilePath test.cer
-Import-Certificate -FilePath test.cer -CertStoreLocation "Cert:\LocalMachine\TrustedPeople"
-
-# ④ 安装
-Add-AppxPackage -Path store\out\Desktop-sing-1.0.0.0-x64.msix
+```bash
+.buildenv\Scripts\python.exe store\make_localtest.py
 ```
 
-装上后重点验证：
+它会自动：读 `identity.local.json` 里的真实 Publisher → 建/复用自签测试证书
+（**Subject 必须逐字符等于清单的 `Publisher`**，这样 Package Family Name 完全一致，
+装起来才会真的进 **STORE_MODE**）→ 把 `store/out/` 里最新的包复制成副本 → 用 signtool 签名。
+产物在 `store/out/dev/localtest/`：
+
+```
+Desktop-sing-<版本>-x64-localtest.msix   已签名，可装
+local-test.cer                           公钥（管理员导入本机信任用）
+```
+
+> ⚠️ 脚本**只签副本，绝不动 `store/out/` 根目录那份**：那个既是上传物，
+> 也被自检 `P5.20c4` 盯着（根目录只许有一个 `.msix`）。
+
+### 3.2 信任证书 + 安装（需要一次管理员）
+
+```powershell
+certutil -addstore -f TrustedPeople "<...>\local-test.cer"
+certutil -addstore -f Root          "<...>\local-test.cer"
+Add-AppxPackage -Path "<...>\Desktop-sing-<版本>-x64-localtest.msix"
+```
+
+> ⚠️ **必须用机器级证书库**。用户级（`certutil -addstore -user …`、
+> `Cert:\CurrentUser\TrustedPeople` / `CurrentUser\Root`）
+> **完全无效** —— AppX 部署服务以 SYSTEM 运行，根本不看用户级存储，
+> 照样报 `0x800B0109 已处理证书链，但是在不受信任提供程序信任的根证书中终止`。
+> 2026-09-19 实测踩过这条路，**别再试**。
+> 折衷方案也有：`AllowAllTrustedApps=1`（旁加载已开）只需信任证书即可，
+> 不必开「开发者模式」——改动更小。
+
+### 3.3 装完之后怎么才能看到歌词
+
+**程序靠 SMTC 读当前播放的歌**，没东西在播就是干干净净一个托盘图标。
+先随便用 Edge / Chrome 放个视频（YouTube、B 站都行），或者开网易云 / QQ音乐的
+Windows 客户端播一首 —— 歌词条才会出现。
+
+重点验证：
 - 托盘菜单「开机自启（系统设置）」能否跳转 `ms-settings:startupapps`；
 - 设置面板：系统卡片是「打开启动设置」按钮、更新区是商店提示（无更新地址输入框）、
   **无「进程保活」开关**；
 - 「检查更新…」菜单提示走商店；
 - 「关于」窗口里没有「进程保活」字样；
 - 歌词、屏保、快捷键等主功能与普通版一致。
+
+### 3.4 ⚠️ 测完一定要卸载
+
+```powershell
+Get-AppxPackage -Name A135C2AE.Desktop-sing | Remove-AppxPackage
+```
+
+**这个副本和商店正式版共用同一个 PFN**，留着装可能影响将来从商店安装正式版，
+测试证书也一并删掉（`certutil -delstore TrustedPeople <指纹>`）。
+
+### 3.5 只想立刻看效果、懒得折腾安装
+
+```bash
+dist\Desktop-sing-v<版本>\Desktop-sing.exe
+```
+
+同一版本、同一份代码的桌面版。**差别**：它会带商店版没有的「检查更新 / 进程保活」等开关，
+但歌词、逐字动画、5 种样式、4 种屏保、翻译音译这些视觉与功能是一模一样的。
 
 ## 4. WACK 认证（建议提审前跑）
 

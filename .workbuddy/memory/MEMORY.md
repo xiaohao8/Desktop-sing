@@ -184,6 +184,11 @@
   `PFN = <IdentityName>_<hash13>`，`hash13 = base32_13( sha256(publisher.encode("utf-16-le"))[:8] << 1 )`，
   字母表 `0123456789abcdefghjkmnpqrstvwxyz`。**`<< 1` 不能省**（64→65 bit，末位补 0），
   少了最后一字符必错（踩过：算 `…hshh`、实际 `…hshg`）。抄错一个字符 → 哈希完全不同。
+- **本地实测（想看商店版真实效果）：`store/make_localtest.py`** —— 一条命令自签一份副本
+  给你装；证书 Subject = 清单 Publisher，PFN 与正式包相同故真进 STORE_MODE。
+  ⚠️ **证书必须进机器级证书库（需管理员），用户级无效**（实测 `0x800B0109`）；
+  ⚠️ **测完必须卸载**（与正式版同 PFN）。详见 `MEMORY-STORE.md`。
+  ⚠️ 看不到歌词的头号原因不是 bug —— 要靠 SMTC，**没播放器在播就只有托盘图标**。
 - **上线自检**：`store\audit_round3.py`（强制 STORE_MODE=True 真实实例化浮层+设置面板走 refresh()，
   核对资产完整性、隐私政策与代码行为一致性）。**2026-09-19 共 129 项**；通过判据＝
   **FAIL 0，且上传前 WARN 也要 0**（当前已是 0/0）。

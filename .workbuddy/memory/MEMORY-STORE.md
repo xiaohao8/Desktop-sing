@@ -200,5 +200,32 @@
   ⚠️ 写这类检查**别拿「最新包」当基准**：判「最新」靠 mtime，往目录里扔一个测试包就会
   翻转判据（实测把真正的交付包报成多余的，正好反了）。**反向验证**方法：
   往 `out/` 扔一个只含 `AppxManifest.xml` 的最小 zip 假包，跑一遍看是否 FAIL，删掉后复跑确认恢复。
+## 本地实测：想「看商店版真实效果」就签副本装（2026-09-19 建成）
+
+- **提审包必须未签名**（微软自己重签），所以**未签名 MSIX 一律装不上** —— 这是设计如此，
+  不是打包失败。本机若 `AppModelUnlock` 只有 `AllowAllTrustedApps=1`（旁加载开）、
+  没有 `AllowDevelopmentWithoutDevLicense`（开发者模式没开），连"未签名直装"都堵死。
+- **做法：`store/make_localtest.py`（一条命令）** —— 读真实 Publisher → 建/复用自签证书
+  （Subject 逐字符等于清单 `Publisher` → **PFN 与正式包完全相同 → 真的进 STORE_MODE**）
+  → 把 `out/` 最新包**复制成副本**再签名 → 落 `store/out/dev/localtest/`。
+  ⚠️ **只签副本，绝不动 `store/out/` 根目录那份**（既是要上传的，也被 `P5.20c4` 盯着）。
+- **★ 只认机器级证书库（实测确立）**：证书必须进 `Cert:\LocalMachine\TrustedPeople` / `Root`
+  （需管理员）。**用户级完全无效** —— 导进 `CurrentUser\TrustedPeople` 和 `CurrentUser\Root`
+  后（winreg 确认注册表里确实存在）`Add-AppxPackage` 照样报 `0x800B0109`。
+  原因是 AppX 部署服务以 SYSTEM 运行。**这条路不用再试第二次。**
+  旁加载已开的话不必再折腾「开发者模式」开关，信任证书即可。
+- **⚠️ 测完必须卸载**：副本与商店正式版**共用同一个 PFN**，留着装可能影响将来从商店装正式版。
+  `Get-AppxPackage -Name A135C2AE.Desktop-sing | Remove-AppxPackage`，测试证书一并删掉。
+- **★ 看不到歌词的头号原因不是 bug**：程序靠 **SMTC** 读当前播放的歌，
+  **没东西在播就只有一个托盘图标**。先开 Edge/Chrome 放个视频（YouTube/B 站都行）
+  或播放器客户端播一首，歌词条才会出现。回答「怎么预览/截图」类问题时要先讲这句。
+- 桌面 `C:\Users\35436\Desktop\Desktop-sing-localtest\` 有一份双击套件
+  （INSTALL.cmd / UNINSTALL.cmd / ps1 / README），适合不想敲命令时用。
+- **`openssl -subject` 输出的空格不能假设**：判断「现有证书 Subject 是否匹配」时，
+  写子串 `("= " + cn) in output` 会**永远不匹配**（实际是 `subject=CN=…`，`=` 两边没空格）
+  → 每次都重签。必须**去空格后整串相等**比较。
+- 懒人路径（不看商店版裁剪、只看功能视觉）：直接跑 `dist\Desktop-sing-v<版本>\Desktop-sing.exe`，
+  差别只是它会带商店版没有的「检查更新 / 进程保活」开关。
+
 - `store/identity.local.json` **必须 gitignored**（含发布者证书主题串），
   但 `package_family_name` 抄进来能让 c3 生效 —— 这段哈希不含敏感信息。
