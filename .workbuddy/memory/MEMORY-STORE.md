@@ -186,11 +186,19 @@
   这套算法已固化进 `audit_round3.py` 的 **P5.20c3**：读 `identity.local.json` 的
   `package_family_name`，反推比对，不符即 FAIL。**抄错一个字符 → 哈希完全不同**，
   是「拒审第一大原因」目前唯一能在本地拦下的办法。
-- **自检 P5.20 组（13 项）分工**：a/a2 本地标识是否填全（缺则 WARN）；
+- **自检 P5.20 组（14 项）分工**：a/a2 本地标识是否填全（缺则 WARN）；
   b 站点根地址；c 「本地填了但 `out/` 还是旧包」；c2 包内三项与本地**逐字段**比对；
-  c3 PFN 反推；d 应用名（含全角/半角 `|` 提示）＋包内 `DisplayName` 一致性；
-  e 官网三页品牌标记与 `<title>`。
+  c3 PFN 反推；**c4 `store/out/` 根目录只许有一个 `.msix`**；d 应用名（含全角/半角 `|` 提示）
+  ＋包内 `DisplayName` 一致性；e 官网三页品牌标记与 `<title>`。
   **改标识/改名的唯一正确顺序**：改 `identity.local.json` → `build_store.py` →
   `audit_round3.py`（FAIL 0 / WARN 0）→ 上传。跳过中间那步就是「本地对、包里旧」。
+- **⚠️ `store/out/` 根目录里不许有第二个 `.msix`**：自签的本地安装测试包
+  `dev-signed.msix`（实测标识 `Desktop-sing-PLACEHOLDER` / `CN=PLACEHOLDER-FILL-ME` /
+  `DisplayName='桌面歌词'`，**上传必被拒**）曾和正式提审包并排躺在同一个文件夹里，
+  全靠人眼分辨 —— 已挪到 `store/out/dev/`（移动不是删除，SHA256 未变，随时可移回），
+  **`P5.20c4`** 数根目录 `.msix` 个数来守这条线。
+  ⚠️ 写这类检查**别拿「最新包」当基准**：判「最新」靠 mtime，往目录里扔一个测试包就会
+  翻转判据（实测把真正的交付包报成多余的，正好反了）。**反向验证**方法：
+  往 `out/` 扔一个只含 `AppxManifest.xml` 的最小 zip 假包，跑一遍看是否 FAIL，删掉后复跑确认恢复。
 - `store/identity.local.json` **必须 gitignored**（含发布者证书主题串），
   但 `package_family_name` 抄进来能让 c3 生效 —— 这段哈希不含敏感信息。

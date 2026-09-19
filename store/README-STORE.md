@@ -15,11 +15,13 @@ store/
 ├── build_store.py              一键打包 / 导出提审材料
 ├── audit_round3.py             商店模式离线自检（政策合规 + 运行时行为 + 材料完整性）
 ├── assets/                     生成的图标资产（提交仓库，免得每次重渲染）
-├── identity.local.json         ★ 包标识 + 应用名 + 隐私政策站点地址（本机填一次，勿提交、勿外传）
+├── identity.local.json         ★ 包标识 + 发布者显示名 + PFN + 应用名 + 隐私政策站点地址
+│                                 （本机填一次，勿提交、勿外传；六键，见 §1 第 4 步）
 ├── build/layout/               打包工作目录（可随时删）
 └── out/
-    ├── Desktop-sing-x.y.z.w-x64.msix    最终产物（未签名）
+    ├── Desktop-sing-x.y.z.w-x64.msix    最终产物（未签名）——**根目录只许有这一个 .msix**
     ├── listing-v<x.y.z>.md             提审材料（复制粘贴用）
+    ├── dev/                            自签/历史包堆放处（自检 P5.20c4 只扫根目录，不会误报）
     └── shots/                          商店截图素材（不进仓库）
 ```
 
@@ -97,10 +99,11 @@ store/
    直接写进提审文案。五项都可用 `--name` / `--publisher` / `--publisher-display-name` /
    `--display-name` / `--site-url` 临时覆盖。
 
-   出包脚本与自检都会盯着这件事（`audit_round3.py` 的 P5.20 组，共 13 项）：
+   出包脚本与自检都会盯着这件事（`audit_round3.py` 的 P5.20 组，共 14 项）：
    `P5.20a/a2` 本地标识或发布者显示名没填 → WARN；`P5.20c` **填了标识却没重出包** → FAIL；
    `P5.20c2` 包内 `Name`/`Publisher`/`PublisherDisplayName` 与本地**逐字段**不符 → FAIL；
    `P5.20c3` 由 Publisher 反推的 PFN 哈希对不上 `package_family_name` → FAIL（抄错）；
+   `P5.20c4` `store/out/` 根目录里出现了第二个 `.msix` → FAIL（上传时选错文件的隐患）；
    `P5.20d` **改了应用名却没重出包** → FAIL；`P5.20e` **官网品牌名对不上产品名** → FAIL
    （都是「三处名字/图标各说各话」的现场）。
 
@@ -119,6 +122,10 @@ store/
 
 产物：`store/out/Desktop-sing-1.0.0.0-x64.msix`（未签名——**商店提审就传未签名包**，
 微软会用它自己的证书重签）。
+
+⚠️ **`store/out/` 根目录里只留这一个 `.msix`**：自签的本地测试包（标识是
+`Desktop-sing-PLACEHOLDER`）和历史版本都放 `store/out/dev/`。两个包并排躺着，
+上传时选错一个就是一次白跑的拒审 —— 自检 **`P5.20c4`** 会数根目录里的 `.msix` 个数来拦这件事。
 
 脚本自检项：包内必备文件（清单 + 六类图标 + exe）、**清单引用的每个资产都必须在包里**、
 无卸载脚本残留、清单无未替换占位符、版本四段数字、`Square44x44Logo` / `Square150x150Logo`

@@ -927,6 +927,7 @@ if not _msixes:
          "跑 .buildenv\\Scripts\\python.exe store\\build_store.py --fresh")
 else:
     _newest = max(_msixes, key=os.path.getmtime)
+    _pkg_name = ""
     try:
         import zipfile
         with zipfile.ZipFile(_newest) as _z:
@@ -988,6 +989,20 @@ else:
                       "补上 Partner Center 的 Package Family Name 即可自动校验 CN=… 有无抄错")
     except Exception as _ex:
         check("P5.20c 能读出 out/ 里最新包的清单", False, repr(_ex))
+
+    # P5.20c4 `store/out/` **根目录**只应有一个 .msix —— 当前这次要上传的那个。
+    # 现场：`dev-signed.msix`（早期自签的本地安装测试包，标识是
+    # `Desktop-sing-PLACEHOLDER`）和真正的提审包并排躺在同一个文件夹里 ——
+    # 上传时只要选错一个文件就是一次白白浪费的拒审。
+    # 自签/历史版本请放 `store/out/dev/`（`*.msix` 这个 glob 不递归，不会再被扫到）。
+    # ⚠️ 判据**不能**写成「与最新包标识不同」：最新是按 mtime 判的，刚放进去的测试包
+    # 会变成"最新"，于是真正的交付包反被点名为多余 —— 反向验证时踩过这个坑。
+    # 就按"根目录里有几个 .msix"数，最稳。
+    check("P5.20c4 store/out/ 根目录只留一个 .msix（当前交付包）", len(_msixes) == 1,
+          "发现 %d 个：%s%s" % (
+              len(_msixes), "、".join(os.path.basename(p) for p in _msixes),
+              "  ← 除当前版本外（含自签测试包）都移到 store/out/dev/，别在上传时选错"
+              if len(_msixes) > 1 else ""))
 
 # P5.20d 清单 `<Properties><DisplayName>` 必须**逐字符**等于 Partner Center 里预留过的名字之一，
 # 否则上传直接被拒：「The name found in the package is not one of your reserved app names」。
