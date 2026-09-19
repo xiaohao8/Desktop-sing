@@ -46,6 +46,31 @@
   （`DELETE /releases/assets/<id>` 再 `POST <upload_url>?name=`）。
   可复用脚本：`%TEMP%\_gh_upload.py`。
 
+## 站点部署线（官网 + 隐私政策 → Netlify，2026-09-19 建成）
+- 站点**源文件**在主仓库 `site/`；**部署副本**在独立公开仓库 https://github.com/xiaohao8/music，
+  由用户自己在 Netlify 导入部署。仓库根即发布目录：`netlify.toml` 里 `publish = "."`、**无构建命令**
+  （纯静态、零依赖）。刻意**不加 CSP**（页面有内联 script/style，加了会把首屏兜底逻辑拦掉）。
+- 商店表单要填 `https://<站点>.netlify.app/privacy.html`（中文 listing）与 `/privacy.en.html`
+  （英文 listing）；**这两个文件名/路径不能改**，改了等于让商店里的链接失效。有自定义域名优先用。
+- **同步方式**：主仓库根 `sync_site.py`。默认只报告差异**不写文件**；`--apply` 才写入
+  （文本按 **LF 归一化**，避免 `core.autocrlf=input` 造成的假差异）；`--check` 有漂移退出码 1；
+  `--apply --push` 提交推送。部署仓库自己的 `README.md`/`netlify.toml`/`.gitignore` 在 `LOCAL_KEEP` 里，
+  不参与同步、也不算「多余文件」。
+- 原则：**文档点到的东西必须真实存在**。本轮就是发现「音乐站 README 承诺 `sync_site.py`」而脚本不存在、
+  「主 README 文件清单列了 `site/tools/make_assets.py`」而仓库里根本没有。
+
+## ⚠️ 工作目录 ≠ 镜像仓库（踩过，务必先同步再提交）
+- 真正干活/构建的是 `C:\Users\35436\Desktop\代码\desktop-lyrics`（**不是 git 仓库**，无 `.git`）；
+  能 push 的是镜像 `C:\Users\35436\Documents\GitHub\Desktop-sing`。**改完必须把文件复制到镜像再 commit**，
+  否则改动只活在本机、远端永远是旧的。
+- 2026-09-19 实测：`store/AppxManifest.template.xml`（缺 `uap:DefaultTile` 整段）与
+  `store/make_store_assets.py`（旧版）**只在工作目录修过、从未提交**；工作目录里审计全过，
+  但克隆仓库照 README-STORE 打包会踩。**两边各跑一次审计**才看得出这类"只在本地修好"的假象。
+- 核查手法：逐文件比工作目录 ↔ 镜像（换行归一化）＋ `git ls-files` 核对未跟踪文件。
+- `store/assets/`（91 个）只有 **23 个基础图**入库，多倍率/主题变体是生成物**不入库** →
+  **干净克隆里跑审计 P3.2 必然 FAIL**（属正常，先跑 `store/make_store_assets.py`）；
+  `preview/` 里的 `saver_*` 诊断输出同理是可再生的，缺了不算缺陷。
+
 ## 打包与产物
 - **一条龙命令**（Python 用 `.buildenv\Scripts\python.exe`，PyInstaller 6）：
   `build_exe.py --dir` → `pkg_portable.py` → `tools\nsis\nsis-3.11\Bin\makensis.exe installer\installer.nsi`。
@@ -114,9 +139,13 @@
   两者都要如实含「歌词接口按需查询（歌名/歌手/时长/ID）+ 更新检查比对版本号」。
   政策 10.5.1 **特别点名 Desktop Bridge 与 Win32 必须始终具备隐私政策**。
 - **上线自检**：`store\audit_round3.py`（强制 STORE_MODE=True 真实实例化浮层+设置面板走 refresh()，
-  核对资产完整性、隐私政策与代码行为一致性）。**2026-09-19 扩展 P5 组 11 项**：
+  核对资产完整性、隐私政策与代码行为一致性）。**2026-09-19 共 114 项，P5 组 16 项**：
   商标禁用、本地数据控制权（缓存上限/清理入口）、功能数量口径一致、
-  官网截图新鲜度、认证说明主路径。功能数量检查**从源码常量直接计数**
+  官网截图新鲜度、认证说明主路径。**P5.18 发布物料自洽 6 项**（校验清单每行指向真实文件、
+  只收录 `dist/release/`、ASCII asset 名映射、中英 README 有下载指引）；
+  **P5.19 站点部署副本一致性 5 项**（与 `site/` 归一化后逐字节一致、
+  `netlify.toml` 无构建命令且发布目录为仓库根、三张页面都在根目录、`sync_site.py` 存在）。
+  功能数量检查**从源码常量直接计数**
   （STYLE_NAMES/ANIM_STYLES/POSITION_PRESETS/saver 菜单元组），与「关于」窗口、
   商品页描述的「N 种 X」声明比对——**改功能数或改文案都会立刻 FAIL**。
   正则数 saver 元组的坑：首项 `("particle"` 会被外层 `((` 吃掉，要连同第一个
