@@ -2,7 +2,7 @@
 
 > 简体中文: [README.md](README.md)
 
-A always-on-top lyrics overlay for the Windows desktop. It reads whatever is currently playing —
+An always-on-top lyrics overlay for the Windows desktop. It reads whatever is currently playing —
 any player that integrates with the Windows system media controls, such as QQ Music, NetEase Cloud
 Music or Kugou — and shows the album art together with karaoke-style line-by-line lyrics. The colour
 scheme is derived from the album art automatically.
