@@ -120,9 +120,10 @@
   （**提审就传未签名包**，微软自己重签）。布局 = onedir 去掉卸载脚本 + Assets + 生成的清单。
 - **提审材料导出**：`store\build_store.py --listing` → `store\out\listing-v*.md`
   （复制粘贴用：描述/搜索词/受限功能说明/认证说明/IARC 指引）。
-- **提审前必填**：Partner Center 预留名称后，把 Package/Identity Name + Publisher 写进
-  `store/identity.local.json`（**勿提交**，.gitignore 已拦）；不填 = 占位标识，只能本地看结构。
-- **提审前三件人工项**：① identity.local.json 真标识；② privacy.html 发布后填 URL；
+- **提审前必填**：Partner Center 预留名称后，把 Package/Identity Name + Publisher（+ 预留的
+  `display_name`、站点 `site_url`）写进 `store/identity.local.json`（**勿提交**，.gitignore 已拦）；
+  不填 = 占位标识，只能本地看结构。
+- **提审前三件人工项**：① identity.local.json 真标识 + 预留名；② privacy.html 发布后填 URL；
   ③ **人工截图**（仓库无现成素材，至少 1 张 1366×768+）。
 - **清单模板铁律**：startupTask 扩展用**基础 desktop 命名空间**（`…/manifest/desktop/windows10`，
   不是 desktop4），否则 makeappx 报 C00CE169；模板注释会被 build_store.py 剥掉（防 `{{占位符}}` 残留）。
@@ -144,23 +145,29 @@
 - **隐私政策**：商店必填 URL → 站点根 + `/privacy.html`（中文 listing）与 `/privacy.en.html`（英文）；
   内容与 `PRIVACY.md` 同源，两者都要如实含「歌词接口按需查询（歌名/歌手/时长/ID）+ 更新检查比对版本号」。
   政策 10.5.1 **特别点名 Desktop Bridge 与 Win32 必须始终具备隐私政策**。
-- **`store/identity.local.json`（本机、勿提交）三个键**：`name`（Partner Center 的
+- **`store/identity.local.json`（本机、勿提交）四个键**：`name`（Partner Center 的
   Package/Identity/Name）、`publisher`（`CN=…` 主题串，**必须原样复制逐字符匹配**）、
-  `site_url`（站点根）。`site_url` 填了之后出包会打印隐私页地址，`build_store.py --listing`
-  会把中英两个真实地址直接写进提审文案 —— 即「包标识 + 隐私地址」只在一处填一次。
-  也可用 `--name / --publisher / --site-url` 临时覆盖。
+  `display_name`（**预留的应用名，必须逐字符等于 Partner Center「管理应用名称」里的一条**，
+  默认 `桌面歌词|Desktop-sing`）、`site_url`（站点根）。`site_url` 填了之后出包会打印隐私页地址，
+  `build_store.py --listing` 会把中英两个真实地址 + 产品名称直接写进提审文案。
+  也可用 `--name / --publisher / --display-name / --site-url` 临时覆盖。
   不填只能出**占位标识包**（包内 `Identity Name="Desktop-sing-PLACEHOLDER"`），**不能上传**。
+  ⚠️ **半角 `|`(U+007C) 与全角 `｜`(U+FF5C) 不同字符**；清单 DisplayName 对不上预留名会被拒
+  （*name found in the package is not one of your reserved app names*）。实测 `|` 能过 `makeappx`。
 - **上线自检**：`store\audit_round3.py`（强制 STORE_MODE=True 真实实例化浮层+设置面板走 refresh()，
-  核对资产完整性、隐私政策与代码行为一致性）。**2026-09-19 共 117 项**；通过判据＝
+  核对资产完整性、隐私政策与代码行为一致性）。**2026-09-19 共 119 项**；通过判据＝
   **FAIL 0，且上传前 WARN 也要 0**（WARN 通常就是「还没填 Partner Center 信息」那两条）。
   原有 P5 组：商标禁用、本地数据控制权（缓存上限/清理入口）、功能数量口径一致、
   官网截图新鲜度、认证说明主路径。**P5.18 发布物料自洽 6 项**（校验清单每行指向真实文件、
   只收录 `dist/release/`、ASCII asset 名映射、中英 README 有下载指引）；
   **P5.19 站点部署副本一致性 5 项**（与 `site/` 归一化后逐字节一致、
   `netlify.toml` 无构建命令且发布目录为仓库根、三张页面都在根目录、`sync_site.py` 存在）。
-  **P5.20 提审前置 3 项**：`P5.20a` 包标识是否已填、`P5.20b` 站点地址是否已配 → 缺了给 WARN；
+  **P5.20 提审前置 5 项**：`P5.20a` 包标识是否已填、`P5.20b` 站点地址是否已配 → 缺了给 WARN；
   **`P5.20c` 直接读 `out/` 最新 .msix 的清单与本地标识比"档位"** —— 填了标识却没重出包就 FAIL
-  （守住「上传占位包」这个最致命的低级错误）。
+  （守住「上传占位包」这个最致命的低级错误）；**`P5.20d` 两项盯应用名** —— 清单 DisplayName
+  必须与本地配置一致，**改了名没重出包也 FAIL**（守住「包名对不上预留名」）。
+  **复用产物快招**：`build_store.py` **不带 `--fresh`** 会复用 `dist/Desktop-sing-v<v>` 只重铺
+  layout + makeappx（秒级），改 UI/名字后想快速重出包验证就用它，别每次都重跑 PyInstaller。
   功能数量检查**从源码常量直接计数**
   （STYLE_NAMES/ANIM_STYLES/POSITION_PRESETS/saver 菜单元组），与「关于」窗口、
   商品页描述的「N 种 X」声明比对——**改功能数或改文案都会立刻 FAIL**。
