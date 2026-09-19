@@ -90,3 +90,38 @@
 - **`winsdk/_winrt.pyd` 独占 36.8 MB（包体积 87%）**，是**单体扩展模块、无法裁剪**
   （C++/WinRT 投影全打在一个 pyd 里）。想瘦身只能换 `winrt-*` 命名空间包
   （Python ≥3.12，按需装 `winrt-Windows.Media.Control` 等），属大改动、未做。
+
+## 文档体系与对外口径（2026-09-19 确立）
+
+- **文档分两层，规则不同**：
+  - **对外**（`README.md` / `使用说明.txt` / `site/*` / `PRIVACY.md` / `NOTICE.md` 及各自 `.en`）：
+    说功能、用法、限制、隐私、许可、放行；**不说**逆向细节。
+  - **开发者**（README 的「构建与开发指南」章节、`store/README-STORE.md`）：构建/打包/测试/踩坑照写。
+- **中英各一份，共 4 组对应**：`README.md↔README.en.md`、`PRIVACY.md↔PRIVACY.en.md`、
+  `NOTICE.md↔NOTICE.en.md`、`使用说明.txt↔USAGE.en.txt`；另有 `site/privacy.en.html`
+  （英文页区提审填这个 URL）与 `site/privacy.html`，两页互相有语言切换链接。
+- **对外文档禁词**（审计 P5.16 已锁）：`3DES`、`weapi`、`AES-CBC`、`RSA 无填充`、
+  `ghfast.top`、`ghproxy.net`、`周杰伦`。删的理由分三类：
+  ① 逆向/规避技术措施（逆向记录进公开文档＝不必要的法律暴露）；
+  ② 第三方代理服务点名（脆弱且易被质疑）；
+  ③ 对具体艺人与平台版权状况举例（毫无必要）。
+  **例外**：`NOTICE.md` / `LICENSE-THIRD-PARTY.txt` 的**函数名映射表必须保留** ——
+  Apache-2.0 第 4 条归属义务要求「指明了什么被借用」，属「该说」，别一刀切删。
+- **界面语言必须如实声明（政策 10.7）**：界面只有简体中文、无 i18n → 三处口径：
+  ① 清单 `Resources` **只**声明 `zh-CN`（`store/AppxManifest.template.xml` 里，**不在** build_store.py）；
+  ② **商品页描述** `STORE_LISTING_DESCRIPTION` 写明「界面…仅有简体中文」；
+  ③ 英文 `README.en.md` 写明 `the application interface is currently Simplified Chinese only`。
+  不写＝暗示有英文界面，按 10.1.1 判「描述不准确」。
+  注意清单 `@Description` 因长度限制**没有**这句，别和商品页描述混为一谈。
+- **随包文档统一 5 份，三渠道同验**：`LICENSE-THIRD-PARTY.txt` / `PRIVACY.md` /
+  `使用说明.txt` / `PRIVACY.en.md` / `USAGE.en.txt`。
+  分发时中文改名（`第三方许可.txt` / `隐私声明.txt`），英文用 ASCII 名
+  （`Privacy-EN.txt` / `Usage-EN.txt`）避免跨平台编码问题。
+  ⚠️ 早先 **MSIX 漏了使用说明**（MSIX 布局来自 onedir，onedir 里没有使用说明）
+  → 商店用户装完找不到任何说明；审计 `P5.12h` 现在逐渠道校验整份清单。
+- **⚠️ makeappx 会对非 ASCII 路径做百分号编码**：`使用说明.txt` 在 .msix 的 zip 里是
+  `%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E.txt`。审计比对文件名前**必须先
+  `urllib.parse.unquote`**，否则中文名永远「像没打进包」（安装后 Windows 会解码回原名，功能无问题）。
+- **NSIS 是否真嵌入文件只能反证**：整包 LZMA，从 exe 抽字符串验不了。
+  做法：临时移走待验文件 → 跑 `makensis` → 应报 `File: "..." -> no files found.` 且退出码 1 → 还原。
+  （`File` 指令源文件缺失时 makensis 必然报错，所以编译成功本身就说明找到了文件。）
