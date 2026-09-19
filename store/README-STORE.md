@@ -55,12 +55,16 @@ store/
 2. **预留应用名称**：Partner Center → 新建应用 → 填名称「桌面歌词」。
    若被占用可试「桌面歌词 Desktop-sing」等变体——名称必须与清单里的
    `DisplayName` 一致，否则提审会被打回。
-3. **拿到包标识**：应用 → 产品管理 → 产品标识，复制两样：
+3. **拿到包标识**：应用 → 产品管理 → 产品标识，复制四样：
    - **包名**（Package/Identity/Name，形如 `12345Desktop-sing`）
-   - **发布者**（Publisher，形如 `CN=1A2B3C4D-…`）
+   - **发布者**（Package/Identity/Publisher，形如 `CN=1A2B3C4D-…`）
+   - **发布者显示名**（Package/Properties/PublisherDisplayName，个人账号通常是真实姓名）
+   - **包族名**（Package Family Name，形如 `12345Desktop-sing_8ahsnwh40hshg`）——不是必填，
+     但填上就能让自检**反推 publisher 哈希来自证没抄错**，强烈建议一并抄。
 
    ⚠️ **必须从 Partner Center 原样复制，别手敲**——Publisher 是微软签发证书的
-   主题串，逐字符匹配，写错包根本装不上。
+   主题串，逐字符匹配，写错包根本装不上。PublisherDisplayName 同样逐字符校验，
+   填成产品名会报「清单中的 PublisherDisplayName 元素…与发布者显示名称不匹配」。
 
 4. 写入本机标识文件 `store/identity.local.json`（**勿提交**）：
 
@@ -68,12 +72,19 @@ store/
    {
      "name": "12345Desktop-sing",
      "publisher": "CN=1A2B3C4D-5E6F-...",
+     "publisher_display_name": "张三",
      "display_name": "桌面歌词|Desktop-sing",
-     "site_url": "https://xxx.netlify.app"
+     "site_url": "https://xxx.netlify.app",
+     "package_family_name": "12345Desktop-sing_8ahsnwh40hshg"
    }
    ```
 
    不填也能出包（占位标识），但**只能本地看结构，不能上传**。
+
+   **`package_family_name` 是防抄错保险**：PFN 后缀 = `sha256(Publisher 的 UTF-16LE 编码)`
+   前 64 位，按「每字符 5 bit、字母表 `0-9a-hj-km-np-tv-z`」编成 13 位。自检 `P5.20c3`
+   会独立反推一遍并与它比对，对不上即 FAIL —— 把「手敲错一个字符」这种最容易漏、
+   代价最大（白跑一次提审）的错误拦在本地。
 
    **`display_name` 必须逐字符等于 Partner Center 里预留过的名字之一**（「管理应用名称」
    页面），否则上传直接被拒：*The name found in the package is not one of your reserved
@@ -83,12 +94,14 @@ store/
 
    `site_url` 是隐私政策页所在的站点根（§1.4 部署后拿到）：填了之后出包会打印
    `隐私页 : …/privacy.html`，`build_store.py --listing` 也会把中英两个真实地址
-   直接写进提审文案。四项都可用 `--name` / `--publisher` / `--display-name` /
-   `--site-url` 临时覆盖。
+   直接写进提审文案。五项都可用 `--name` / `--publisher` / `--publisher-display-name` /
+   `--display-name` / `--site-url` 临时覆盖。
 
-   出包脚本与自检都会盯着这件事：`audit_round3.py` 的 `P5.20a/b` 在没填时给 WARN，
-   **填了标识却没重出包**由 `P5.20c` FAIL，**改了应用名却没重出包**由 `P5.20d` FAIL，
-   **官网品牌名对不上产品名**由 `P5.20e` FAIL
+   出包脚本与自检都会盯着这件事（`audit_round3.py` 的 P5.20 组，共 13 项）：
+   `P5.20a/a2` 本地标识或发布者显示名没填 → WARN；`P5.20c` **填了标识却没重出包** → FAIL；
+   `P5.20c2` 包内 `Name`/`Publisher`/`PublisherDisplayName` 与本地**逐字段**不符 → FAIL；
+   `P5.20c3` 由 Publisher 反推的 PFN 哈希对不上 `package_family_name` → FAIL（抄错）；
+   `P5.20d` **改了应用名却没重出包** → FAIL；`P5.20e` **官网品牌名对不上产品名** → FAIL
    （都是「三处名字/图标各说各话」的现场）。
 
 ## 2. 打包

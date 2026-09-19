@@ -891,6 +891,7 @@ if os.path.isfile(_ident_p):
 
 _name = str(_ident.get("name") or "").strip()
 _pub = str(_ident.get("publisher") or "").strip()
+_pub_dn = str(_ident.get("publisher_display_name") or "").strip()
 _site = str(_ident.get("site_url") or "").strip()
 _ident_is_placeholder = (not _name) or (not _pub) or ("PLACEHOLDER" in _name + _pub)
 
@@ -900,6 +901,15 @@ if _ident_is_placeholder:
          "抄 Package/Identity/Name 与 Publisher 两行，见 store/提审上线手册.md §1.3")
 else:
     check("P5.20a 包标识已填（非占位）", True, "name=%s" % _name)
+
+# PublisherDisplayName 同样被 Partner Center 逐字符校验，漏填/填成产品名都会报
+# 「清单中的 PublisherDisplayName 元素 … 与发布者显示名称不匹配」。
+if not _pub_dn:
+    warn("P5.20a2 还没填 publisher_display_name",
+         "必须是 Partner Center「产品标识」里的 Package/Properties/PublisherDisplayName"
+         "（个人账号通常是真实姓名，别写产品名），见 store/提审上线手册.md §1.3")
+else:
+    check("P5.20a2 发布者显示名已填", True, "publisher_display_name=%s" % _pub_dn)
 
 if not _site:
     warn("P5.20b 还没配 site_url（隐私政策页的站点根地址）",
@@ -923,6 +933,10 @@ else:
             _mf = _z.read("AppxManifest.xml").decode("utf-8", "replace")
         _m = re.search(r'<Identity[^>]*\bName="([^"]*)"', _mf)
         _pkg_name = _m.group(1) if _m else ""
+        _m_pub = re.search(r'<Identity[^>]*\bPublisher="([^"]*)"', _mf)
+        _pkg_pub = _m_pub.group(1) if _m_pub else ""
+        _m_pdn = re.search(r"<PublisherDisplayName>([^<]*)</PublisherDisplayName>", _mf)
+        _pkg_pub_dn = _m_pdn.group(1) if _m_pdn else ""
         _pkg_is_placeholder = (not _pkg_name) or ("PLACEHOLDER" in _pkg_name)
         check("P5.20c out/ 里最新的包与 identity.local.json 档位一致",
               _pkg_is_placeholder == _ident_is_placeholder,
@@ -930,6 +944,48 @@ else:
                   _pkg_name or "(读不到)", _name or "(未填)",
                   "  ← 填了标识但包还是旧的，**重出包再传**"
                   if (_ident_is_placeholder is False and _pkg_is_placeholder) else ""))
+
+        # 本地填了真标识，就逐字段核对 —— 三项都被 Partner Center 逐字符校验，
+        # 光比"档位"不够：手抄错一个字符同样是拒审。
+        if not _ident_is_placeholder:
+            _d = []
+            if _pkg_name != _name:
+                _d.append("Name 包内=%r 本地=%r" % (_pkg_name, _name))
+            if _pkg_pub != _pub:
+                _d.append("Publisher 包内=%r 本地=%r" % (_pkg_pub, _pub))
+            if _pub_dn and _pkg_pub_dn != _pub_dn:
+                _d.append("PublisherDisplayName 包内=%r 本地=%r" % (_pkg_pub_dn, _pub_dn))
+            check("P5.20c2 包内三项标识与 Partner Center 值逐字段一致", not _d,
+                  "；".join(_d) if _d else
+                  "Name / Publisher / PublisherDisplayName 三项均一致")
+
+            # P5.20c3 反推 publisher 哈希，独立验证 CN=… 那串没抄错一个字符。
+            # Partner Center 的「Package Family Name」= <IdentityName>_<publisher_hash>，
+            # 哈希算法（WinRT/PFN，未公开但可复现）：
+            #   h = sha256(Publisher.encode("utf-16-le")) 取前 8 字节（低 64 位）
+            #   按「每字符 5 bit、最高位在前」切成 13 个字符
+            #   字母表 "0123456789abcdefghjkmnpqrstvwxyz"（去掉易混的 i/l/o/u）
+            #   64 位不够 13×5=65 位 → 末位补 0（整体左移 1 位）再切；少这一位会对不上最后一字符。
+            # 意义：抄错一个字符 → 哈希完全不同，本项当场 FAIL，省一次拒审。
+            _pfn = str(_ident.get("package_family_name") or "").strip()
+            if _pfn:
+                import hashlib as _hl
+                _alpha = "0123456789abcdefghjkmnpqrstvwxyz"
+                _big = int.from_bytes(
+                    _hl.sha256(_pub.encode("utf-16-le")).digest()[:8], "big") << 1
+                _calc = "".join(
+                    _alpha[(_big >> (5 * (12 - _i))) & 31] for _i in range(13))
+                _pfn_have = _pfn.rsplit("_", 1)[-1]
+                _pfn_ok = (_pfn_have == _calc)
+                check("P5.20c3 由 Publisher 反推的 PFN 哈希与 Partner Center 一致", _pfn_ok,
+                      "算出 %s ｜ Partner Center %s%s" % (
+                          _calc, _pfn_have,
+                          "" if _pfn_ok else
+                          "  ← **Publisher 那串 CN=… 抄错了**（改 identity.local.json 后重出包）"))
+            else:
+                check("P5.20c3 PFN 反推校验（已跳过）", True,
+                      "identity.local.json 未提供 package_family_name；"
+                      "补上 Partner Center 的 Package Family Name 即可自动校验 CN=… 有无抄错")
     except Exception as _ex:
         check("P5.20c 能读出 out/ 里最新包的清单", False, repr(_ex))
 
@@ -1041,6 +1097,23 @@ if os.path.isdir(_site_assets):
                                     if _fp_html != _fp_now else ""))
 else:
     check("P5.21b 找到 site/assets/", False, "缺目录")
+
+# P5.21c og:image / og:url 必须是绝对地址。
+# 微信、QQ、微博、Twitter 的抓取器**不解析相对路径**：写 assets/hero.png 它们会当作
+# 抓不到图，分享卡片退化成纯文字（而 og:image 恰好是唯一"必须绝对地址"的一类引用，
+# 所以它不在 P5.21a 的 ?v= 打戳范围内）。
+_og_rel = []
+_idx_html = open(os.path.join(ROOT, "site", "index.html"), encoding="utf-8").read()
+for _prop in ("og:image", "og:url"):
+    _m_og = re.search(r'property="%s"[^>]*content="([^"]*)"' % _prop, _idx_html)
+    _val = _m_og.group(1) if _m_og else ""
+    if not _val:
+        _og_rel.append("%s 缺失" % _prop)
+    elif not _val.startswith(("http://", "https://")):
+        _og_rel.append("%s 是相对地址(%s)" % (_prop, _val))
+check("P5.21c og:image / og:url 为绝对地址（社交分享卡片可渲染）", not _og_rel,
+      "；".join(_og_rel) if _og_rel
+      else "index.html 的 og:image 与 og:url 均为 https 绝对地址")
 
 # ---------------------------------------------------------------- 汇总
 head("汇总")

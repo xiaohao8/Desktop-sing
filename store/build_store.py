@@ -56,6 +56,13 @@ WACK = r"C:\Program Files (x86)\Windows Kits\10\App Certification Kit\appcert.ex
 # ShortName 是磁贴底部那行短字，不受预留名校验，保持简短即可。
 DISPLAY_NAME = "桌面歌词|Desktop-sing"
 SHORT_NAME = "桌面歌词"        # 磁贴底部短名称（全名过长会被截断）
+
+# 清单 <Properties><PublisherDisplayName>。
+# ⚠️ 与 Identity 一样受 Partner Center 校验：必须**逐字符等于**
+#    「产品标识」页给出的 `Package/Properties/PublisherDisplayName`，
+#    否则报「应用清单中的 PublisherDisplayName 元素 … 与发布者显示名称不匹配」。
+#    真源是账号的发布者显示名（个人账号通常是真实姓名），**不要写成产品名**。
+#    可用 identity.local.json 的 publisher_display_name 或命令行覆盖。
 PUBLISHER_DISPLAY_NAME = "Desktop-sing Project"
 
 # 清单里的 Description（uap:VisualElements/@Description）：
@@ -202,6 +209,21 @@ def load_display_name(args) -> str:
     return nm or DISPLAY_NAME
 
 
+def load_publisher_display_name(args) -> str:
+    """清单里的发布者显示名：命令行 → identity.local.json 的 publisher_display_name → 常量。
+
+    与 Identity 一样要被 Partner Center 逐字符校验（见 PUBLISHER_DISPLAY_NAME 注释）。
+    """
+    nm = (getattr(args, "publisher_display_name", "") or "").strip()
+    if not nm and os.path.isfile(IDENTITY_LOCAL):
+        try:
+            with open(IDENTITY_LOCAL, encoding="utf-8") as f:
+                nm = (json.load(f).get("publisher_display_name", "") or "").strip()
+        except Exception as ex:
+            print("[警告] identity.local.json 解析失败：%s" % ex)
+    return nm or PUBLISHER_DISPLAY_NAME
+
+
 def load_site_url(args) -> str:
     """隐私政策页所在的**站点根地址**：命令行 --site-url → identity.local.json 的 site_url。
 
@@ -254,14 +276,15 @@ def stage_layout():
 
 
 def write_manifest(name: str, publisher: str, version: str,
-                   display_name: str = "") -> str:
+                   display_name: str = "", publisher_display_name: str = "") -> str:
     tpl = open(TEMPLATE, encoding="utf-8").read()
     out = (tpl.replace("{{IDENTITY_NAME}}", name)
               .replace("{{PUBLISHER}}", publisher)
               .replace("{{VERSION}}", version)
               .replace("{{DISPLAY_NAME}}", display_name or DISPLAY_NAME)
               .replace("{{SHORT_NAME}}", SHORT_NAME)
-              .replace("{{PUBLISHER_DISPLAY_NAME}}", PUBLISHER_DISPLAY_NAME)
+              .replace("{{PUBLISHER_DISPLAY_NAME}}",
+                       publisher_display_name or PUBLISHER_DISPLAY_NAME)
               .replace("{{DESCRIPTION}}", DESCRIPTION))
     # 模板注释里有「{{占位符}}」之类的说明文字，发布清单不需要它们——
     # 剥掉全部 XML 注释，顺带把多出来的空行收干净
@@ -469,6 +492,8 @@ def main():
     ap.add_argument("--publisher", default="", help="Partner Center 的发布者 CN=…")
     ap.add_argument("--display-name", default="",
                     help="清单里的应用名（必须是 Partner Center 预留名之一）")
+    ap.add_argument("--publisher-display-name", default="",
+                    help="清单里的发布者显示名（须等于 Partner Center 的 PublisherDisplayName）")
     ap.add_argument("--site-url", default="",
                     help="隐私政策页所在站点根地址（默认取 identity.local.json 的 site_url）")
     ap.add_argument("--version", default="", help="覆盖版本号（默认取 APP_VERSION）")
@@ -496,6 +521,7 @@ def main():
     ver = package_version(args.version or app_version())
     name, publisher = load_identity(args)
     display_name = load_display_name(args)
+    pub_display_name = load_publisher_display_name(args)
     identity_is_placeholder = "PLACEHOLDER" in (name + publisher)
     site_url = load_site_url(args)
 
@@ -503,12 +529,13 @@ def main():
     print("版本   : %s" % ver)
     print("标识   : %s" % name)
     print("发布者 : %s" % publisher)
+    print("发布者名: %s" % pub_display_name)
     print("应用名 : %s" % display_name)
     print("隐私页 : %s" % (("%s/privacy.html" % site_url) if site_url
                            else "（未配 site_url，提审文案里会留占位地址）"))
 
     stage_layout()
-    write_manifest(name, publisher, ver, display_name)
+    write_manifest(name, publisher, ver, display_name, pub_display_name)
 
     os.makedirs(OUTDIR, exist_ok=True)
     msix = os.path.join(OUTDIR, "Desktop-sing-%s-x64.msix" % ver)
