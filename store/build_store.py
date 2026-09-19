@@ -44,7 +44,17 @@ IDENTITY_LOCAL = os.path.join(BASE, "identity.local.json")
 MAKEAPPX = r"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\makeappx.exe"
 WACK = r"C:\Program Files (x86)\Windows Kits\10\App Certification Kit\appcert.exe"
 
-DISPLAY_NAME = "桌面歌词"
+# 清单里的应用名（Properties/DisplayName 与 VisualElements/@DisplayName）。
+#
+# ⚠️ 商店硬要求：这个字符串必须是**你在 Partner Center 预留过的名字之一**，否则上传后报
+#    「The name found in the package is not one of your reserved app names」
+#    （官方文档 MSIX《解决提交错误》的「名称/标识错误」条目）。
+#    真源是 Partner Center 的「产品管理 → 管理应用名称预留」页，**逐字符照抄**。
+#    可用 identity.local.json 的 display_name 或命令行 --display-name 覆盖。
+#
+# 值＝本应用预留的名字：「桌面歌词|Desktop-sing」（中英并排，商店商品名与 Start 菜单都用它）。
+# ShortName 是磁贴底部那行短字，不受预留名校验，保持简短即可。
+DISPLAY_NAME = "桌面歌词|Desktop-sing"
 SHORT_NAME = "桌面歌词"        # 磁贴底部短名称（全名过长会被截断）
 PUBLISHER_DISPLAY_NAME = "Desktop-sing Project"
 
@@ -176,6 +186,22 @@ def load_identity(args):
     return name, publisher
 
 
+def load_display_name(args) -> str:
+    """清单里的应用名：命令行 --display-name → identity.local.json 的 display_name → 常量。
+
+    ⚠️ 必须是 Partner Center **预留过的名字之一**（逐字符），否则上传即被拒：
+    「The name found in the package is not one of your reserved app names」。
+    """
+    nm = (getattr(args, "display_name", "") or "").strip()
+    if not nm and os.path.isfile(IDENTITY_LOCAL):
+        try:
+            with open(IDENTITY_LOCAL, encoding="utf-8") as f:
+                nm = (json.load(f).get("display_name", "") or "").strip()
+        except Exception as ex:
+            print("[警告] identity.local.json 解析失败：%s" % ex)
+    return nm or DISPLAY_NAME
+
+
 def load_site_url(args) -> str:
     """隐私政策页所在的**站点根地址**：命令行 --site-url → identity.local.json 的 site_url。
 
@@ -227,12 +253,13 @@ def stage_layout():
     return LAYOUT
 
 
-def write_manifest(name: str, publisher: str, version: str) -> str:
+def write_manifest(name: str, publisher: str, version: str,
+                   display_name: str = "") -> str:
     tpl = open(TEMPLATE, encoding="utf-8").read()
     out = (tpl.replace("{{IDENTITY_NAME}}", name)
               .replace("{{PUBLISHER}}", publisher)
               .replace("{{VERSION}}", version)
-              .replace("{{DISPLAY_NAME}}", DISPLAY_NAME)
+              .replace("{{DISPLAY_NAME}}", display_name or DISPLAY_NAME)
               .replace("{{SHORT_NAME}}", SHORT_NAME)
               .replace("{{PUBLISHER_DISPLAY_NAME}}", PUBLISHER_DISPLAY_NAME)
               .replace("{{DESCRIPTION}}", DESCRIPTION))
@@ -331,7 +358,7 @@ def run_wack(msix_path: str):
     print(out[-1500:] if out.strip() else "[WACK] 无输出，退出码 %d" % r.returncode)
 
 
-def export_listing(version: str, site_url: str = "") -> str:
+def export_listing(version: str, site_url: str = "", display_name: str = "") -> str:
     """把提审要往上贴的文案导出成一个 Markdown，免得到时手忙脚乱。
 
     Partner Center 各字段是分散的表单，这里按「字段名 → 内容」整理，
@@ -371,6 +398,8 @@ def export_listing(version: str, site_url: str = "") -> str:
 > 会自动补成四段（{pkgver}）。
 
 ## 2. 属性 / 类别
+- 产品名称：**{display_name}** —— Partner Center「管理应用名称」里**逐字符**选这一条；
+  清单 `<Properties><DisplayName>` 已是同值（包名对不上预留名＝上传即拒）。注意半角 `|` 与全角 `｜` 不是同一个字符。
 - 产品类别：**音乐（Music）**；次级建议：实用工具（Utilities）
 - 支持设备：PC（Windows 10 1809+ / Windows 11，x64）
 - 语言：**简体中文**（声明几种就要本地化几种描述的文本）
@@ -438,6 +467,8 @@ def main():
     ap.add_argument("--fresh", action="store_true", help="先重跑 build_exe.py --dir")
     ap.add_argument("--name", default="", help="Partner Center 的包标识名")
     ap.add_argument("--publisher", default="", help="Partner Center 的发布者 CN=…")
+    ap.add_argument("--display-name", default="",
+                    help="清单里的应用名（必须是 Partner Center 预留名之一）")
     ap.add_argument("--site-url", default="",
                     help="隐私政策页所在站点根地址（默认取 identity.local.json 的 site_url）")
     ap.add_argument("--version", default="", help="覆盖版本号（默认取 APP_VERSION）")
@@ -448,7 +479,7 @@ def main():
 
     if args.listing:
         ver = args.version or app_version()
-        p = export_listing(ver, load_site_url(args))
+        p = export_listing(ver, load_site_url(args), load_display_name(args))
         print("[提审材料] %s" % p)
         return
 
@@ -464,6 +495,7 @@ def main():
 
     ver = package_version(args.version or app_version())
     name, publisher = load_identity(args)
+    display_name = load_display_name(args)
     identity_is_placeholder = "PLACEHOLDER" in (name + publisher)
     site_url = load_site_url(args)
 
@@ -471,11 +503,12 @@ def main():
     print("版本   : %s" % ver)
     print("标识   : %s" % name)
     print("发布者 : %s" % publisher)
+    print("应用名 : %s" % display_name)
     print("隐私页 : %s" % (("%s/privacy.html" % site_url) if site_url
                            else "（未配 site_url，提审文案里会留占位地址）"))
 
     stage_layout()
-    write_manifest(name, publisher, ver)
+    write_manifest(name, publisher, ver, display_name)
 
     os.makedirs(OUTDIR, exist_ok=True)
     msix = os.path.join(OUTDIR, "Desktop-sing-%s-x64.msix" % ver)

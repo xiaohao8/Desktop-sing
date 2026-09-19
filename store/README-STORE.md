@@ -15,7 +15,7 @@ store/
 ├── build_store.py              一键打包 / 导出提审材料
 ├── audit_round3.py             商店模式离线自检（政策合规 + 运行时行为 + 材料完整性）
 ├── assets/                     生成的图标资产（提交仓库，免得每次重渲染）
-├── identity.local.json         ★ 你的包标识 + 隐私政策站点地址（本机填一次，勿提交、勿外传）
+├── identity.local.json         ★ 包标识 + 应用名 + 隐私政策站点地址（本机填一次，勿提交、勿外传）
 ├── build/layout/               打包工作目录（可随时删）
 └── out/
     ├── Desktop-sing-x.y.z.w-x64.msix    最终产物（未签名）
@@ -68,18 +68,27 @@ store/
    {
      "name": "12345Desktop-sing",
      "publisher": "CN=1A2B3C4D-5E6F-...",
+     "display_name": "桌面歌词|Desktop-sing",
      "site_url": "https://xxx.netlify.app"
    }
    ```
 
    不填也能出包（占位标识），但**只能本地看结构，不能上传**。
 
+   **`display_name` 必须逐字符等于 Partner Center 里预留过的名字之一**（「管理应用名称」
+   页面），否则上传直接被拒：*The name found in the package is not one of your reserved
+   app names*。清单 `<Properties><DisplayName>` 与 `<Application>` 的 DisplayName 都由它填充
+   （默认值已是 `桌面歌词|Desktop-sing`，改名后才需覆盖）。⚠️ 半角 `|`(U+007C) 与全角
+   `｜`(U+FF5C) 是两个字符，抄的时候务必照抄页面上的那个。
+
    `site_url` 是隐私政策页所在的站点根（§1.4 部署后拿到）：填了之后出包会打印
    `隐私页 : …/privacy.html`，`build_store.py --listing` 也会把中英两个真实地址
-   直接写进提审文案。三项都可用 `--name` / `--publisher` / `--site-url` 临时覆盖。
+   直接写进提审文案。四项都可用 `--name` / `--publisher` / `--display-name` /
+   `--site-url` 临时覆盖。
 
    出包脚本与自检都会盯着这件事：`audit_round3.py` 的 `P5.20a/b` 在没填时给 WARN，
-   **填了标识却没重出包**则由 `P5.20c` 直接 FAIL（那正是「上传占位包」的现场）。
+   **填了标识却没重出包**由 `P5.20c` FAIL，**改了应用名却没重出包**由 `P5.20d` FAIL
+   （都是「上传的包和本地配置对不上」的现场）。
 
 ## 2. 打包
 

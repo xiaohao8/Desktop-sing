@@ -933,6 +933,40 @@ else:
     except Exception as _ex:
         check("P5.20c 能读出 out/ 里最新包的清单", False, repr(_ex))
 
+# P5.20d 清单 `<Properties><DisplayName>` 必须**逐字符**等于 Partner Center 里预留过的名字之一，
+# 否则上传直接被拒：「The name found in the package is not one of your reserved app names」。
+# 全角 ｜ 与半角 |、大小写、首尾空格都会导致不匹配 —— 这里顺带把这些「看着一样其实不一样」
+# 的字符点出来，省得白跑一次提审。
+_bs_src = open(os.path.join(ROOT, "store", "build_store.py"), encoding="utf-8").read()
+_m_dn = re.search(r'^DISPLAY_NAME\s*=\s*"([^"]*)"', _bs_src, re.M)
+_const_dn = _m_dn.group(1) if _m_dn else ""
+_local_dn = str(_ident.get("display_name") or "").strip() or _const_dn
+_dn_note = ""
+if "|" in _local_dn or "｜" in _local_dn:
+    _dn_note = "（含分隔符：请核对 Partner Center 页面用的是半角 | 还是全角 ｜）"
+if not _local_dn:
+    check("P5.20d 清单应用名（DisplayName）非空", False,
+          "预留名必须写进清单，空名上传必被拒")
+else:
+    check("P5.20d 清单应用名已配", True,
+          "DisplayName=%r%s" % (_local_dn, _dn_note))
+
+if _msixes and _local_dn:
+    try:
+        import zipfile as _zf
+        with _zf.ZipFile(_newest) as _z:
+            _mf2 = _z.read("AppxManifest.xml").decode("utf-8", "replace")
+        _m2 = re.search(r"<DisplayName>([^<]*)</DisplayName>", _mf2)
+        _pkg_dn = _m2.group(1) if _m2 else ""
+        check("P5.20d out/ 包内 DisplayName 与本地配置一致",
+              _pkg_dn == _local_dn,
+              "包内=%r ｜ 本地=%r%s" % (
+                  _pkg_dn or "(读不到)", _local_dn,
+                  "  ← 改名后没重出包，**重出包再传**"
+                  if (_pkg_dn and _pkg_dn != _local_dn) else ""))
+    except Exception as _ex2:
+        check("P5.20d 能读出 out/ 包内的 DisplayName", False, repr(_ex2))
+
 # ---------------------------------------------------------------- 汇总
 head("汇总")
 print("  FAIL: %d   WARN: %d" % (len(FAILS), len(WARNS)))
