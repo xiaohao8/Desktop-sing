@@ -1130,6 +1130,61 @@ check("P5.21c og:image / og:url 为绝对地址（社交分享卡片可渲染）
       "；".join(_og_rel) if _og_rel
       else "index.html 的 og:image 与 og:url 均为 https 绝对地址")
 
+# ---------------------------------------------------------------- P5.22 真机商店截图
+# 商店 listing 的主上传素材 = 真机截屏（store/shots/real-*.png，1920×1080），
+# 离屏合成图（P5.17）降级为备用。Partner Center 现行硬性要求：
+# PNG、桌面图 ≥1366×768、单文件 <50MB、最多 10 张（建议 4 张）。
+head("P5.22 真机商店截图（store/shots/real-*.png，主上传素材）")
+
+_real_py = os.path.join(ROOT, "store", "make_real_shots.py")
+_real_dir = os.path.join(ROOT, "store", "shots")
+
+check("P5.22a 真机截图合成脚本存在（make_real_shots.py）", os.path.isfile(_real_py))
+
+_real_src = os.path.join(_real_dir, "src")
+_src_n = (len([_f for _f in os.listdir(_real_src) if _f.lower().endswith(".png")])
+          if os.path.isdir(_real_src) else 0)
+check("P5.22b 真机原图已留档（store/shots/src/）", _src_n >= 1,
+      ("原图 %d 张 —— 换机器后无法从成品反推，合成脚本会空转" % _src_n)
+      if _src_n < 1 else "原图 %d 张留档，real-*.png 可随时重合成" % _src_n)
+
+_real_bad, _real_ok = [], 0
+if os.path.isdir(_real_dir):
+    from PySide6.QtGui import QImage  # noqa: E402
+    import glob as _glob
+    _real_pngs = sorted(_glob.glob(os.path.join(_real_dir, "real-*.png")))
+    if not _real_pngs:
+        _real_bad.append("没有 real-*.png（跑 .buildenv\\Scripts\\python.exe store\\make_real_shots.py）")
+    for _rp in _real_pngs:
+        _rn = os.path.basename(_rp)
+        _ri = QImage(_rp)
+        if _ri.isNull():
+            _real_bad.append("%s 不是可读 PNG" % _rn)
+        elif _ri.width() < 1366 or _ri.height() < 768:
+            _real_bad.append("%s 尺寸 %dx%d 不足 1366x768" % (_rn, _ri.width(), _ri.height()))
+        elif os.path.getsize(_rp) >= 50 * 1024 * 1024:
+            _real_bad.append("%s %dMB ≥ Partner Center 单文件 50MB 上限"
+                             % (_rn, os.path.getsize(_rp) // (1024 * 1024)))
+        else:
+            _real_ok += 1
+    check("P5.22c 真机成品达标（PNG、≥1366x768、<50MB、1~10 张）",
+          not _real_bad and 1 <= _real_ok <= 10,
+          "；".join(_real_bad) if _real_bad
+          else "%d 张 1920x1080，可直接上传 Partner Center" % _real_ok)
+else:
+    check("P5.22c 真机成品达标", False, "缺 store/shots/ 目录")
+
+# 口径守卫：文档必须把真机图写成主素材，且不再出现「建议补真机图」这类旧待办
+# （改口径时最容易漏文档 —— P5.17i 同款思路，盯的是另一处旧话）。
+_stale_real = []
+for _f in ("store/README-STORE.md", "store/提审上线手册.md"):
+    _t = open(os.path.join(ROOT, _f), encoding="utf-8").read()
+    if "store/shots/real-" not in _t and "store\\shots\\real-" not in _t:
+        _stale_real.append("%s 没把 store/shots/real-* 写成主素材" % _f)
+    if "补 1 张真机" in _t:
+        _stale_real.append("%s 还留着「补 1 张真机」旧待办" % _f)
+check("P5.22d 文档口径已切换（真机图为主上传素材）", not _stale_real, "；".join(_stale_real))
+
 # ---------------------------------------------------------------- 汇总
 head("汇总")
 print("  FAIL: %d   WARN: %d" % (len(FAILS), len(WARNS)))

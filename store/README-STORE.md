@@ -11,7 +11,8 @@ store/
 ├── 提审上线手册.md              ★ 按顺序照着做的操作手册（准备 + 步骤）
 ├── AppxManifest.template.xml   清单模板（占位符由构建时替换，不要直接改它发布）
 ├── make_store_assets.py        生成全部商店图标资产（91 个，已跑通）
-├── render_shots.py             离屏生成商店截图素材（3 张 1600×900）
+├── render_shots.py             离屏生成备用商店截图（3 张 1600×900）
+├── make_real_shots.py          真机截图合成主上传素材（5 张 1920×1080）
 ├── build_store.py              一键打包 / 导出提审材料
 ├── make_localtest.py           ★ 自签一份已签名副本，本机装上看商店版真实效果（§3）
 ├── audit_round3.py             商店模式离线自检（政策合规 + 运行时行为 + 材料完整性）
@@ -229,7 +230,7 @@ WACK（Windows App Certification Kit，`appcert.exe`）就是商店审核用的�
 | 名称 | 桌面歌词 | 与清单 DisplayName 一致 |
 | 描述 | 见 `STORE_LISTING_DESCRIPTION` | **必须写清重要限制**（见 §7） |
 | 搜索词 | ≤ 7 个 | 不得含价格词、不得用他人品牌名 |
-| 截图 | 至少 1 张；现成 **3 张 1600×900** 在 `store/out/shots/` | 由 `store\render_shots.py` 离屏生成，**不是真机截屏**：建议另补 1 张真机桌面图。`store/out/` 不进仓库，需重跑脚本 |
+| 截图 | **主素材：5 张 1920×1080 真机图** `store/shots/real-*.png`（进仓库） | 真机原图改后用 `store\make_real_shots.py` 重合成。备用：`store\render_shots.py` 离屏生成 3 张 1600×900（`store/out/` 不进仓库，需重跑脚本） |
 | 图标 | 商店 listing 图标 | 300×300 PNG，可复用 assets 里的方形图 |
 | 类别 | 音乐 / Music（次级：实用工具） | |
 | 年龄分级 | 完成 IARC 问卷 | 无用户内容、无社交 → 通常全年龄 |
