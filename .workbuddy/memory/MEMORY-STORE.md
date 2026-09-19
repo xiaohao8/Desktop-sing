@@ -160,3 +160,37 @@
   idle **179**、hero **468**、settings **3870**，取 **120** 作分界。
 - **商店 listing 图标**：根目录 `icon.png` 是 **1024×1024**，
   等比缩到 **300×300** 交上去（`store/assets/` 里最大只有 310×310）。
+
+## 包标识：三项都要逐字符对，且能自证没抄错（2026-09-19 落地）
+
+- Partner Center「产品管理 → 产品标识」里**被逐字符校验的有三项**，不是两项：
+  `Package/Identity/Name`、`Package/Identity/Publisher`（`CN=<GUID>`）、
+  **`Package/Properties/PublisherDisplayName`**。第三项最容易被忽略 —— 个人账号它**就是
+  真实姓名**（本项目 `付志豪`），填成产品名会报
+  *应用清单中的 PublisherDisplayName 元素…与发布者显示名称不匹配*。
+  另有 `Package/Properties/DisplayName` 必须等于**已预留的应用名**之一，否则报
+  *The name found in the package is not one of your reserved app names*。
+- 本项目实测值：`A135C2AE.Desktop-sing` / `CN=815AB3D3-C7A7-40CB-93F0-57D02D5FAAF0` /
+  `付志豪` / `桌面歌词|Desktop-sing`（**半角 `|`**）。
+- **PFN 反推 —— 免费的自证手段（强烈建议每个包都做一次）**：
+  `Package Family Name = <IdentityName>_<publisher_hash>`，后半段是**纯函数**：
+  ```
+  h = sha256(publisher.encode("utf-16-le")).digest()[:8]   # 取前 64 位
+  big = int.from_bytes(h, "big") << 1                      # 64→65 bit：末位补 0
+  hash13 = "".join(ALPHA[(big >> (5*(12-i))) & 31] for i in range(13))
+  ALPHA = "0123456789abcdefghjkmnpqrstvwxyz"               # 去掉易混 i/l/o/u
+  ```
+  **`<< 1` 那步不能省**：13 字符 × 5 bit = 65 bit，少补这一位最后一字符必错
+  （踩过：算出 `…hshh`，实际 `…hshg`，一度以为抄错了）。
+  本项目反推 `8ahsnwh40hshg` == Partner Center 值 → **证明 `CN=…` 那串零抄错**。
+  这套算法已固化进 `audit_round3.py` 的 **P5.20c3**：读 `identity.local.json` 的
+  `package_family_name`，反推比对，不符即 FAIL。**抄错一个字符 → 哈希完全不同**，
+  是「拒审第一大原因」目前唯一能在本地拦下的办法。
+- **自检 P5.20 组（13 项）分工**：a/a2 本地标识是否填全（缺则 WARN）；
+  b 站点根地址；c 「本地填了但 `out/` 还是旧包」；c2 包内三项与本地**逐字段**比对；
+  c3 PFN 反推；d 应用名（含全角/半角 `|` 提示）＋包内 `DisplayName` 一致性；
+  e 官网三页品牌标记与 `<title>`。
+  **改标识/改名的唯一正确顺序**：改 `identity.local.json` → `build_store.py` →
+  `audit_round3.py`（FAIL 0 / WARN 0）→ 上传。跳过中间那步就是「本地对、包里旧」。
+- `store/identity.local.json` **必须 gitignored**（含发布者证书主题串），
+  但 `package_family_name` 抄进来能让 c3 生效 —— 这段哈希不含敏感信息。

@@ -163,31 +163,47 @@
 - **隐私政策**：商店必填 URL → 站点根 + `/privacy.html`（中文 listing）与 `/privacy.en.html`（英文）；
   内容与 `PRIVACY.md` 同源，两者都要如实含「歌词接口按需查询（歌名/歌手/时长/ID）+ 更新检查比对版本号」。
   政策 10.5.1 **特别点名 Desktop Bridge 与 Win32 必须始终具备隐私政策**。
-- **`store/identity.local.json`（本机、勿提交）四个键**：`name`（Partner Center 的
+- **`store/identity.local.json`（本机、勿提交）六个键**：`name`（Partner Center 的
   Package/Identity/Name）、`publisher`（`CN=…` 主题串，**必须原样复制逐字符匹配**）、
+  **`publisher_display_name`**（Package/Properties/PublisherDisplayName，个人账号＝**真实姓名**，
+  填成产品名会报「清单中的 PublisherDisplayName 元素…与发布者显示名称不匹配」）、
   `display_name`（**预留的应用名，必须逐字符等于 Partner Center「管理应用名称」里的一条**，
-  默认 `桌面歌词|Desktop-sing`）、`site_url`（站点根）。`site_url` 填了之后出包会打印隐私页地址，
+  默认 `桌面歌词|Desktop-sing`）、`site_url`（站点根）、
+  **`package_family_name`**（PFN，仅用于自检反推校验 publisher 哈希，见下）。
+  `site_url` 填了之后出包会打印隐私页地址，
   `build_store.py --listing` 会把中英两个真实地址 + 产品名称直接写进提审文案。
-  也可用 `--name / --publisher / --display-name / --site-url` 临时覆盖。
+  也可用 `--name / --publisher / --publisher-display-name / --display-name / --site-url` 临时覆盖。
   不填只能出**占位标识包**（包内 `Identity Name="Desktop-sing-PLACEHOLDER"`），**不能上传**。
   ⚠️ **半角 `|`(U+007C) 与全角 `｜`(U+FF5C) 不同字符**；清单 DisplayName 对不上预留名会被拒
   （*name found in the package is not one of your reserved app names*）。实测 `|` 能过 `makeappx`。
+  **2026-09-19 已填真实值**：`A135C2AE.Desktop-sing` / `CN=815AB3D3-C7A7-40CB-93F0-57D02D5FAAF0` /
+  `付志豪` / `桌面歌词|Desktop-sing` / `…_8ahsnwh40hshg`，
+  **`store/out/Desktop-sing-1.0.0.0-x64.msix` 已是可上传的正式包**
+  （SHA256 `b5136c0f…`，234 文件 / 43.7 MB，包内三项与 Partner Center 逐字符一致、无 `{{ }}` 残留）。
+- **PFN 反推 = 免费的自证「Publisher 没抄错」**（`audit_round3.py` 的 P5.20c3）：
+  `PFN = <IdentityName>_<hash13>`，`hash13 = base32_13( sha256(publisher.encode("utf-16-le"))[:8] << 1 )`，
+  字母表 `0123456789abcdefghjkmnpqrstvwxyz`。**`<< 1` 不能省**（64→65 bit，末位补 0），
+  少了最后一字符必错（踩过：算 `…hshh`、实际 `…hshg`）。抄错一个字符 → 哈希完全不同。
 - **上线自检**：`store\audit_round3.py`（强制 STORE_MODE=True 真实实例化浮层+设置面板走 refresh()，
-  核对资产完整性、隐私政策与代码行为一致性）。**2026-09-19 共 124 项**；通过判据＝
-  **FAIL 0，且上传前 WARN 也要 0**（WARN 通常就是「还没填 Partner Center 信息」那两条）。
+  核对资产完整性、隐私政策与代码行为一致性）。**2026-09-19 共 128 项**；通过判据＝
+  **FAIL 0，且上传前 WARN 也要 0**（当前已是 0/0）。
   原有 P5 组：商标禁用、本地数据控制权（缓存上限/清理入口）、功能数量口径一致、
   官网截图新鲜度、认证说明主路径。**P5.18 发布物料自洽 6 项**（校验清单每行指向真实文件、
   只收录 `dist/release/`、ASCII asset 名映射、中英 README 有下载指引）；
   **P5.19 站点部署副本一致性 5 项**（与 `site/` 归一化后逐字节一致、
   `netlify.toml` 无构建命令且发布目录为仓库根、三张页面都在根目录、`sync_site.py` 存在）。
-  **P5.20 提审前置 5 项**：`P5.20a` 包标识是否已填、`P5.20b` 站点地址是否已配 → 缺了给 WARN；
-  **`P5.20c` 直接读 `out/` 最新 .msix 的清单与本地标识比"档位"** —— 填了标识却没重出包就 FAIL
-  （守住「上传占位包」这个最致命的低级错误）；**`P5.20d` 两项盯应用名** —— 清单 DisplayName
+  **P5.20 提审前置 13 项**：`P5.20a/a2` 本地标识与发布者显示名是否填全（缺则 WARN）、
+  `P5.20b` 站点地址；**`P5.20c` 直接读 `out/` 最新 .msix 的清单与本地标识比"档位"** —— 填了标识
+  却没重出包就 FAIL（守住「上传占位包」这个最致命的低级错误）；
+  **`P5.20c2` 包内 Name/Publisher/PublisherDisplayName 与本地逐字段比对**（抄错即 FAIL）；
+  **`P5.20c3` PFN 反推**（见上）；**`P5.20d` 两项盯应用名** —— 清单 DisplayName
   必须与本地配置一致，**改了名没重出包也 FAIL**（守住「包名对不上预留名」）；
   **`P5.20e` 三项盯官网品牌名** —— 三页的品牌标记必须 == 产品名、`<title>` 须含产品名
   （`<title>` 判「包含」不判「开头」：隐私页是「隐私政策 · 产品名」）；
-  **`P5.21` 两项盯资源版本戳** —— 页面里所有 `assets/` 引用必须带 `?v=<内容指纹>`，
-  且指纹要与 `site/assets/` 实际内容对得上（否则「改了资产没重跑 make_assets.py」）。
+  **`P5.21` 三项盯资源版本戳与分享卡片** —— 页面里所有 `assets/` 引用必须带 `?v=<内容指纹>`，
+  指纹要与 `site/assets/` 实际内容对得上（否则「改了资产没重跑 make_assets.py」），
+  另 **`og:image`/`og:url` 必须是绝对地址**（社交抓取器不解析相对路径，写相对路径分享卡片
+  就退化成纯文字 —— 2026-09-19 已修）。
   ⚠️ **这是换品牌图后「线上还是旧图标」的真凶**：部署侧 `netlify.toml` 给 `/assets/*`
   设了 7 天强缓存，原本的理由是「文件名带内容含义，换图就换文件」——但图标文件名是
   **固定**的，前提根本不成立。现在 URL 带内容指纹，前提才真成立。
