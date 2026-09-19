@@ -994,6 +994,54 @@ for _rel in ("site/index.html", "site/privacy.html", "site/privacy.en.html"):
           "；".join(_why) if _why else "%d 处品牌标记 + <title> 均为 %r"
           % (len(_brands), _local_dn))
 
+# P5.21 页面里的 assets 引用必须带内容版本戳 ?v=…
+# 部署侧 netlify.toml 给 /assets/* 设了 7 天强缓存，而图标/截图**文件名是固定的**：
+# 不带版本戳就换不动 —— 2026-09-19 换完品牌图，线上连着 7 天仍是旧图标就是这么来的
+# （服务器上的文件其实早就是新的，纯粹被浏览器/边缘缓存挡住了）。
+head("P5.21 资源引用带内容版本戳（穿透 /assets/* 的 7 天强缓存）")
+
+_site_assets = os.path.join(ROOT, "site", "assets")
+
+
+def _assets_fingerprint(outdir):
+    """与 site/tools/make_assets.py 的 assets_fingerprint() 同一算法（按名排序喂名字+内容）。"""
+    import hashlib
+    h = hashlib.sha256()
+    for name in sorted(os.listdir(outdir)):
+        p = os.path.join(outdir, name)
+        if os.path.isfile(p):
+            h.update(name.encode("utf-8"))
+            with open(p, "rb") as f:
+                h.update(f.read())
+    return h.hexdigest()[:10]
+
+
+_reported = []
+for _rel in ("site/index.html", "site/privacy.html", "site/privacy.en.html"):
+    _pp = os.path.join(ROOT, *_rel.split("/"))
+    if not os.path.isfile(_pp):
+        continue
+    _html = open(_pp, encoding="utf-8").read()
+    _refs = re.findall(r'(?:href|src)="(assets/[^"]+)"', _html)
+    _un = [r for r in _refs if "?v=" not in r]
+    if _un:
+        _reported.append("%s: %s" % (_rel.split("/")[-1], _un[:3]))
+check("P5.21a 三页所有 assets 引用都带 ?v=", not _reported,
+      "；".join(_reported) if _reported
+      else "未打戳引用 0 处（跑 site/tools/make_assets.py 可自动补）")
+
+if os.path.isdir(_site_assets):
+    _fp_now = _assets_fingerprint(_site_assets)
+    _m_stamp = re.search(r'assets/[^"?]+\?v=([0-9a-f]+)', open(
+        os.path.join(ROOT, "site", "index.html"), encoding="utf-8").read())
+    _fp_html = _m_stamp.group(1) if _m_stamp else ""
+    check("P5.21b ?v= 与 assets/ 实际内容一致", _fp_html == _fp_now,
+          "页面=%s ｜ 实测=%s%s" % (_fp_html or "(无)", _fp_now,
+                                    "  ← 改过 assets 但没重跑 make_assets.py"
+                                    if _fp_html != _fp_now else ""))
+else:
+    check("P5.21b 找到 site/assets/", False, "缺目录")
+
 # ---------------------------------------------------------------- 汇总
 head("汇总")
 print("  FAIL: %d   WARN: %d" % (len(FAILS), len(WARNS)))

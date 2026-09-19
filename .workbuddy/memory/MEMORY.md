@@ -13,6 +13,12 @@
   但 raw 文件仍可匿名取（`https://gitee.com/<r>/raw/main/update.json` 302 到带临时签名的 raw.giteeusercontent）。
   **建议转公开**——公开后 raw / Releases API / 网页浏览才都稳定。
 - **蓝奏云**：国内主分发 + **程序内置更新下载镜像**（安装版 / 免安装极速版两个 zip），**链接每版都变**，见当日工作日志。
+- **官网线上地址＝`https://music.202271.xyz`**（Netlify + 自定义域名，源＝`xiaohao8/music`）。
+  **这个域名就是商店必填的 `site_url`**，已写进 `store/identity.local.json`：
+  中文 listing 填 `https://music.202271.xyz/privacy.html`、英文 `/privacy.en.html`
+  （无扩展名的 `/privacy`、`/privacy.en` 也都能开，Netlify 的 Pretty URLs）。
+  ⚠️ **`netlify.toml` 只存在于部署仓库**（`sync_site.py` 的 `LOCAL_KEEP` 会跳过它），
+  改缓存/响应头要去 `Documents/GitHub/music` 改。
 - **官网**：`site/index.html` 下载区 3 张卡（蓝奏云安装版 / 蓝奏云免安装版 / GitHub Releases）+ `dl-meta` 版本号；
   `site/assets/style.css` 的 `.dl-grid` 为 3 列（960px→2 列、720px→1 列）。
 - **官网品牌名＝`桌面歌词|Desktop-sing`**（与商店预留名逐字一致，用户选定）：
@@ -167,7 +173,7 @@
   ⚠️ **半角 `|`(U+007C) 与全角 `｜`(U+FF5C) 不同字符**；清单 DisplayName 对不上预留名会被拒
   （*name found in the package is not one of your reserved app names*）。实测 `|` 能过 `makeappx`。
 - **上线自检**：`store\audit_round3.py`（强制 STORE_MODE=True 真实实例化浮层+设置面板走 refresh()，
-  核对资产完整性、隐私政策与代码行为一致性）。**2026-09-19 共 122 项**；通过判据＝
+  核对资产完整性、隐私政策与代码行为一致性）。**2026-09-19 共 124 项**；通过判据＝
   **FAIL 0，且上传前 WARN 也要 0**（WARN 通常就是「还没填 Partner Center 信息」那两条）。
   原有 P5 组：商标禁用、本地数据控制权（缓存上限/清理入口）、功能数量口径一致、
   官网截图新鲜度、认证说明主路径。**P5.18 发布物料自洽 6 项**（校验清单每行指向真实文件、
@@ -179,7 +185,13 @@
   （守住「上传占位包」这个最致命的低级错误）；**`P5.20d` 两项盯应用名** —— 清单 DisplayName
   必须与本地配置一致，**改了名没重出包也 FAIL**（守住「包名对不上预留名」）；
   **`P5.20e` 三项盯官网品牌名** —— 三页的品牌标记必须 == 产品名、`<title>` 须含产品名
-  （`<title>` 判「包含」不判「开头」：隐私页是「隐私政策 · 产品名」）。
+  （`<title>` 判「包含」不判「开头」：隐私页是「隐私政策 · 产品名」）；
+  **`P5.21` 两项盯资源版本戳** —— 页面里所有 `assets/` 引用必须带 `?v=<内容指纹>`，
+  且指纹要与 `site/assets/` 实际内容对得上（否则「改了资产没重跑 make_assets.py」）。
+  ⚠️ **这是换品牌图后「线上还是旧图标」的真凶**：部署侧 `netlify.toml` 给 `/assets/*`
+  设了 7 天强缓存，原本的理由是「文件名带内容含义，换图就换文件」——但图标文件名是
+  **固定**的，前提根本不成立。现在 URL 带内容指纹，前提才真成立。
+  改 assets 后**必须重跑 `site/tools/make_assets.py`**（会自动重打指纹）。
   **复用产物快招**：`build_store.py` **不带 `--fresh`** 会复用 `dist/Desktop-sing-v<v>` 只重铺
   layout + makeappx（秒级），改 UI/名字后想快速重出包验证就用它，别每次都重跑 PyInstaller。
   功能数量检查**从源码常量直接计数**

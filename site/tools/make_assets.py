@@ -14,8 +14,13 @@
     python site/tools/make_assets.py                # 图标 + 截图
     python site/tools/make_assets.py --only=icons    # 只刷图标（改图标时用）
     python site/tools/make_assets.py --only=shots    # 只刷截图
+
+无论哪种模式，收尾都会给三个页面里的 `assets/…` 引用打上 `?v=<assets 内容指纹>`，
+让「换了图但文件名没变」也能立刻穿透部署侧的 7 天强缓存。
 """
+import hashlib
 import os
+import re
 import shutil
 import sys
 
@@ -137,6 +142,45 @@ def save(img, name: str):
     print("  %-26s %d x %d" % (name, img.width(), img.height()))
 
 
+PAGES = ("index.html", "privacy.html", "privacy.en.html")
+
+
+def assets_fingerprint() -> str:
+    """给 site/assets/ 全部文件算一个内容指纹（按文件名排序，逐个喂进去）。"""
+    h = hashlib.sha256()
+    for name in sorted(os.listdir(OUT)):
+        p = os.path.join(OUT, name)
+        if os.path.isfile(p):
+            h.update(name.encode("utf-8"))
+            with open(p, "rb") as f:
+                h.update(f.read())
+    return h.hexdigest()[:10]
+
+
+def stamp_pages(ver: str) -> None:
+    """把三个页面里所有 assets/ 引用打上 `?v=<内容指纹>`。
+
+    **为什么非做不可**：部署侧 `netlify.toml` 给 `/assets/*` 设了 7 天强缓存，
+    理由写的是「文件名带内容含义，换图就换文件」—— 但图标这类文件名是**固定**的
+    （`icon-180.png` / `favicon-32.png`），换了品牌图文件名却没变，
+    访客（包括开发者自己）就会连着 7 天看到旧图标。把 URL 绑到内容指纹上，
+    「换图就换 URL」这句话才真成立；资产没变时指纹不变，缓存照旧有效。
+    """
+    pat = re.compile(r'((?:href|src)="assets/[^"?]+)(?:\?v=[0-9a-f]+)?"')
+    for page in PAGES:
+        pp = os.path.join(SITE, page)
+        if not os.path.isfile(pp):
+            continue
+        # newline="" 读 + 写：原样保留文件既有换行，不引入整页 diff
+        with open(pp, encoding="utf-8", newline="") as f:
+            txt = f.read()
+        new = pat.sub(lambda m: "%s?v=%s\"" % (m.group(1), ver), txt)
+        if new != txt:
+            with open(pp, "w", encoding="utf-8", newline="") as f:
+                f.write(new)
+            print("  版本戳 %s → ?v=%s" % (page, ver))
+
+
 if _do_icons:
     print("图标（源：%s）：" % os.path.relpath(ICON_SRC, ROOT))
     for s in (512, 256, 180, 32):
@@ -149,32 +193,35 @@ if _do_icons:
     shutil.copy2(os.path.join(OUT, "icon-180.png"), os.path.join(OUT, "apple-touch-icon.png"))
     print("  favicon-32.png / apple-touch-icon.png")
 
-if not _do_shots:
-    print("\n完成 →", OUT)
-    raise SystemExit(0)
+if _do_shots:
+    print("截图：")
+    # 主视觉：玻璃胶囊样式（深色桌面底，最像 macOS 暗色桌面）
+    save(QImage(os.path.join(PREVIEW, "style_glass_dark.png")), "hero.png")
 
-print("截图：")
-# 主视觉：玻璃胶囊样式（深色桌面底，最像 macOS 暗色桌面）
-save(QImage(os.path.join(PREVIEW, "style_glass_dark.png")), "hero.png")
+    # 五种样式（深色桌面底）
+    for key, out in (("native", "style-native.png"), ("glass", "style-glass.png"),
+                     ("ios", "style-ios.png"), ("vinyl", "style-vinyl.png"),
+                     ("spotify", "style-spotify.png")):
+        save(crop("style_%s_dark.png" % key, 0, 0,
+                  QImage(os.path.join(PREVIEW, "style_%s_dark.png" % key)).width(),
+                  QImage(os.path.join(PREVIEW, "style_%s_dark.png" % key)).height()), out)
 
-# 五种样式（深色桌面底）
-for key, out in (("native", "style-native.png"), ("glass", "style-glass.png"),
-                 ("ios", "style-ios.png"), ("vinyl", "style-vinyl.png"),
-                 ("spotify", "style-spotify.png")):
-    save(crop("style_%s_dark.png" % key, 0, 0,
-              QImage(os.path.join(PREVIEW, "style_%s_dark.png" % key)).width(),
-              QImage(os.path.join(PREVIEW, "style_%s_dark.png" % key)).height()), out)
+    # 设置面板：548x1842 的长条，裁到头部 + 前三张卡片，比例更适合网页
+    save(crop("settings_panel.png", 0, 0, 548, 1060), "panel.png")
 
-# 设置面板：548x1842 的长条，裁到头部 + 前三张卡片，比例更适合网页
-save(crop("settings_panel.png", 0, 0, 548, 1060), "panel.png")
+    # 右键菜单 / 控制条 / 逐字动画 / 四种屏保
+    save(QImage(os.path.join(PREVIEW, "menu.png")), "menu.png")
+    save(QImage(os.path.join(PREVIEW, "controls.png")), "controls.png")
+    # 逐字动画用深底版：官网这一段在深色区块里，浅底版会显得像放错了图
+    save(QImage(os.path.join(PREVIEW, "anim_fan_dark.png")), "anim-fan.png")
+    for key, out in (("particle", "saver-particle.png"), ("minimal", "saver-minimal.png"),
+                     ("bars", "saver-bars.png"), ("orbits", "saver-orbits.png")):
+        save(QImage(os.path.join(PREVIEW, "saver_%s.png" % key)), out)
 
-# 右键菜单 / 控制条 / 逐字动画 / 四种屏保
-save(QImage(os.path.join(PREVIEW, "menu.png")), "menu.png")
-save(QImage(os.path.join(PREVIEW, "controls.png")), "controls.png")
-# 逐字动画用深底版：官网这一段在深色区块里，浅底版会显得像放错了图
-save(QImage(os.path.join(PREVIEW, "anim_fan_dark.png")), "anim-fan.png")
-for key, out in (("particle", "saver-particle.png"), ("minimal", "saver-minimal.png"),
-                 ("bars", "saver-bars.png"), ("orbits", "saver-orbits.png")):
-    save(QImage(os.path.join(PREVIEW, "saver_%s.png" % key)), out)
+# 收尾：资产内容一变，页面里的 ?v= 就跟着变，浏览器才会重新拉取（见 stamp_pages 注释）
+print("\n资源指纹：")
+ver = assets_fingerprint()
+print("  ?v=%s" % ver)
+stamp_pages(ver)
 
 print("\n完成 →", OUT)
