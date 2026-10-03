@@ -3340,24 +3340,100 @@ def karaoke_color(accent: QColor, t: float, dim_alpha: int) -> QColor:
                   int(dim_alpha + (252 - dim_alpha) * t))
 
 
+def _salvage_json(text: str) -> dict:
+    """从半截 JSON 里尽力救回完整的键值对。
+
+    典型损坏形态是**尾部被截断**（写一半被杀），前面的键往往完整合法。
+    逐个扫描 `"key":` 片段，用 json.JSONDecoder().raw_decode 解析紧随其后的值，
+    解析成功就收下；到坏掉的地方自然停下。比直接返回 {} 强得多。
+    """
+    out = {}
+    dec = json.JSONDecoder()
+    # save_config 固定 indent=2，每个键必然独占一行；按行走最省心。
+    # 不能用 find('":') 在整篇里裸搜：截断点落在键名引号内部时会先匹配到
+    # 键名开头的假引号（实测 15% 截断就属于这种），后面全是噪声。
+    for line in text.splitlines():
+        line = line.strip().rstrip(",")
+        # 必须是**行内成对的**引号：键名完整才谈得上解析
+        if len(line) < 4:
+            continue
+        q = line.find('"', 1)
+        if q <= 0:
+            continue
+        key = line[1:q]
+        rest = line[q + 1:].lstrip()
+        if not rest.startswith(":"):
+            continue
+        rest = rest[1:].strip()
+        if not rest:
+            continue
+        try:
+            val, _end = dec.raw_decode(rest)
+        except ValueError:
+            continue          # 这个值被截断了，跳过；后面的行还能救
+        out[key] = val
+    return out
+
+
 def load_config():
+    """读配置。损坏不静默吞掉：留一份 .corrupt 并尽力抢救可读的键。"""
     try:
         with open(CONFIG_PATH, encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except FileNotFoundError:
         return {}
+    except Exception as ex:
+        # 走到这里说明文件存在但解析失败（多半是上次写入中途被杀）。
+        # 保留现场供排查，并尝试抢救 —— 至少别让用户白丢设置。
+        salvaged = {}
+        try:
+            with open(CONFIG_PATH, encoding="utf-8") as f:
+                raw = f.read()
+            try:
+                with open(CONFIG_PATH + ".corrupt", "w", encoding="utf-8") as cf:
+                    cf.write(raw)
+            except OSError:
+                pass
+            salvaged = _salvage_json(raw)
+        except Exception:
+            pass
+        if salvaged:
+            log("config corrupted (%s), salvaged %d keys from %s"
+                % (ex, len(salvaged), CONFIG_PATH))
+        else:
+            log("config corrupted (%s) and nothing salvageable: %s"
+                % (ex, CONFIG_PATH))
+        return salvaged
 
 
 def save_config(cfg: dict):
+    """原子写：临时文件落盘后 os.replace 覆盖，避免半截配置毁掉用户设置。
+
+    os.replace 在同卷内是原子操作（Windows 上走 MoveFileEx 替换语义），
+    因此配置文件只会是「旧的完整内容」或「新的完整内容」，没有中间态。
+    """
+    tmp = "%s.tmp" % CONFIG_PATH
     try:
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        d = os.path.dirname(CONFIG_PATH)
+        if d and not os.path.isdir(d):
+            os.makedirs(d, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())      # 真正落盘，别只留在系统缓冲里
+        os.replace(tmp, CONFIG_PATH)  # 原子替换
     except OSError:
-        pass
+        # 替换失败就把临时文件清掉，别留垃圾（.corrupt 保留给用户看）
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
 
 
 class LyricOverlay(QWidget):
-    fetched = Signal(object)  # payload=(req_id, lines, words, fallback_cover_bytes)
+    fetched = Signal(object)  # payload=(req_id, lines, words, fallback_cover_bytes, trans, singer_ok)
+    cover_ready = Signal(object)  # payload=(req_id, cover_bytes)：封面是补充，不阻塞歌词上屏
     update_checked = Signal(object)  # payload={'has_update':bool,'manual':bool,'version':str,'url':str,'notes':str,'msg':str}
 
     def __init__(self, watcher: MediaWatcher):
@@ -3465,6 +3541,7 @@ class LyricOverlay(QWidget):
         watcher.ticked.connect(self._apply_tick)
 
         self.fetched.connect(self._on_fetched)
+        self.cover_ready.connect(self._on_cover_ready)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._on_frame)
         self._timer.start(33)
@@ -4480,6 +4557,13 @@ class LyricOverlay(QWidget):
 
     def _apply_media(self, info):
         if info is None:
+            # 停止播放 / 播放器退出也必须让**在途的歌词请求作废**。
+            # _req_id 原先只在 _start_fetch 里自增，而这条路径不走
+            # _start_fetch —— 上一首的 worker 回来时 req_id 仍然匹配，
+            # 于是「已停止」的界面上又冒出上一首的歌词，还会弹一个
+            # 错配气泡（此时 self.song 是 None，气泡文案还会退化成
+            # 「没找到 当前歌手 的《空标题》版本」）。这里显式作废。
+            self._req_id += 1
             self.song = None
             self.cover_pix = None
             self.lines = []
@@ -4599,14 +4683,21 @@ class LyricOverlay(QWidget):
             except Exception:
                 log("fetch_lyrics crashed: " + traceback.format_exc())
                 lines, words, cover_url, trans = [], {}, None, []
-            fallback_cover = None
-            if self._req_id == req_id and self.cover_pix is None and cover_url:
-                try:
-                    fallback_cover = http_get(cover_url, timeout=5)
-                except Exception:
-                    fallback_cover = None
+            # 先把歌词发出去，**不要等封面**：封面是装饰，歌词才是主路径。
+            # 原先在这里同步 http_get(cover, timeout=5) 再 emit，实测「晴天」
+            # 歌词 6ms 就到手，却因为封面多等 362ms 才上屏；网络差时最多压 5 秒。
             self.fetched.emit((req_id, lines or [], words or {},
-                               fallback_cover, trans or [], bool(singer_ok)))
+                               None, trans or [], bool(singer_ok)))
+            # 封面改走独立补发通道：下完再单独 emit，UI 那时已经显示歌词了。
+            # ⚠️ 守卫不能丢：SMTC 本身常带 cover 数据，_apply_media 已把
+            # cover_pix 填好；无条件下载就是白下一张几百 KB 的图，下完
+            # _on_cover_ready 又会因 cover_pix is not None 丢弃 —— 纯浪费。
+            # req_id 也一并校验：切歌后旧封面没必要再下。
+            if cover_url and self._req_id == req_id and self.cover_pix is None:
+                try:
+                    self.cover_ready.emit((req_id, http_get(cover_url, timeout=5)))
+                except Exception:
+                    log("cover download failed: " + traceback.format_exc())
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -4633,13 +4724,32 @@ class LyricOverlay(QWidget):
         self._reset_line_state()
         self._spans_cache.clear()
         if self.cover_pix is None and fallback_cover:
-            pix = QPixmap()
-            if pix.loadFromData(fallback_cover):
-                self.cover_pix = pix
-                self._cover_scaled = None
-                self._vinyl_pix = None
-                self._resolve_accent()
+            self._apply_cover_bytes(fallback_cover)
         self._relayout()
+
+    def _apply_cover_bytes(self, data: bytes) -> bool:
+        """封面字节 -> cover_pix，联动失效缩放缓存并重算主色。"""
+        pix = QPixmap()
+        if not data or not pix.loadFromData(data):
+            return False
+        self.cover_pix = pix
+        self._cover_scaled = None
+        self._vinyl_pix = None
+        self._resolve_accent()
+        return True
+
+    def _on_cover_ready(self, payload):
+        """封面补发通道：晚于歌词到达，只在仍是当前请求且确实没封面时才用。
+
+        期间用户可能已经切歌/停止（req_id 变了）或播放器已送来封面
+        （cover_pix 已有值），这两种情况都必须丢弃，否则会把上一首的
+        封面糊到当前歌上。
+        """
+        req_id, data = payload[:2]
+        if req_id != self._req_id or self.song is None or self.cover_pix is not None:
+            return
+        if self._apply_cover_bytes(data):
+            self._relayout()
 
     # ---------------- 翻译歌词 / 暂停淡出 ----------------
 
