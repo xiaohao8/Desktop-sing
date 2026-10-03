@@ -926,6 +926,90 @@ def singer_mismatch_guard():
     assert L._singer_matches("陈慧娴", "王菲 翻唱")
     assert L._singer_matches("陈慧娴", "陈慧娴 (cover)")
 check("singer mismatch guard", singer_mismatch_guard)
+
+def version_compare():
+    """版本号比较：四段格式（商店/MSIX）不能被截断成三段"""
+    # 四段（商店包版本就是四段，如 1.0.0.0 / 2.0.1.0）
+    assert L.parse_version("2.0.1.0") == (2, 0, 1, 0)
+    assert L.compare_version("2.0.0.0", "2.0.1.0") < 0
+    assert L.compare_version("1.0.0.0", "2.0.0.0") < 0
+    # ⚠️ 关键回归：差一个末段号必须能分辨（截断实现会判成相等）
+    assert L.compare_version("2.0.0.0", "2.0.0.1") < 0, "四段末段被截断了"
+    assert L.compare_version("2.0.0.1", "2.0.0.0") > 0
+    assert L.compare_version("2.0.1.0", "2.0.1.0") == 0
+    # 三段与四段混用
+    assert L.compare_version("2.0.0", "2.0.1") < 0
+    assert L.compare_version("2.0.1", "2.0.0") > 0
+    assert L.compare_version("2.0", "2.0.0") == 0
+    assert L.compare_version("2.0.0", "2.0.0.0") == 0
+    # 数值比较而非字符串比较：2.0.10 > 2.0.9
+    assert L.compare_version("2.0.10", "2.0.9") > 0
+    assert L.compare_version("10.0.0", "9.0.0") > 0
+    # 前缀 v / 预发布后缀 / 缺段 / 非法输入
+    assert L.parse_version("v2.0.1") == (2, 0, 1, 0)
+    assert L.parse_version("2.0.1-beta") == (2, 0, 1, 0)
+    assert L.parse_version("abc") == (0, 0, 0, 0)
+    assert L.parse_version("") == (0, 0, 0, 0)
+    assert L.parse_version(None) == (0, 0, 0, 0)
+    # 当前版本号必须能被正确解析（发版后自检）
+    assert L.parse_version(L.APP_VERSION)[:3] == (
+        tuple(int(x) for x in L.APP_VERSION.split(".")[:3]))
+check("version compare", version_compare)
+
+def info_line_filter():
+    """信息行识别：能滤掉「歌手 - 歌名」标题行，且不误伤正常歌词"""
+    # 真标题行 / 名单 / 版权声明 —— 必须滤掉
+    for s in ("周杰伦 - 起风了", "陈慧娴 - 流年", "Beyond - 海阔天空",
+              "Westlife - You Raise Me Up", "Taylor Swift - Love Story",
+              "作词：李荣浩", "编曲 Arrangement：xxx", "未经许可不得转载",
+              "本歌词由XX整理", "QQ音乐", "纯音乐请欣赏"):
+        assert L.is_info_line(s), "应被滤掉却没滤: " + s
+    # ⚠️ 正常歌词必须保留（这些曾被 `^.{0,24}\s-\s.{0,32}$` 整行删掉）
+    for s in ("我想 - 你想", "爱 - 恨", "他 - 她", "聚散 - 离合",
+              "飘零 - 人生", "我 - 远远的太阳", "我想 - 你想，", "A-B",
+              "你-我", "hello-world", "我说了：我不走", "你说你爱我",
+              "加油：一起", "Lesson 1: 开始", "我 - 你 - 他",
+              "如果 - 你 - 真的 - 在乎我"):
+        assert not L.is_info_line(s), "正常歌词被误当成信息行删掉了: " + s
+check("info line filter", info_line_filter)
+
+
+def cache_prune_report():
+    """清理缓存：删不掉的文件要如实上报，不能静默说「已清理」"""
+    import shutil as _sh, tempfile as _tf
+    real = L.CACHE_DIR
+    try:
+        # 1) 全部可删 → 删干净、不报错
+        d = _tf.mkdtemp(prefix="ds_p1_")
+        L.CACHE_DIR = d
+        for i in range(3):
+            with open(os.path.join(d, "c%d.json" % i), "w", encoding="utf-8") as f:
+                f.write('{}')
+        assert L.prune_cache(force=True) == 0, "正常清理不该报失败"
+        assert not os.listdir(d), os.listdir(d)
+        _sh.rmtree(d, ignore_errors=True)
+
+        # 2) 只读文件 → Windows 上最常见的「删不掉」，应清属性后删掉
+        d = _tf.mkdtemp(prefix="ds_p2_")
+        L.CACHE_DIR = d
+        p = os.path.join(d, "ro.json")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write('{}')
+        os.chmod(p, 0o444)
+        L.prune_cache(force=True)
+        assert not os.listdir(d), "只读文件应被清属性后删掉: " + str(os.listdir(d))
+        _sh.rmtree(d, ignore_errors=True)
+
+        # 3) 真删不掉（用目录冒充） → 必须如实返回失败数，供 UI 提示
+        d = _tf.mkdtemp(prefix="ds_p3_")
+        L.CACHE_DIR = d
+        os.makedirs(os.path.join(d, "locked.json"))   # 删不掉的目录
+        failed = L.prune_cache(force=True)
+        assert failed and failed > 0, "删不掉却报成功，用户会以为已清干净"
+        _sh.rmtree(d, ignore_errors=True)
+    finally:
+        L.CACHE_DIR = real
+check("cache prune report", cache_prune_report)
 print("[27] 省电：隐藏即停帧、静止不空转重绘")
 
 def idle_power():

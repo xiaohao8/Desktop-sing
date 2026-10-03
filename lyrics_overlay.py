@@ -120,15 +120,31 @@ def prune_cache(force: bool = False):
     force=False：只在超过上限时才动手（每次写入缓存后调用，开销可忽略）。
     force=True ：清空整个缓存（设置面板的「清理缓存」按钮用）。
     """
+    failed = 0
     try:
         if force:
-            for name in os.listdir(CACHE_DIR):
-                if name.endswith(".json"):
+            # 分多轮：有些文件第一次删不掉（正被占用），过一会儿可能就松了
+            for _round in range(3):
+                names = [n for n in os.listdir(CACHE_DIR) if n.endswith(".json")]
+                if not names:
+                    break
+                stuck = 0
+                for name in names:
+                    p = os.path.join(CACHE_DIR, name)
                     try:
-                        os.remove(os.path.join(CACHE_DIR, name))
+                        os.remove(p)
                     except OSError:
-                        pass
-            return
+                        stuck += 1
+                        # 只读属性是 Windows 上最常见的「删不掉」原因，先清再试
+                        try:
+                            os.chmod(p, 0o666)
+                            os.remove(p)
+                        except OSError:
+                            pass
+                if not stuck:
+                    break
+                failed = stuck
+            return failed
         entries = []
         for name in os.listdir(CACHE_DIR):
             if not name.endswith(".json"):
@@ -150,10 +166,13 @@ def prune_cache(force: bool = False):
                 n -= 1
                 total -= sz
             except OSError:
-                pass
-        log("cache pruned -> %d files / %.1f MB" % (n, total / 1048576.0))
+                failed += 1
+        log("cache pruned -> %d files / %.1f MB%s"
+            % (n, total / 1048576.0,
+               (" / %d 个删不掉" % failed) if failed else ""))
     except OSError:
         pass
+    return failed
 
 
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -635,15 +654,22 @@ def http_get(url: str, headers=None, timeout: float = 8.0) -> bytes:
 # ======================================================================
 
 def parse_version(v: str):
-    """把 'v1.2.3' / '1.2' / '1.2.3.4' 规整成可比较的整数元组 (主,次,修订)"""
+    """把 'v1.2.3' / '1.2' / '1.2.3.4' 规整成可比较的整数元组。
+
+    ⚠️ 段数不固定时**必须补零对齐，不能截断到 3 段**（2026-10-03 修）：
+    截断会让 '2.0.0.1' 变成 (2,0,0)，与 '2.0.0' **完全相等** → 差一个修订号
+    的新版被判成「已是最新」，用户**收不到更新提示**。商店版本号正是四段
+    （1.0.0.0 / 2.0.1.0），这条路径真实会走到。
+    统一补到 4 段：短的补 0，长的截到 4 段。
+    """
     v = (v or "").strip().lstrip("vV")
     parts = []
     for p in re.split(r"[.\-_]", v):
         m = re.match(r"\d+", p)
         parts.append(int(m.group()) if m else 0)
-    while len(parts) < 3:
+    while len(parts) < 4:                     # 补零而非截断（见上）
         parts.append(0)
-    return tuple(parts[:3])
+    return tuple(parts[:4])
 
 
 def compare_version(a: str, b: str) -> int:
@@ -765,8 +791,23 @@ _CREDIT_LOOSE = re.compile(
 
 # 信息行：标题行「歌手 - 歌名」、版权/免责声明、歌词来源水印、制作名单。
 # 借鉴 Lyricify-Lyrics-Helper 的「识别并处理信息行（标题行）」。
+#
+# ⚠️ 标题行识别必须**两侧都像人名/歌名**，不能只看「中间有个连字符」（2026-10-03 修）：
+# 原规则 `^.{0,24}\s-\s.{0,32}$` 会把「我想 - 你想」「爱 - 恨」「聚散 - 离合」这类
+# **正常歌词**整行删掉——用户会看到歌词凭空少一句。实测确认误伤。
+#
+# 判据（全部满足才删，宁可漏删不可误删）：
+#   1. 整行形如「A - B」，两侧非空、不含句末标点；
+#   2. 至少一侧 ≥3 字（专有名词通常 3 字以上；「我想 - 你想」两侧各 2 字 → 放过）；
+#   3. 长度差 ≤12 且较短侧不短于较长侧的 1/3（排除「我 - 远远的太阳」这类不对称歌词）。
+# 另：整行**含句末标点一律放过**——「我想 - 你想，」是歌词，「周杰伦 - 起风了」不是。
+_SIDE = r"[^\s，。！？、,.!?；;：:](?:[^\s，。！？、,.!?；;：:]+[ ]?){0,22}[^\s，。！？、,.!?；;：:]"
+# 命名组：两侧量词里含 {} 分隔，编号组在重复代入后不好定位
+_TITLE_LINE_PAT = re.compile(
+    r"^\s*(?P<l>" + _SIDE + r")\s+-\s+(?P<r>" + _SIDE + r")\s*$")
+
 _INFO_PAT = re.compile(r"未经.{0,8}(许可|允许)|不得翻唱|不得用于|翻录|著作权|版权|本歌词由|歌词制作|"
-                       r"酷狗音乐|QQ音乐|网易云音乐|纯音乐请欣赏|^.{0,24}\s-\s.{0,32}$")
+                       r"酷狗音乐|QQ音乐|网易云音乐|纯音乐请欣赏")
 
 
 def is_info_line(text: str) -> bool:
@@ -774,7 +815,20 @@ def is_info_line(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return False
-    return bool(_INFO_PAT.search(t)) or bool(_CREDIT_PAT.search(t))
+    if _CREDIT_PAT.search(t) or _INFO_PAT.search(t):
+        return True
+    # 含句末标点就放过——「我想 - 你想，」是歌词，「周杰伦 - 起风了」不是标题行
+    if re.search(r"[，。！？、,.!?；;：:]", t):
+        return False
+    m = _TITLE_LINE_PAT.match(t)
+    if not m:
+        return False
+    a, b = len(m.group("l")), len(m.group("r"))
+    if max(a, b) < 3:                     # 两侧都 2 字 → 多半是对仗歌词
+        return False
+    if abs(a - b) > 12 or min(a, b) < max(a, b) / 3.0:
+        return False
+    return True
 
 
 
@@ -7799,15 +7853,26 @@ class SettingsPanel(QWidget):
         return "清理缓存（%d 首 / %s）" % (n, size)
 
     def _on_clear_cache(self):
+        failed = 0
         try:
-            prune_cache(force=True)
+            failed = prune_cache(force=True) or 0
         except Exception:
             log("prune_cache(force) failed: " + traceback.format_exc())
         self.cache_btn.setText(self._cache_btn_text())
+        # 如实反映结果：删不掉的文件要告诉用户，否则「显示成功其实没清干净」
+        # 会让人以为功能坏了（实测只读文件/被占用文件就会残留）。
         try:
-            self.ov.tray.showMessage(
-                "桌面歌词", "歌词缓存已清理",
-                QSystemTrayIcon.Information, 2000)
+            n_left, _bytes = cache_size()
+            if failed or n_left:
+                self.ov.tray.showMessage(
+                    "桌面歌词",
+                    "已清理大部分歌词缓存，%d 个文件删不掉（可能正被占用）。\n"
+                    "重启程序后再试一次即可。" % n_left,
+                    QSystemTrayIcon.Warning, 5000)
+            else:
+                self.ov.tray.showMessage(
+                    "桌面歌词", "歌词缓存已清理",
+                    QSystemTrayIcon.Information, 2000)
         except Exception:
             pass
 
