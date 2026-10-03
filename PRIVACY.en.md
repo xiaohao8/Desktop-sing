@@ -1,5 +1,5 @@
-Desktop-sing 1.0 Privacy Statement
-(Last updated: 2026-09-18)
+Desktop-sing 2.0 Privacy Statement
+(Last updated: 2026-10-02)
 
 We understand how important your personal information is to you. Desktop-sing is a local
 utility. This statement explains what information it accesses, how that information is used,
@@ -33,7 +33,8 @@ this statement.
    Some music platforms' public endpoints only return results for common client types, so when
    requesting those endpoints the software sends a generic browser-type identifier together with a
    compatibility field marked as "PC client, client version 2.9.7". For LRCLIB and the update
-   manifest endpoints the software identifies itself by its own name, Desktop-sing/1.0. These
+   manifest endpoints the software identifies itself by its own name, Desktop-sing/<version> (it follows the
+   application version, e.g. Desktop-sing/2.0). These
    identifiers exist only to let the endpoints return lyric data normally. They **do not and cannot
    contain any of your personal information**, are not linked to your device or account, and are not
    used for identification or tracking. Lyrics and artwork come from the public endpoints of the

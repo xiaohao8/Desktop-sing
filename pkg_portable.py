@@ -1,12 +1,20 @@
 # -*- coding: utf-8 -*-
-"""把 dist/Desktop-sing-v1.0.0/ 打成免安装极速版 zip，顶层目录为 Desktop-sing-v1.0.0。"""
+"""把 dist/Desktop-sing-v<版本>/ 打成免安装极速版 zip，顶层目录为 Desktop-sing-v<版本>。
+
+版本号自动读 lyrics_overlay.py 的 APP_VERSION（与 build_exe.py 同源），发版零手改。
+"""
 import os
+import re
 import zipfile
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-SRC = os.path.join(BASE, "dist", "Desktop-sing-v1.0.0")
-OUT = os.path.join(BASE, "dist", "release", "桌面歌词-v1.0.0-免安装极速版.zip")
-TOP = "Desktop-sing-v1.0.0"
+_ver = re.search(r'^APP_VERSION\s*=\s*["\']([^"\']+)',
+                 open(os.path.join(BASE, "lyrics_overlay.py"), encoding="utf-8").read(),
+                 re.M).group(1)
+
+SRC = os.path.join(BASE, "dist", "Desktop-sing-v%s" % _ver)
+OUT = os.path.join(BASE, "dist", "release", "桌面歌词-v%s-免安装极速版.zip" % _ver)
+TOP = "Desktop-sing-v%s" % _ver
 
 if not os.path.isdir(SRC):
     raise SystemExit("源目录不存在: %s" % SRC)

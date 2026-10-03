@@ -35,7 +35,7 @@ import sys
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(BASE)
-ONEDIR = os.path.join(ROOT, "dist", "Desktop-sing-v1.0.0")
+ONEDIR = os.path.join(ROOT, "dist", "Desktop-sing-v1.0.1")
 LAYOUT = os.path.join(BASE, "build", "layout")
 OUTDIR = os.path.join(BASE, "out")
 TEMPLATE = os.path.join(BASE, "AppxManifest.template.xml")
@@ -74,8 +74,9 @@ PUBLISHER_DISPLAY_NAME = "Desktop-sing Project"
 #    等于把商标写进包元数据）。要说明兼容性就描述「接入 SMTC」这一客观事实。
 DESCRIPTION = ("常驻桌面的卡拉OK歌词悬浮条：自动跟随接入 Windows 系统媒体控制（SMTC）"
                "的播放器显示逐字歌词。"
-               "支持 5 种悬浮样式、4 种氛围屏保、封面主色换肤、翻译与音译显示、进度时间、"
-               "全局快捷键（默认关闭）与开机自启（默认关闭）。"
+               "支持 5 种悬浮样式、9 种逐字动画、4 种氛围屏保、14 款配色主题（可固定主题"
+               "或跟随封面主色自动换肤）、翻译与音译显示、进度时间、全局快捷键（默认关闭）"
+               "与开机自启（默认关闭）。"
                "所有数据仅保存在本机，无账号、无广告、无追踪。")
 
 # 商店商品页「描述」字段（比清单 Description 长，可分段）。
@@ -89,8 +90,9 @@ STORE_LISTING_DESCRIPTION = """桌面歌词是一款常驻桌面的歌词悬浮�
 【主要功能】
 · 逐字卡拉OK歌词：多源并行获取（QQ音乐 / 网易云音乐 / 酷狗音乐 / LRCLIB），择优显示
 · 5 种悬浮样式 · 9 种逐字动画 · 柔和描边（浅色深色壁纸都清晰）
+· 14 款配色主题（v2.0 新增）：固定主题或跟随封面主色自动换肤，悬浮条 / 光晕 / 屏保 / 面板配色同步
 · 4 种氛围屏保（3D 粒子 / 极简时钟 / 音浪 / 星轨）：长时间空闲自动进入黑底防烧屏画面
-· 封面主色换肤 · 翻译与音译歌词 · 进度时间
+· 翻译与音译歌词 · 进度时间
 · 摆放位置预设（7 个锚点，换分辨率也贴边）· 可锁定位置防误拖
 · 全局快捷键（默认关闭，可在设置里开启）
 · 开机自启（默认关闭，可在系统「设置 → 应用 → 启动」里开启）
@@ -117,28 +119,40 @@ RUNFULLTRUST_STATEMENT = (
     "应用不修改系统文件，不安装其他软件，所有数据仅保存在本机用户目录。")
 
 # 提审时填「认证说明」（Notes for certification）。帮审核员知道怎么测。
-CERTIFICATION_NOTES = """测试指引（桌面歌词 v{version}）
-1. 本应用无账号、无需登录，安装后直接可用。
-2. 【怎么打开设置】右键点击系统托盘图标 → 菜单选「设置…」。
-   注意：全局快捷键默认是关闭的（避免与其他软件抢键），所以 Ctrl+Alt+S
-   在初始状态下无效，请不要据此判断功能异常；若想用快捷键，
-   先在设置面板里打开「全局快捷键」开关。
-3. 【怎么看歌词】核心功能需要播放器配合：用 Windows 自带的「媒体播放器」
-   或任意接入 Windows 系统媒体控制（SMTC）的播放器播放一首歌，
-   歌词会自动出现在屏幕底部的悬浮条上。若手边没有播放器，
-   可用系统「媒体播放器」打开任意本地音频文件。
-   本应用不读取音乐文件本身，只读取系统媒体控制提供的曲目信息。
-4. 歌词抓取需要联网（访问音乐平台的公开歌词接口）。断网时不会崩溃，
-   浮层会显示「纯音乐或暂无歌词」，已缓存的歌词仍可正常显示。
-5. 浮层初始位于屏幕底部中央；鼠标拖动可改变位置，右键菜单可锁定位置。
-6. 全部快捷键（需先在设置里开启）：Ctrl+Alt+P 播放暂停 · Ctrl+Alt+, / .
-   上下首 · Ctrl+Alt+[ / ] 歌词偏移 · Ctrl+Alt+L 显示隐藏 · Ctrl+Alt+S 设置
-   · Ctrl+Alt+T 样式 · Ctrl+Alt+D 显示模式 · Ctrl+Alt+G 锁定 · Ctrl+Alt+B 屏保。
-7. 商店版本说明：程序内没有更新检查（更新由 Microsoft Store 分发）；
-   「开机自启」默认关闭，在系统「设置 → 应用 → 启动」里开启，
-   也可在任务管理器的「启动应用」标签开关。
-8. 若歌词未出现，最常见原因是播放器未接入 SMTC（本应用读不到曲目信息），
-   属预期行为，不是崩溃或功能缺失。"""
+# ⚠️ 必须英文在前：上次提审（v1.0.0）因纯中文说明 + 静态待机卡被误判为
+#    「The product loads indefinitely at launch」（10.1.2.10）拒审。
+#    英文第一句就要点破「没有主窗口，桌面上的歌词条就是主界面，不是加载画面」。
+CERTIFICATION_NOTES = """[English]
+Test guide for Desktop-sing v{version}:
+1. NO MAIN WINDOW BY DESIGN: after launch, the app shows a small lyric bar
+   at the bottom of the desktop saying "Ready / 已就绪", plus a system tray
+   icon. That bar IS the app's main UI — it is NOT a loading screen. On first
+   run, a welcome dialog also appears confirming the app is ready.
+2. No account, no sign-in required. Internet access is needed to fetch lyrics.
+3. To see lyrics (the core feature): play any song in a player that supports
+   Windows system media controls (SMTC) — e.g. the built-in Windows "Media
+   Player" app with any local audio file. Lyrics then appear automatically
+   on the desktop bar. If no player is playing, the bar stays in the "Ready"
+   state by design; this is expected behavior, not a hang.
+4. Right-click the tray icon to open Settings. Global hotkeys are OFF by
+   default (to avoid conflicts), so Ctrl+Alt+S does nothing until enabled in
+   Settings — this is intentional, not a malfunction.
+5. Updates are distributed by Microsoft Store; the app contains no self-update.
+
+[中文]
+桌面歌词 v{version} 测试指引：
+1. 本应用无传统主窗口：启动后桌面底部会出现一条显示「已就绪 / Ready」的
+   歌词条，托盘区有图标——歌词条就是主界面，不是加载画面。首次运行还会
+   弹出欢迎窗口确认应用已就绪。
+2. 无账号、无需登录；获取歌词需要联网。
+3. 查看歌词（核心功能）：用任意接入 Windows 系统媒体控制（SMTC）的播放器
+   播放歌曲，例如用系统自带「媒体播放器」打开任意本地音频文件，歌词会自动
+   显示在桌面歌词条上。没有播放器在播歌时歌词条保持「已就绪」待机态，
+   属预期行为，不是卡死。
+4. 右键点击系统托盘图标 → 菜单选「设置…」即可打开设置面板。
+   全局快捷键默认关闭（避免与其他软件抢键），
+   Ctrl+Alt+S 初始状态下无效属预期，可在设置面板开启。
+5. 更新由 Microsoft Store 统一分发，程序内没有自更新通道。"""
 
 # 商店版不要带的文件（卸载器没有意义：商店应用从系统设置里卸载）
 EXCLUDE_FILES = {"卸载桌面歌词.bat"}
@@ -243,14 +257,21 @@ def load_site_url(args) -> str:
 
 def stage_layout():
     """组装 MSIX 布局：清单 + 资产 + onedir 程序本体（去掉商店版不该带的文件）。"""
-    if not os.path.isdir(ONEDIR):
-        raise SystemExit("没找到 %s —— 先跑 build_exe.py --dir，或加 --fresh" % ONEDIR)
+    onedir = ONEDIR
+    if not os.path.isdir(onedir):
+        # 兜底：写死的 ONEDIR 可能与 APP_VERSION 不一致，按当前版本推导一次，
+        # 避免把旧版本的 onedir 错打进包（曾经因此把 v1.0.0 代码当成 v1.0.1 出包）
+        alt = os.path.join(ROOT, "dist", "Desktop-sing-v%s" % app_version())
+        if os.path.isdir(alt):
+            onedir = alt
+    if not os.path.isdir(onedir):
+        raise SystemExit("没找到 %s —— 先跑 build_exe.py --dir，或加 --fresh" % onedir)
     # 布局目录每次重建。沙箱会拦批量删除，用「改名归档」代替 rm -rf
     if os.path.isdir(LAYOUT):
         os.rename(LAYOUT, LAYOUT + ".old-%d" % int(os.path.getmtime(LAYOUT)))
     app_dir = os.path.join(LAYOUT, "Desktop-sing")
     os.makedirs(app_dir, exist_ok=True)
-    shutil.copytree(ONEDIR, app_dir, dirs_exist_ok=True)
+    shutil.copytree(onedir, app_dir, dirs_exist_ok=True)
     for f in EXCLUDE_FILES:
         p = os.path.join(app_dir, f)
         if os.path.isfile(p):

@@ -109,7 +109,19 @@ QT_DROP_PLUGIN = (
     "imageformats/qsvg.dll", "iconengines/qsvgicon.dll",
     "virtualkeyboard/qtvirtualkeyboardplugin.dll",
     "tls/qopensslbackend.dll",        # 走 urllib，不做 Qt 的 HTTPS
+    # v2.0.0 补剔（实测 2.0.0 布局里仍然混进来的）：
+    "tls/qcertonlybackend.dll",       # Qt TLS 后端之二：本项目完全不走 Qt TLS
+    "tls/qschannelbackend.dll",       # Qt TLS 后端之三：同上（QLocalServer 不需要）
+    "networkinformation/qnetworklistmanager.dll",   # QNetworkInformation 插件，未用
+    "platforminputcontexts/qtvirtualkeyboardplugin.dll",  # 虚拟键盘输入上下文（与
+        # virtualkeyboard/ 那个不同路径，之前漏剔）
+    "generic/qtuiotouchplugin.dll",   # TUIo 触摸网关：桌面鼠标场景用不到
 )
+
+# 整目录剔除（按 TOC 路径前缀）：pywin32 残留。本项目完全不用 pywin32
+# （build_exe.py 已排除 win32* 全族模块），这两个文件是 PyInstaller 分析期
+# 自己拖进来的（win32wnet 是它构建期的依赖），冻结后没有运行时会用到。
+DROP_PREFIX = ("win32/",)
 
 # 被 hook 间接拖进来的打包期依赖（运行时用不到）
 PKG_EXCLUDE = [
@@ -128,6 +140,7 @@ def patch_spec(spec_path: str):
         "# ---- build_exe.py 注入：裁掉用不到的 Qt 二进制，减小体积 ----\n"
         "_DROP_EXACT = %r\n"
         "_DROP_SUFFIX = %r\n"
+        "_DROP_PREFIX = %r\n"
         "\n"
         "\n"
         "def _slim_toc(toc):\n"
@@ -136,6 +149,8 @@ def patch_spec(spec_path: str):
         "        n = (e[0] or '').replace('\\\\', '/')\n"
         "        low = n.lower()\n"
         "        if low.endswith('.qm'):            # Qt 自带翻译：未主动加载 QTranslator，用不到\n"
+        "            continue\n"
+        "        if any(low.startswith(p) for p in _DROP_PREFIX):\n"
         "            continue\n"
         "        if any(low.endswith(d.lower()) for d in _DROP_EXACT):\n"
         "            continue\n"
@@ -149,14 +164,14 @@ def patch_spec(spec_path: str):
         "a.datas = _slim_toc(a.datas)\n"
         "# ---- 注入结束 ----\n"
         "\n"
-    ) % (tuple(QT_DROP_DLL), tuple(QT_DROP_PLUGIN))
+    ) % (tuple(QT_DROP_DLL), tuple(QT_DROP_PLUGIN), tuple(DROP_PREFIX))
     if "pyz = PYZ(" not in txt:
         print("  ! spec 结构异常，跳过裁剪")
         return
     txt = txt.replace("pyz = PYZ(", inject + "pyz = PYZ(", 1)
     open(spec_path, "w", encoding="utf-8").write(txt)
     print("  + spec 已注入 Qt 二进制裁剪（%d 条规则）"
-          % (len(QT_DROP_DLL) + len(QT_DROP_PLUGIN)))
+          % (len(QT_DROP_DLL) + len(QT_DROP_PLUGIN) + len(DROP_PREFIX)))
 
 
 def app_version() -> str:

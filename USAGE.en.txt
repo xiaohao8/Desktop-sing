@@ -1,4 +1,4 @@
-Desktop-sing 1.0 - User Guide
+﻿Desktop-sing 2.0 - User Guide
 =============================
 
 Note: the application interface is currently Simplified Chinese only.
@@ -11,8 +11,9 @@ Note: the application interface is currently Simplified Chinese only.
    QQ Music, NetEase Cloud Music or Kugou. The lyric overlay appears on the desktop by itself.
 3. Hover over the overlay to reveal the control strip: previous / play-pause / next / screensaver /
    lock / settings.
-4. Right-click the overlay or the tray icon to change the style, adjust the font size, or turn on
-   translated lyrics.
+4. Right-click the overlay or the tray icon to change the overlay style or the colour theme,
+   adjust the font size, or turn on translated lyrics. The tray menu "Colour themes" offers
+   14 curated two-tone themes; by default the colours follow the album art automatically.
 
 [Frequently asked questions]
 - "No write permission on drive D" during installation? The installer automatically switches to your
@@ -25,6 +26,9 @@ Note: the application interface is currently Simplified Chinese only.
   Right-click and use "Re-fetch lyrics" to try again.
 - Want a different font? Settings panel -> Font library. One click downloads MiSans and others into
   %APPDATA%\Desktop-sing\ on your own machine. Nothing is uploaded.
+- Want different colours? Tray icon right-click -> "Colour themes" reskins the overlay, ambient
+  glow, screensaver and settings panel in one click. Or use Settings -> Colour themes to choose
+  "cover extraction" (default, follows each song's album art) or a fixed theme.
 - Run at startup? There is a toggle in the settings panel.
 - Stuck at launch, or want to confirm this is not a tampered build? See "Security and allowing the
   app" and "Checking for updates" below.

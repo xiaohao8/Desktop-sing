@@ -4,8 +4,8 @@
 
 读取 Windows 系统媒体控制（SMTC）中正在播放的歌曲（QQ音乐 / 网易云 / Spotify / 浏览器
 均可，只要播放器接入了系统媒体栏），自动获取专辑封面与歌词，以悬浮条形式显示在桌面：
-逐字滑动卡拉OK动画、封面主色取色、翻译歌词、氛围光晕、5 种悬浮样式、全局快捷键，
-常驻桌面/置顶悬浮双模式。
+逐字滑动卡拉OK动画、封面主色取色 / 14 款配色主题、翻译歌词、氛围光晕、5 种悬浮样式、
+全局快捷键，常驻桌面/置顶悬浮双模式。
 
 用法:
     pythonw lyrics_overlay.py       # 无控制台启动
@@ -967,7 +967,8 @@ def fetch_netease_lyric_full(song_id: str, timeout: float = 8.0):
     return [], {}, []
 
 
-_LRCLIB_UA = "Desktop-sing/1.0"
+# LRCLIB 请求头标识（社区礼仪：报上真实的应用名与版本）。
+# 版本号跟随 APP_VERSION 动态生成，见 APP_VERSION 定义处的 _LRCLIB_UA。
 
 
 def fetch_lrclib_candidates(title: str, artist: str, timeout: float = 8.0):
@@ -1799,6 +1800,35 @@ def pill_bg_color(accent: QColor) -> QColor:
 
 
 # ======================================================================
+# 配色主题（v2.0）：固定色板，可整体接管「封面取色」的自动配色
+# ======================================================================
+# 每个主题 = (id, 显示名, 主色 accent1, 副色 accent2)。
+#   主色：卡拉OK已唱文字 / 氛围光晕 / 面板控件主色；
+#   副色：渐变收尾 / 光晕外圈，与主色构成同屏双色渐变。
+# 明度全部取 0.9 左右的高亮段（对齐 extract_accent 输出的 V≈0.92）：太深的颜色
+# 在深色卡片上发闷、和暗色壁纸混在一起，太浅又和「未唱到」的白字拉不开层次。
+# 这批色板统一按该标准挑选，任何一张封面取色的结果也都落在这个区间。
+# 石墨银是唯一刻意低饱和的（单色系优雅风），只做点缀用。
+COLOR_THEMES = (
+    ("mist",     "晨雾蓝", "#7dd3fc", "#c4b5fd"),
+    ("aurora",   "极光",   "#5eead4", "#7dd3fc"),
+    ("lime",     "青柠",   "#bef264", "#4ade80"),
+    ("emerald",  "翡翠",   "#34d399", "#a3e635"),
+    ("mint",     "薄荷",   "#6ee7b7", "#93c5fd"),
+    ("sea",      "海盐",   "#93c5fd", "#e0f2fe"),
+    ("lavender", "薰衣草", "#c4b5fd", "#f0abfc"),
+    ("violet",   "星夜紫", "#a78bfa", "#818cf8"),
+    ("rose",     "玫瑰粉", "#fb7185", "#e879f9"),
+    ("sakura",   "樱花",   "#fda4af", "#f0abfc"),
+    ("sunset",   "落日橙", "#fdba74", "#f472b6"),
+    ("peach",    "蜜桃",   "#fca5a5", "#fdba74"),
+    ("amber",    "琥珀金", "#fcd34d", "#fb923c"),
+    ("graphite", "石墨银", "#cbd5e1", "#94a3b8"),
+)
+COLOR_THEME_MAP = {t[0]: t for t in COLOR_THEMES}
+
+
+# ======================================================================
 # 媒体监听
 # ======================================================================
 
@@ -1824,6 +1854,11 @@ def _live_pos(raw_pos: float, last_updated, status: str, now: float = None) -> f
     return raw_pos
 
 
+# 会话切换防抖 / 陈旧判定（修复抖音网页版 SMTC 会话每秒闪烁导致跳到陈旧 QQ 音乐会话）
+SESSION_HYSTERESIS = 8.0     # 秒：当前会话刚消失时，多久内拒绝切换到「非播放」候选
+STALE_SESSION_AGE = 90.0     # 秒：未播放且时间线超过此陈旧度的会话视为「无有效播放」
+
+
 class MediaWatcher(QObject):
     mediaChanged = Signal(object)          # dict|None
     ticked = Signal(float, float, str)     # (position秒, duration秒, 状态)
@@ -1836,6 +1871,7 @@ class MediaWatcher(QObject):
         self._had_session = False
         self._last_source = ""
         self._session_id = ""          # 当前挂接的会话 AUMID，用于检测幽灵会话切换
+        self._last_switch_ts = 0.0     # 上次真正切换会话的时间戳（供迟滞判定）
         self._sess_log_t = 0.0         # 会话健康日志节流
         self._last_status = ""
 
@@ -1885,6 +1921,10 @@ class MediaWatcher(QObject):
                                                    "wmplayer", "zune", "foobar"))
                 sticky = bool(last_source) and src == last_source
                 age = MediaWatcher._lut_age(s.get_timeline_properties())
+                # 陈旧且未播放的会话（如 QQ 音乐崩溃残留）直接压到最低优先级，
+                # 避免它顶掉真正在播的源
+                if not playing and age > STALE_SESSION_AGE:
+                    return (False, False, False, -1e9)
                 # age 越小越新鲜；age<0 视为脏，压到最低
                 fresh = -age if age >= 0 else -1e9
                 return (playing, music_app, sticky, fresh)
@@ -1919,6 +1959,7 @@ class MediaWatcher(QObject):
         manager = await MediaManager.request_async()
         while True:
             try:
+                now = time.time()
                 session = self._pick_session(manager, self._last_source)
                 if session is None:
                     if self._had_session:
@@ -1930,19 +1971,52 @@ class MediaWatcher(QObject):
                     self.ticked.emit(0.0, 0.0, "CLOSED")
                     await asyncio.sleep(1.0)
                     continue
-                self._had_session = True
                 sid = session.source_app_user_model_id or ""
-                # 会话切换（幽灵/重复启动）：强制复位歌词数据 + 重新锚定外推基准
+                status = str(session.get_playback_info().playback_status)
+                playing = "PLAYING" in status
+                tl = session.get_timeline_properties()
+                age = self._lut_age(tl)
+                # ① 陈旧且未播放（如 QQ 音乐异常残留、用户已切走的暂停会话）视作
+                #   「无有效播放」。但我们正在跟踪一个真实播放源、且它刚消失不久时，
+                #   先冻结（迟滞），不急着切到就绪态——避免抖音网页版 SMTC 每秒闪烁时
+                #   歌词条反复闪「已就绪」或跳到陈旧歌词。
+                if not playing and age > STALE_SESSION_AGE:
+                    if self._session_id != "" and (now - self._last_switch_ts) < SESSION_HYSTERESIS:
+                        await asyncio.sleep(0.5)
+                        continue
+                    if self._had_session or self._session_id != "":
+                        self._had_session = False
+                        self._key = None
+                        self._last_source = ""
+                        self._session_id = ""
+                        self.mediaChanged.emit(None)
+                    self.ticked.emit(0.0, 0.0, "IDLE")
+                    await asyncio.sleep(1.0)
+                    continue
+                # ② 到此：候选要么是 PLAYING，要么是近期（未陈旧）的非播放（如刚暂停的歌）
+                self._had_session = True
+                # 会话切换（幽灵/重复启动/抖音闪烁）：强制复位歌词数据 + 重新锚定外推基准。
+                # 加迟滞：当前会话刚消失、候选又没在播时，先冻结等待真源回来，
+                # 避免抖音网页版 SMTC 每秒闪烁时跳到陈旧的 QQ 音乐会话。
                 if sid != self._session_id:
+                    switching_blocked = (
+                        not playing
+                        and self._session_id != ""
+                        and (now - self._last_switch_ts) < SESSION_HYSTERESIS
+                    )
+                    if switching_blocked:
+                        # 维持当前显示（冻结），下一轮再判；等待真播放源恢复或超时
+                        await asyncio.sleep(0.5)
+                        continue
                     n = len(list(manager.get_sessions()))
                     log("SMTC 会话切换: %r -> %r（当前共 %d 个会话），复位歌词与基准"
                         % (self._session_id or "<none>", sid, n))
                     self._session_id = sid
                     self._last_source = sid
+                    self._last_switch_ts = now
                     self._key = None
                     self.mediaChanged.emit(None)
                 self._last_source = sid
-                tl = session.get_timeline_properties()
                 props = await session.try_get_media_properties_async()
                 title = props.title or ""
                 artist = props.artist or ""
@@ -2102,7 +2176,23 @@ FAN_R_FACTOR = 2.6      # 扇形半径 = 行宽 × 该系数（越大越平缓�
 FAN_R_MIN = 380.0       # 扇形半径下限（短句也保留弧度）
 WAVE_AMP = 0.11         # 波浪振幅，相对字号
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0.0"
+
+# LRCLIB 的 User-Agent：Desktop-sing/<版本>，随 APP_VERSION 走（隐私声明里
+# 描述为「自己的名称标识 + 版本号」，改版本不用再动声明）。
+_LRCLIB_UA = "Desktop-sing/%s" % APP_VERSION
+
+# ---------------- 待机（无播放会话）文案 ----------------
+# ⚠️ 必须是「已就绪」语义：严禁省略号 / 呼吸闪烁这类「加载中」暗示。
+#    商店审核 10.1.2.10 曾把这张静态待机卡误判为「启动后无限加载」拒审
+#    （认证实验室没有播放器，画面永远不变，英文审核员把「等待播放…」
+#    读成了 loading）。中英双语：审核员与海外用户多为英文读者。
+IDLE_TITLE = "桌面歌词已就绪"
+IDLE_TITLE_EN = "Ready"
+IDLE_HINT = "播放音乐即可显示歌词"
+IDLE_HINT_EN = "Play music to show lyrics"
+IDLE_LINE = IDLE_TITLE + " · " + IDLE_TITLE_EN            # 单行绘制的样式用
+IDLE_SUB = IDLE_HINT + " · " + IDLE_HINT_EN               # 双行布局的副标题
 
 
 # ---------------- 商店版（MSIX）识别 ----------------
@@ -2613,6 +2703,23 @@ def make_media_icon(kind: str, color: QColor = None, size: int = 18) -> QIcon:
     return QIcon(pm)
 
 
+def theme_menu_icon(c1: str, c2: str, size: int = 16) -> QIcon:
+    """配色主题的托盘菜单图标：该主题的双色渐变小圆角块（所见即所选）"""
+    ss = size * 2
+    pm = QPixmap(ss, ss)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    grad = QLinearGradient(0, 0, ss, ss)
+    grad.setColorAt(0.0, QColor(c1))
+    grad.setColorAt(1.0, QColor(c2))
+    p.setPen(QPen(QColor(0, 0, 0, 80), 1))
+    p.setBrush(grad)
+    p.drawRoundedRect(QRectF(1, 1, ss - 2, ss - 2), 5, 5)
+    p.end()
+    return QIcon(pm)
+
+
 def make_menu_icon(kind: str, size: int = 16,
                    color: QColor = None, sel_color: QColor = None) -> QIcon:
     """菜单项图标：普通态浅灰、选中态深色（选中行是主色填充，浅灰图标会糊在一起）。
@@ -2801,6 +2908,73 @@ def styled_message(parent, title: str, text: str, informative: str = "",
                    accent: QColor = None, warning: bool = False):
     """深色皮肤的模态对话框（见 build_message_box）"""
     build_message_box(parent, title, text, informative, accent, warning).exec()
+
+
+class WelcomeDialog(QDialog):
+    """首次运行（无配置文件）时弹出的欢迎窗。
+
+    为什么需要它：本应用是「浮层 + 托盘」形态，没有传统主窗口。商店审核
+    10.1.2.10 曾把静态待机卡误判为「启动后无限加载」——认证实验室里没有
+    播放器，审核员启动后只看到一条永远不变的「等待播放」。首启给一个
+    明确的、可交互的窗口，既是新手引导，也是「应用已就绪」的确定性信号。
+    中英双语：商店审核员多为英文读者。
+    """
+
+    def __init__(self, overlay):
+        super().__init__(None, Qt.Window | Qt.WindowStaysOnTopHint)
+        self._ov = overlay
+        self.setWindowTitle("桌面歌词 · Desktop-sing")
+        self.setWindowIcon(make_app_icon())
+        self.setMinimumWidth(520)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(24, 22, 24, 20)
+        v.setSpacing(12)
+
+        title = QLabel("桌面歌词已就绪 · Ready")
+        title.setObjectName("wdtitle")
+        v.addWidget(title)
+
+        body = QLabel(
+            "歌词条已显示在桌面底部。本应用没有主窗口——桌面上的歌词条与\n"
+            "系统托盘图标就是它的全部界面（不是加载画面）。\n"
+            "The lyric bar is now on your desktop. This app has no main window —\n"
+            "the bar and the system tray icon ARE the app (not a loading screen).\n\n"
+            "用任意接入系统媒体控制（SMTC）的播放器放一首歌，歌词会自动出现；\n"
+            "歌词需要联网获取。例如：系统自带「媒体播放器」、QQ音乐、网易云音乐。\n"
+            "Play a song in any player that supports Windows system media controls\n"
+            "(SMTC) — lyrics appear automatically (internet required for fetching).\n\n"
+            "右键托盘图标打开设置；全局快捷键默认关闭，可在设置里开启。\n"
+            "Right-click the tray icon for Settings. Global hotkeys are off by default.")
+        body.setObjectName("wdbody")
+        body.setWordWrap(True)
+        v.addWidget(body)
+
+        btns = QHBoxLayout()
+        btns.setSpacing(10)
+        btns.addStretch(1)
+        ghost = QPushButton("开始使用 · Got it")
+        ghost.setObjectName("wdghost")
+        ghost.setCursor(Qt.PointingHandCursor)
+        ghost.clicked.connect(self.reject)
+        btns.addWidget(ghost)
+        go = QPushButton("打开设置 · Settings")
+        go.setObjectName("wdgo")
+        go.setCursor(Qt.PointingHandCursor)
+        go.clicked.connect(self.accept)
+        btns.addWidget(go)
+        v.addLayout(btns)
+
+        self.setStyleSheet(
+            "QDialog{background:#14171f;}"
+            "QLabel#wdtitle{color:#f2f6fb;font-size:17px;font-weight:600;}"
+            "QLabel#wdbody{color:#b8c4d4;font-size:12.5px;line-height:1.5;}"
+            "QPushButton#wdgo{background:%s;color:#0d1017;border:none;"
+            "border-radius:8px;padding:8px 18px;font-weight:600;}"
+            "QPushButton#wdgo:hover{background:%s;}"
+            "QPushButton#wdghost{background:transparent;color:#9fb0c3;"
+            "border:1px solid #3a4356;border-radius:8px;padding:8px 16px;}"
+            "QPushButton#wdghost:hover{color:#e6ecf5;border-color:#5a6a86;}"
+            % (DEFAULT_ACCENT1, DEFAULT_ACCENT2))
 
 
 class UpdateDialog(QDialog):
@@ -3001,6 +3175,8 @@ class LyricOverlay(QWidget):
         self.click_through = bool(self.cfg.get("click_through", False))
         self.show_cover = bool(self.cfg.get("show_cover", True))
         self.style_mode = self.cfg.get("style", "native")          # native / glass
+        self.color_mode = self.cfg.get("color_mode", "auto")       # auto=封面取色 / fixed=固定主题
+        self.color_theme = self.cfg.get("color_theme", "mist")     # 固定主题 id（见 COLOR_THEMES）
         self.display_mode = self.cfg.get("display_mode", "desktop")  # desktop / topmost
         self.font_scale = float(self.cfg.get("font_scale", 1.0))     # 0.5 ~ 2.0
         self.font_family = str(self.cfg.get("font_family", "") or "")  # 空 = 默认 MiSans/雅黑
@@ -3031,9 +3207,7 @@ class LyricOverlay(QWidget):
         self._pos_actions = {}                                       # 摆放位置菜单项（托盘刷新用）
         self._a_pos_free = None
 
-        self.accent1 = QColor(DEFAULT_ACCENT1)
-        self.accent2 = QColor(DEFAULT_ACCENT2)
-        self.bg_color = pill_bg_color(DEFAULT_ACCENT1)
+        self._resolve_accent()
 
         self._fill = 0.0
         self._line_t = 1.0
@@ -3115,6 +3289,27 @@ class LyricOverlay(QWidget):
         self._idle_timer.start(15000)
 
         watcher.activate()
+
+        # 首启欢迎：没有配置文件 = 第一次运行。浮层 + 托盘形态没有主窗口，
+        # 首启给一个明确的交互窗口（理由见 WelcomeDialog 注释）。
+        # 等事件循环跑起来后再弹，避免挡住首帧。
+        if not os.path.isfile(CONFIG_PATH):
+            QTimer.singleShot(600, self._show_welcome)
+
+    def _show_welcome(self):
+        """弹首启欢迎窗；关掉后立刻落一份配置，保证只弹一次。"""
+        try:
+            dlg = WelcomeDialog(self)
+            if dlg.exec() == QDialog.Accepted:
+                self._open_panel()
+        except Exception:
+            log("welcome dialog failed:\n" + traceback.format_exc())
+        finally:
+            try:
+                self.cfg["welcomed"] = True
+                save_config(self.cfg)
+            except Exception:
+                pass
 
     # ---------------- 字体 ----------------
 
@@ -3266,7 +3461,8 @@ class LyricOverlay(QWidget):
                         locked=self.locked, hotkeys=self.hotkeys_on,
                         keepalive=self.keepalive, idle_saver=self.idle_saver,
                         idle_min=self.idle_min, saver_idle_only=self.saver_idle_only,
-                        saver_style=self.saver_style, pos_preset=self.pos_preset)
+                        saver_style=self.saver_style, pos_preset=self.pos_preset,
+                        color_mode=self.color_mode, color_theme=self.color_theme)
         save_config(self.cfg)
 
     # ---------------- 显示模式：常驻桌面 / 置顶悬浮 ----------------
@@ -3335,6 +3531,19 @@ class LyricOverlay(QWidget):
             a.setCheckable(True)
             a.triggered.connect(lambda _=False, k=key: self.set_style_mode(k))
             self._style_actions[key] = a
+
+        # 配色主题（v2.0）：托盘快捷换肤，每项带自己的双色渐变小图标
+        m_color = menu.addMenu("配色主题")
+        self._color_auto_action = m_color.addAction("封面取色（自动）")
+        self._color_auto_action.setCheckable(True)
+        self._color_auto_action.triggered.connect(lambda: self.set_color_mode("auto"))
+        m_color.addSeparator()
+        self._color_actions = {}
+        for tid, name, tc1, tc2 in COLOR_THEMES:
+            a = m_color.addAction(theme_menu_icon(tc1, tc2), name)
+            a.setCheckable(True)
+            a.triggered.connect(lambda _=False, k=tid: self.apply_color_theme(k))
+            self._color_actions[tid] = a
 
         m_dm = menu.addMenu("显示模式")
         self._a_desktop = m_dm.addAction("常驻桌面（不遮挡窗口）")
@@ -3540,9 +3749,9 @@ class LyricOverlay(QWidget):
             self, "关于 桌面歌词",
             "桌面歌词 v%s" % APP_VERSION,
             "跟随系统媒体播放的卡拉OK歌词悬浮条\n"
-            "5 种悬浮样式 · 9 种逐字动画 · 翻译歌词 · 氛围光晕\n"
-            "字体库（免费商用字体一键下载）· 4 种氛围屏保（黑底防烧屏）\n"
-            "摆放位置预设（7 个锚点，换分辨率也贴边）\n"
+            "5 种悬浮样式 · 9 种逐字动画 · 14 款配色主题（封面自动取色 / 固定主题）\n"
+            "翻译歌词 · 氛围光晕 · 字体库（免费商用字体一键下载）\n"
+            "4 种氛围屏保（黑底防烧屏）· 摆放位置预设（7 个锚点，换分辨率也贴边）\n"
             "多源并行抓词 · 启动约 0.2s · 隐藏后不占 CPU\n"
             + abilities +
             "\n"
@@ -3800,9 +4009,53 @@ class LyricOverlay(QWidget):
         self._save_position()
         self.update()
 
+    def _resolve_accent(self):
+        """按配色模式决定主副色：auto=封面取色 / fixed=固定主题色板（v2.0）。
+
+        封面更新与设置面板的主题切换统一走这一个出口，保证 bg_color / 光晕 /
+        面板 / 托盘菜单的联动只有一条路径，不会出现两处各改各的。
+        """
+        if self.color_mode == "fixed":
+            t = COLOR_THEME_MAP.get(self.color_theme) or COLOR_THEMES[0]
+            self.color_theme = t[0]
+            self.accent1 = QColor(t[2])
+            self.accent2 = QColor(t[3])
+        else:
+            self.accent1, self.accent2 = extract_accent(self.cover_pix)
+        self.bg_color = pill_bg_color(self.accent1)
+        self._apply_accent_ui()
+        self._sync_color_menu()
+
+    def _sync_color_menu(self):
+        """托盘「配色主题」子菜单的勾选态跟随当前配色（托盘未建好时静默跳过）"""
+        acts = getattr(self, "_color_actions", None)
+        auto = getattr(self, "_color_auto_action", None)
+        if not acts or auto is None:
+            return
+        fixed = self.color_mode == "fixed"
+        auto.setChecked(not fixed)
+        for tid, a in acts.items():
+            a.setChecked(fixed and tid == self.color_theme)
+
+    def set_color_mode(self, mode: str):
+        """切换配色来源：auto（封面取色）/ fixed（固定主题）"""
+        if mode in ("auto", "fixed") and mode != self.color_mode:
+            self.color_mode = mode
+            self._resolve_accent()
+            self._save_position()
+
+    def apply_color_theme(self, tid: str):
+        """点选色板 = 想用这个颜色：直接切到固定主题模式并应用"""
+        if tid not in COLOR_THEME_MAP:
+            return
+        self.color_mode = "fixed"
+        self.color_theme = tid
+        self._resolve_accent()
+        self._save_position()
+
     def _apply_accent_ui(self):
         """封面主色变化后，同步面板与托盘菜单的配色"""
-        if self.panel is not None:
+        if getattr(self, "panel", None) is not None:
             self.panel.update_accent(self.accent1)
         try:
             self._tray_menu.setStyleSheet(menu_qss(self.accent1))
@@ -4010,7 +4263,7 @@ class LyricOverlay(QWidget):
             self.duration = 0.0
             self.status = "CLOSED"
             self._spans_cache.clear()
-            self.tray.setToolTip("桌面歌词：等待播放")
+            self.tray.setToolTip("桌面歌词：已就绪（等待播放）")
             self._apply_pause_opacity()
             self._relayout()
             return
@@ -4033,9 +4286,7 @@ class LyricOverlay(QWidget):
             self.cover_pix = None
         self._cover_scaled = None
         self._vinyl_pix = None
-        self.accent1, self.accent2 = extract_accent(self.cover_pix)
-        self.bg_color = pill_bg_color(self.accent1)
-        self._apply_accent_ui()
+        self._resolve_accent()
         self.tray.setToolTip("桌面歌词：%s - %s" % (info.get("title"), info.get("artist")))
         self._relayout()
         self._start_fetch(info)
@@ -4144,9 +4395,7 @@ class LyricOverlay(QWidget):
                 self.cover_pix = pix
                 self._cover_scaled = None
                 self._vinyl_pix = None
-                self.accent1, self.accent2 = extract_accent(pix)
-                self.bg_color = pill_bg_color(self.accent1)
-                self._apply_accent_ui()
+                self._resolve_accent()
         self._relayout()
 
     # ---------------- 翻译歌词 / 暂停淡出 ----------------
@@ -4732,13 +4981,13 @@ class LyricOverlay(QWidget):
             if self.style_mode == "native":
                 fm_c = QFontMetrics(self._font_cur(self._px(30)))
                 fm_n = QFontMetrics(self._font_reg(self._px(15)))
-                w = max(fm_c.horizontalAdvance("等待播放…"),
-                        fm_n.horizontalAdvance("在 QQ音乐 / 网易云 播放歌曲即可显示歌词"))
+                w = max(fm_c.horizontalAdvance(IDLE_TITLE),
+                        fm_n.horizontalAdvance(IDLE_SUB))
                 return (w + 2 * m, fm_c.height() + 5 + fm_n.height() + 2 * m)
             if self.style_mode == "vinyl":
                 disc = self._px(VINYL_DISC)
                 fm_c = QFontMetrics(self._font_cur(self._px(20)))
-                w = 2 * m + disc + self._px(VINYL_GAP) + fm_c.horizontalAdvance("等待播放…")
+                w = 2 * m + disc + self._px(VINYL_GAP) + fm_c.horizontalAdvance(IDLE_LINE)
                 return (w, 2 * m + disc)
             if self.style_mode == "ios":
                 return self._px(340), self._px(96)
@@ -4968,8 +5217,7 @@ class LyricOverlay(QWidget):
         if not self.song:
             fm_c = QFontMetrics(self._font_cur(self._px(30)))
             fm_n = QFontMetrics(self._font_reg(self._px(15)))
-            t1, t2 = "等待播放…", "在 QQ音乐 / 网易云 播放歌曲即可显示歌词"
-            p.setOpacity(p.opacity() * (0.55 + 0.45 * abs(time.time() % 2 - 1)))
+            t1, t2 = IDLE_TITLE, IDLE_SUB
             self._draw_plain(p, t1, (self.width() - fm_c.horizontalAdvance(t1)) / 2,
                              m + fm_c.ascent(), self._font_cur(self._px(30)), fm_c,
                              HALO_BARE, 238)
@@ -5148,7 +5396,7 @@ class LyricOverlay(QWidget):
         if not self.song:
             p.setFont(self._font_cur(self._px(18)))
             p.setPen(QColor(255, 255, 255, 150))
-            p.drawText(card, Qt.AlignCenter, "等待播放…")
+            p.drawText(card, Qt.AlignCenter, IDLE_LINE)
             return
 
         f_t, f_c, f_n = (self._font_med(self._px(12)), self._font_cur(self._px(26)),
@@ -5217,8 +5465,7 @@ class LyricOverlay(QWidget):
         if not self.song:
             f = self._font_cur(self._px(20))
             fm = QFontMetrics(f)
-            p.setOpacity(p.opacity() * (0.55 + 0.45 * abs(time.time() % 2 - 1)))
-            self._draw_plain(p, "等待播放…", m + disc + self._px(VINYL_GAP),
+            self._draw_plain(p, IDLE_LINE, m + disc + self._px(VINYL_GAP),
                              cy + fm.ascent() / 2 - 2, f, fm, HALO_BARE, 224)
             return
 
@@ -5342,7 +5589,7 @@ class LyricOverlay(QWidget):
         if not self.song:
             p.setFont(self._font_cur(self._px(18)))
             p.setPen(QColor(255, 255, 255, 150))
-            p.drawText(card, Qt.AlignCenter, "等待播放…")
+            p.drawText(card, Qt.AlignCenter, IDLE_LINE)
             return
 
         f_t, f_c, f_n = (self._font_med(self._px(11)), self._font_cur(self._px(22)),
@@ -5366,10 +5613,12 @@ class LyricOverlay(QWidget):
             y_row += fm_n.height() + 2
         y_n = y_row
 
-        # 顶部：绿点 + 正在播放 + 标题（Spotify 上下文行式样）
+        # 顶部：播放指示点 + 正在播放 + 标题（上下文行式样）
+        # 指示点跟随配色主题（v2.0 起 14 套主题共用这条卡片，固定绿点会和
+        # 玫瑰/琥珀这类暖色主题打架）；无封面取色的默认蓝紫下也协调。
         dot_y = y_t - fm_t.ascent() + fm_t.height() / 2
         p.setPen(Qt.NoPen)
-        p.setBrush(SPOTIFY_GREEN)
+        p.setBrush(self.accent1)
         p.drawEllipse(QPointF(x + 3.2, dot_y), 3.2, 3.2)
         p.setFont(f_t)
         p.setPen(QColor(255, 255, 255, 130))
@@ -5590,11 +5839,10 @@ class LyricOverlay(QWidget):
     def _paint_waiting(self, p: QPainter, pill: QRectF):
         p.setFont(self._font_cur(self._px(22)))
         p.setPen(QColor(255, 255, 255, 170))
-        p.drawText(pill.adjusted(0, 10, 0, -26), Qt.AlignCenter, "等待播放…")
+        p.drawText(pill.adjusted(0, 10, 0, -26), Qt.AlignCenter, IDLE_TITLE)
         p.setFont(self._font_reg(self._px(13)))
         p.setPen(QColor(255, 255, 255, 95))
-        p.drawText(pill.adjusted(0, 34, 0, -6), Qt.AlignCenter,
-                   "在 QQ音乐 / 网易云 播放歌曲即可显示歌词")
+        p.drawText(pill.adjusted(0, 34, 0, -6), Qt.AlignCenter, IDLE_SUB)
 
     # ---------------- 交互 ----------------
 
@@ -5978,6 +6226,134 @@ class Segmented(QWidget):
             else:
                 p.setPen(QColor(178, 185, 198))
             p.drawText(QRectF(i * seg, 0, seg, h), Qt.AlignCenter, label)
+        p.end()
+
+
+class ThemeSwatches(QWidget):
+    """配色主题色板（v2.0）：N 行圆角色块网格，点选即换肤。
+
+    每块画的是该主题的双色渐变（主色 → 副色），和悬浮条上实际出现的渐变
+    同源，所以「看到的=选到的」。选中态用 2px 白环 + 悬停浮起一像素；
+    auto（封面取色）模式下整板降不透明度示意「未生效」，但仍可点击——
+    点任意一块就是想用那块的颜色，点击方会接管切到固定主题。
+    """
+
+    changed = Signal(str)
+
+    COLS, CHIP_W, CHIP_H, GAP = 7, 58, 34, 10
+    RADIUS = 10
+
+    def __init__(self, current=None, parent=None):
+        super().__init__(parent)
+        self._cur = current if current in COLOR_THEME_MAP else None
+        self._hover = -1
+        self._press = -1
+        self._mode = "fixed"          # auto 模式下整板降不透明度（示意未生效）
+        self.setMouseTracking(True)
+        self.setCursor(Qt.PointingHandCursor)
+        rows = (len(COLOR_THEMES) + self.COLS - 1) // self.COLS
+        self.setFixedSize(self.COLS * self.CHIP_W + (self.COLS - 1) * self.GAP,
+                          rows * self.CHIP_H + (rows - 1) * self.GAP)
+
+    # ---- 状态 ----
+
+    def set_mode(self, mode: str):
+        if mode != self._mode:
+            self._mode = mode
+            self.update()
+
+    def set_selection(self, tid: str):
+        if tid != self._cur:
+            self._cur = tid if tid in COLOR_THEME_MAP else None
+            self.update()
+
+    def _chip_at(self, pos) -> int:
+        step_x = self.CHIP_W + self.GAP
+        step_y = self.CHIP_H + self.GAP
+        cx = int(pos.x()) // step_x
+        ox = int(pos.x()) % step_x
+        cy = int(pos.y()) // step_y
+        oy = int(pos.y()) % step_y
+        if ox > self.CHIP_W or oy > self.CHIP_H:
+            return -1
+        i = cy * self.COLS + cx
+        return i if 0 <= i < len(COLOR_THEMES) else -1
+
+    # ---- 事件 ----
+
+    def mouseMoveEvent(self, e):
+        i = self._chip_at(e.position())
+        if i != self._hover:
+            self._hover = i
+            if 0 <= i < len(COLOR_THEMES):
+                self.setToolTip("%s —— 点击应用" % COLOR_THEMES[i][1])
+            self.update()
+
+    def leaveEvent(self, e):
+        if self._hover != -1:
+            self._hover = -1
+            self.setToolTip("")
+            self.update()
+
+    def mousePressEvent(self, e):
+        self._press = self._chip_at(e.position())
+
+    def mouseReleaseEvent(self, e):
+        i = self._chip_at(e.position())
+        pressed = self._press
+        self._press = -1
+        # 按下与松开必须落在同一块上：按住拖出色块再松手 = 取消，不误选
+        if i < 0 or i != pressed or e.button() != Qt.LeftButton:
+            return
+        tid = COLOR_THEMES[i][0]
+        if tid != self._cur or self._mode != "fixed":
+            self._cur = tid
+            self.update()
+            self.changed.emit(tid)
+
+    # ---- 绘制 ----
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        if self._mode == "auto":
+            p.setOpacity(0.55)         # 未生效：整板降透明度，但保持可点
+        step_y = self.CHIP_H + self.GAP
+        for i, (_tid, _name, c1, c2) in enumerate(COLOR_THEMES):
+            row, col = divmod(i, self.COLS)
+            x = col * (self.CHIP_W + self.GAP)
+            y = row * step_y - (1 if i == self._hover else 0)   # 悬停浮起 1px
+            grad = QLinearGradient(x, 0, x + self.CHIP_W, 0)
+            grad.setColorAt(0.0, QColor(c1))
+            grad.setColorAt(1.0, QColor(c2))
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(x, y, self.CHIP_W, self.CHIP_H),
+                                self.RADIUS, self.RADIUS)
+            # 底：双色渐变 + 顶部受光带（同 UI 质感令牌「光从上方来」的假设）
+            p.fillPath(path, grad)
+            top = QLinearGradient(0, y, 0, y + self.CHIP_H * 0.5)
+            top.setColorAt(0.0, QColor(255, 255, 255, 46))
+            top.setColorAt(1.0, QColor(255, 255, 255, 0))
+            p.fillPath(path, top)
+            # 1px 暗描边：色块在深色面板上才读得出边界
+            p.setPen(QPen(QColor(0, 0, 0, 70), 1))
+            p.setBrush(Qt.NoBrush)
+            p.drawPath(path)
+            # 按压反馈：整块压暗一档，读成「被按进去」（同质感令牌的交互态假设）
+            if i == self._press:
+                p.fillPath(path, QColor(0, 0, 0, 70))
+            # 选中环：2px 白环（悬停时半透明预览）。auto（封面取色）模式下不画——
+            # 此时没有任何主题在生效，画环反而让人误会「颜色来自这块色板」。
+            if i == self._hover and self._cur != COLOR_THEMES[i][0]:
+                ring = QPen(QColor(255, 255, 255, 110), 1.5)
+                r = QRectF(x - 2.5, y - 2.5, self.CHIP_W + 5, self.CHIP_H + 5)
+                p.setPen(ring)
+                p.drawRoundedRect(r, self.RADIUS + 2.5, self.RADIUS + 2.5)
+            elif self._mode == "fixed" and self._cur == COLOR_THEMES[i][0]:
+                ring = QPen(QColor("#f2f6fc"), 2)
+                r = QRectF(x - 2.5, y - 2.5, self.CHIP_W + 5, self.CHIP_H + 5)
+                p.setPen(ring)
+                p.drawRoundedRect(r, self.RADIUS + 2.5, self.RADIUS + 2.5)
         p.end()
 
 
@@ -6750,6 +7126,25 @@ class SettingsPanel(QWidget):
         l1.addWidget(hint)
         cv.addWidget(c1)
 
+        # ---- 配色主题（v2.0）----
+        c7, l7 = make_card("配色主题")
+        self.color_seg = Segmented([("auto", "封面取色"), ("fixed", "固定主题")],
+                                   ov.color_mode, h=30)
+        self.color_seg.set_accent(self._accent)
+        self.color_seg.changed.connect(self._on_color_mode)
+        self._segs.append(self.color_seg)
+        l7.addWidget(self.color_seg)
+        self.swatches = ThemeSwatches(ov.color_theme)
+        self.swatches.set_mode(ov.color_mode)
+        self.swatches.changed.connect(self._on_color_theme)
+        l7.addWidget(self.swatches)
+        self.color_hint = QLabel()
+        self.color_hint.setObjectName("hint")
+        self.color_hint.setWordWrap(True)
+        l7.addWidget(self.color_hint)
+        self._sync_color_hint()
+        cv.addWidget(c7)
+
         # ---- 外观 ----
         c2, l2 = make_card("外观")
         self.style_combo = QComboBox()
@@ -7138,6 +7533,29 @@ class SettingsPanel(QWidget):
         if k:
             self.ov.set_style_mode(k)
 
+    # ---- 配色主题（v2.0）----
+
+    def _on_color_mode(self, mode):
+        self.ov.set_color_mode(mode)
+        self.swatches.set_mode(mode)
+        self._sync_color_hint()
+
+    def _on_color_theme(self, tid):
+        # 点色板 = 想用这个颜色：悬浮窗切到固定主题，分段器同步显示（不 emit 防回环）
+        self.ov.apply_color_theme(tid)
+        self.color_seg.setValue("fixed", animate=True)
+        self.swatches.set_mode("fixed")
+        self._sync_color_hint()
+
+    def _sync_color_hint(self):
+        if self.ov.color_mode == "fixed":
+            t = COLOR_THEME_MAP.get(self.ov.color_theme) or COLOR_THEMES[0]
+            self.color_hint.setText(
+                "当前主题：%s —— 悬浮条、氛围光晕与面板配色已同步换肤" % t[1])
+        else:
+            self.color_hint.setText(
+                "跟随专辑封面主色自动配色，换歌即换色；点选下方色板可固定主题。")
+
     def _on_display_seg(self, key):
         self.ov.set_display_mode(key)
 
@@ -7243,6 +7661,10 @@ class SettingsPanel(QWidget):
         self.fade_slider.blockSignals(False)
         self.dm_seg.setValue(ov.display_mode, animate=False)
         self.saver_seg.setValue(ov.saver_style, animate=False)
+        self.color_seg.setValue(ov.color_mode, animate=False)
+        self.swatches.set_selection(ov.color_theme)
+        self.swatches.set_mode(ov.color_mode)
+        self._sync_color_hint()
         self._update_saver_preview()
         i = self.idle_combo.findData(ov.idle_min)
         if i < 0:
@@ -7276,7 +7698,8 @@ class SettingsPanel(QWidget):
         else:
             # 这里只描述「需要播放器配合」，不点名任何品牌：
             # 商店政策 10.1.1 禁止暗示与第三方存在关联、11.2 要求不侵犯第三方权利。
-            t = "等待播放…在任意接入系统媒体控制的播放器里播放歌曲即可显示歌词"
+            # 文案必须是「就绪」语义（见 IDLE_* 常量注释）。
+            t = IDLE_TITLE + "：" + IDLE_HINT + "（" + IDLE_TITLE_EN + " — " + IDLE_HINT_EN + "）"
         self.song_label.setText(t)
         self.b_toggle.setIcon(make_play_icon(
             bg=self._accent,
@@ -7289,6 +7712,8 @@ class SettingsPanel(QWidget):
         for sg in self._segs:
             sg.set_accent(self._accent)
         self._apply_qss()
+        # 屏保缩略图是用当时的主色现渲的，换主题 / 换歌后不改就会一直显示旧配色
+        self._update_saver_preview()
         self._refresh_play_state()
 
     def _apply_qss(self):

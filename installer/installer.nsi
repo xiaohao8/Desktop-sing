@@ -1,4 +1,4 @@
-﻿; 桌面歌词 1.0 安装版 —— NSIS 3.11
+﻿; 桌面歌词 安装版 —— NSIS 3.11
 ; 页面：欢迎 -> 隐私声明(必须勾选同意) -> 安装目录(默认 D:\Desktop-sing) -> 组件 -> 安装 -> 完成
 ;
 ; build 2 关键修正：
@@ -13,21 +13,24 @@ SetCompressor /SOLID lzma
 !include "LogicLib.nsh"
 
 !define PRODUCT_NAME "桌面歌词"
+; 版本号由构建命令传入：makensis -DPRODUCT_VER=2.0.0 installer.nsi
+!ifndef PRODUCT_VER
 !define PRODUCT_VER "1.0.0"
+!endif
 !define PRODUCT_EXE "Desktop-sing.exe"
 !define DIR_NAME "Desktop-sing"
 
 ; ---- 安装器自身的元数据（防报毒：完整版本信息） ----
-VIProductVersion "1.0.0.0"
+VIProductVersion "${PRODUCT_VER}.0"
 VIAddVersionKey /LANG=2052 "ProductName" "桌面歌词"
-VIAddVersionKey /LANG=2052 "FileDescription" "桌面歌词 1.0 安装程序"
-VIAddVersionKey /LANG=2052 "FileVersion" "1.0.0.0"
-VIAddVersionKey /LANG=2052 "ProductVersion" "1.0.0.0"
+VIAddVersionKey /LANG=2052 "FileDescription" "桌面歌词 ${PRODUCT_VER} 安装程序"
+VIAddVersionKey /LANG=2052 "FileVersion" "${PRODUCT_VER}.0"
+VIAddVersionKey /LANG=2052 "ProductVersion" "${PRODUCT_VER}.0"
 VIAddVersionKey /LANG=2052 "LegalCopyright" "Copyright (C) 2026 Desktop-sing Project"
-VIAddVersionKey /LANG=2052 "OriginalFilename" "Desktop-sing-Setup-1.0.0.exe"
+VIAddVersionKey /LANG=2052 "OriginalFilename" "Desktop-sing-Setup-${PRODUCT_VER}.exe"
 
 Name "${PRODUCT_NAME} ${PRODUCT_VER}"
-OutFile "..\dist\release\桌面歌词-v1.0.0-安装版.exe"
+OutFile "..\dist\release\桌面歌词-v${PRODUCT_VER}-安装版.exe"
 InstallDir "D:\${DIR_NAME}"
 AllowRootDirInstall true
 RequestExecutionLevel user
@@ -180,7 +183,7 @@ InstType "最小安装"
 Section "核心文件（必装）" SEC_CORE
   SectionIn RO 1 2
   SetOutPath "$INSTDIR"
-  File /r "..\dist\Desktop-sing-v1.0.0\*.*"
+  File /r "..\dist\Desktop-sing-v${PRODUCT_VER}\*.*"
   File /oname=隐私声明.txt "..\PRIVACY.md"
   ; 许可合规：Apache-2.0 第 4 条要求向接收者提供 NOTICE，内置 MiSans 也要求
   ; 保留许可说明。用户装的是这个 exe，看不到 GitHub 仓库 → 必须随包。

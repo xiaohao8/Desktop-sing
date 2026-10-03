@@ -50,8 +50,14 @@ scheme is derived from the album art automatically.
   pair per line) to override the built-in table. Unmapped characters are left untouched.
 - **5 overlay styles** — Native Float / Glass Capsule / Album Card / Vinyl / Soundwave, switchable
   from the context menu or the tray menu.
+- **14 colour themes (v2.0)** — Mist Blue / Aurora / Lime / Emerald / Mint / Sea Salt / Lavender /
+  Starry Violet / Rose / Sakura / Sunset / Peach / Amber / Graphite. Switch skins with one click from
+  the tray "Colour themes" submenu or the swatch grid in the settings panel; the overlay, ambient
+  glow, screensaver and panel colours all follow. The colour source can be
+  "cover extraction (auto, default)" or a "fixed theme".
 - **Karaoke visuals**
-  - The current line is filled with a travelling gradient taken from the album art's dominant colour.
+  - The current line is filled with a travelling gradient taken from the album art's dominant colour,
+    or from the selected colour theme.
   - That same colour drives the capsule background, border, equaliser and progress bar.
   - Lines slide and fade in, the capsule width transitions smoothly, and an equaliser pulses next to
     the title while playing.
@@ -88,8 +94,9 @@ scheme is derived from the album art automatically.
   lightweight supervisor process restarts the app after it is force-killed or crashes (with backoff so
   a crash loop cannot spin). Choosing "Exit" in the app is a normal exit, and the supervisor goes with
   it.
-- **Settings panel** — a card-style dark UI grouped into Lyrics Sync / Appearance / Fonts / Overlay /
-  Ambient Saver / System, with colours following the album art's dominant colour live.
+- **Settings panel** — a card-style dark UI grouped into Lyrics Sync / Colour Themes / Appearance /
+  Fonts / Overlay / Ambient Saver / System, with colours following the album art's dominant colour
+  or the selected theme live.
 - **Playback control** — previous / play-pause / next, a hover control strip, and double-click to
   play/pause; lyric offset calibration (±5 s); "Re-fetch lyrics" to manually correct a bad match.
 - **Update check (built-in sources, works out of the box)** — no URL to fill in. The primary source is
@@ -106,6 +113,7 @@ Everything lives in the settings panel and is saved automatically. All sliders a
 | Group | Item | Range |
 | --- | --- | --- |
 | Lyrics Sync | Lyric offset | -5 s … +5 s slider (0.5 s steps) plus early / late / reset buttons |
+| Colour Themes | Colour source + swatches | Cover extraction (auto) / fixed theme; a 14-swatch grid, click to reskin |
 | Appearance | Overlay style | Native Float / Glass Capsule / Album Card / Vinyl / Soundwave |
 | Appearance | Font | Fonts installed from the font library (MiSans is the default) plus curated system fonts |
 | Appearance | Font size | 60% … 180% (10% steps); the card resizes with it |

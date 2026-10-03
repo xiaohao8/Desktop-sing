@@ -225,7 +225,8 @@ def panel():
     for attr in ("hk_check", "trans_check", "glow_check", "lock_check",
                  "pfade_check", "time_check", "ct_check", "cover_check",
                  "keep_check", "saver_check", "saver_idle_check", "auto_check",
-                 "dm_seg", "idle_combo", "font_combo", "anim_combo", "style_combo"):
+                 "dm_seg", "idle_combo", "font_combo", "anim_combo", "style_combo",
+                 "color_seg", "swatches"):
         assert hasattr(p, attr), attr
     assert p.hk_check.isChecked() == ov.hotkeys_on
     # 新旧开关都是同一套接口：isChecked / setChecked / 可 blockSignals
@@ -234,6 +235,9 @@ def panel():
     assert p.anim_combo.count() == len(L.ANIM_STYLES), p.anim_combo.count()
     # 显示模式用分段选择器，值应等于 overlay 当前模式
     assert p.dm_seg.value() == ov.display_mode, p.dm_seg.value()
+    # 配色来源分段器与 overlay 同步，色板也拿到同一份主题 id（v2.0）
+    assert p.color_seg.value() == ov.color_mode, p.color_seg.value()
+    assert p.swatches._cur == ov.color_theme, p.swatches._cur
 check("settings panel", panel)
 
 print("[10] 驱动主循环 _on_frame（黑胶 / 光晕 / 切行动画）")
@@ -1914,6 +1918,87 @@ def ctrl_narrow_window():
         ov._relayout()
         _jump_size_anim()
 check("窄窗悬停胶囊不出窗", ctrl_narrow_window)
+
+
+print("[35] 配色主题：固定色板换肤 / 封面取色回落 / 色板点击 / 托盘勾选")
+def color_theme20():
+    """v2.0 配色主题全链路：
+    · apply_color_theme 切 fixed 并持久化，主副色与色板定义一致；
+    · set_color_mode("auto") 回落封面取色（无封面 → 默认蓝紫），配置同步；
+    · 非法主题 id 不生效；托盘勾选态与 color_mode/color_theme 严格一致；
+    · ThemeSwatches 点击发射 changed、auto 模式点任意色板即切 fixed、
+      fixed 模式点已选色板不重复发射。"""
+    # 1) 固定主题：颜色与持久化
+    ov.apply_color_theme("rose")
+    assert ov.color_mode == "fixed" and ov.color_theme == "rose", \
+        (ov.color_mode, ov.color_theme)
+    t = L.COLOR_THEME_MAP["rose"]
+    assert ov.accent1.name().upper() == QColor(t[2]).name().upper(), ov.accent1.name()
+    assert ov.accent2.name().upper() == QColor(t[3]).name().upper(), ov.accent2.name()
+    assert ov.bg_color == L.pill_bg_color(ov.accent1)
+    assert ov.cfg.get("color_mode") == "fixed" and ov.cfg.get("color_theme") == "rose"
+
+    # 2) 换主题 + 非法 id 不生效
+    ov.apply_color_theme("amber")
+    assert ov.accent1.name().upper() == \
+        QColor(L.COLOR_THEME_MAP["amber"][2]).name().upper()
+    ov.apply_color_theme("nope")
+    assert ov.color_theme == "amber", ov.color_theme
+
+    # 3) auto 回落（此刻无封面 → 默认蓝紫）
+    ov.cover_pix = None
+    ov.set_color_mode("auto")
+    assert ov.color_mode == "auto"
+    assert ov.accent1.name().upper() == L.DEFAULT_ACCENT1.name().upper(), \
+        ov.accent1.name()
+    assert ov.cfg.get("color_mode") == "auto"
+
+    # 4) 托盘勾选态与配色状态严格一致
+    assert ov._color_auto_action.isChecked()
+    assert not any(a.isChecked() for a in ov._color_actions.values())
+    ov.apply_color_theme("mint")
+    assert not ov._color_auto_action.isChecked()
+    checked = [k for k, a in ov._color_actions.items() if a.isChecked()]
+    assert checked == ["mint"], checked
+
+    # 5) 色板点击：真实 QMouseEvent 走 mousePress/Release 全流程
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QMouseEvent as _QME
+
+    def _click_chip(sw, tid):
+        i = [k for k, *_r in L.COLOR_THEMES].index(tid)
+        row, col = divmod(i, sw.COLS)
+        pos = QPointF(col * (sw.CHIP_W + sw.GAP) + sw.CHIP_W / 2,
+                      row * (sw.CHIP_H + sw.GAP) + sw.CHIP_H / 2)
+        sw.mousePressEvent(_QME(QEvent.MouseButtonPress, pos,
+                                Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+        sw.mouseReleaseEvent(_QME(QEvent.MouseButtonRelease, pos,
+                                  Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+
+    got = []
+    sw = L.ThemeSwatches("mint")
+    sw.changed.connect(got.append)
+    sw.set_mode("auto")
+    _click_chip(sw, "sakura")
+    assert got == ["sakura"], got            # auto 模式点色板 → 发射（由面板切 fixed）
+    sw.set_mode("fixed")
+    sw.set_selection("sakura")
+    got.clear()
+    _click_chip(sw, "sakura")
+    assert got == [], got                    # fixed 模式点已选色板 → 不重复发射
+    _click_chip(sw, "amber")
+    assert got == ["amber"], got
+    # 空白缝隙点击不误触
+    got.clear()
+    sw.mouseReleaseEvent(_QME(QEvent.MouseButtonRelease,
+                              QPointF(sw.CHIP_W + 1, 1),
+                              Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+    assert got == [], got
+
+    # 6) 收尾还原 auto（后续测试不依赖配色状态，但别把 fixed 留进配置）
+    ov.cover_pix = None
+    ov.set_color_mode("auto")
+check("配色主题 v2.0", color_theme20)
 
 
 # ---- 收尾：注销热键、还原配置 ----
