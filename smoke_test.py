@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
 """离屏回归烟测（无需真实播放器 / 无需显示器）
-
 覆盖：逐字时间轴、翻译映射、长句自适应字号、5 种样式渲染、
 布局尺寸、开关/锁定、悬浮控制条命中、暂停淡出、时间格式、设置面板、
 主循环帧驱动、空态渲染。
-
 用法（需已安装 PySide6，且是带 PySide6 的那个 Python）：
     python smoke_test.py
-
 测试期间会临时改写 %APPDATA%\\Desktop-sing\\config.json，
 脚本结束会**自动还原**原配置，不会影响你的实际设置。
 """
@@ -20,21 +17,14 @@ import tempfile
 import time
 import traceback
 import zlib
-
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP_DIR)
-
 import _cfg_sandbox
-
 # 干净配置起步：不开全局热键、不拉起保活守护进程、不进空闲屏保。
 # 备份按脚本名区分 + atexit/信号兜底还原，见 _cfg_sandbox 模块说明。
 _cfg_sandbox.begin(hotkeys=False, keepalive=False, idle_saver=False)
-
 fails = []
-
-
 def check(name, fn):
     try:
         fn()
@@ -43,24 +33,16 @@ def check(name, fn):
         fails.append(name)
         print("  FAIL-", name)
         traceback.print_exc()
-
-
 import lyrics_overlay as L                                   # noqa: E402
 from PySide6.QtWidgets import QApplication                    # noqa: E402
 from PySide6.QtCore import Qt, QPoint, QPointF, QRectF, QVariantAnimation, QPropertyAnimation  # noqa: E402
 from PySide6.QtGui import QPixmap, QColor                     # noqa: E402
-
-
 # ---- 给 _pick_session 用的假 SMTC 会话（无需真实播放器）----
 import time as _time
 import datetime as _dt
-
-
 class _FakeProps:
     def __init__(self, lut):
         self.last_updated_time = lut
-
-
 class _FakeSess:
     def __init__(self, src, status, pos, stale):
         self.src = src
@@ -68,41 +50,29 @@ class _FakeSess:
         self._lut = _dt.datetime.fromtimestamp(_time.time() - stale, tz=_dt.timezone.utc)
         self._status = status
         self._pos = pos
-
     @property
     def source_app_user_model_id(self):
         return self.src
-
     def get_playback_info(self):
         class _I:
             pass
         _I.playback_status = self._status
         return _I()
-
     def get_timeline_properties(self):
         return _FakeProps(self._lut)
-
     def try_get_media_properties_async(self):
         pass
-
-
 class _FakeMgr:
     def __init__(self, sessions):
         self._s = sessions
-
     def get_sessions(self):
         return list(self._s)
-
 app = QApplication(sys.argv)
 ov = L.LyricOverlay(L.MediaWatcher())
-
-
 def _render():
     pm = QPixmap(max(2, ov.width()), max(2, ov.height()))
     pm.fill(Qt.transparent)
     ov.render(pm)
-
-
 # ---- 伪造一首歌（含逐字、翻译、超长句）----
 def fake_song():
     ov.song = {"title": "测试歌曲", "artist": "测试歌手", "album": "",
@@ -123,8 +93,6 @@ def fake_song():
     ov._line_t = 1.0
     ov.anchor_pos = 2.4
     ov.anchor_ts = time.monotonic()
-
-
 print("[1] 逐字时间轴 / 翻译映射")
 fake_song()
 check("char spans", lambda: ov._char_spans(1, ov.lines[1][1]))
@@ -132,13 +100,11 @@ check("trans map 非空", lambda: (_ for _ in ()).throw(AssertionError("empty"))
       if not ov._trans_map else None)
 check("trans 命中行1", lambda: (_ for _ in ()).throw(AssertionError(ov._trans_for(1)))
       if ov._trans_for(1) != "Second line" else None)
-
 print("[2] 长句自适应字号")
 def _fit():
     f, _fm = ov._fit_font(ov._font_cur, 32, ov.lines[3][1], 300)
     assert f.pixelSize() <= 19, f.pixelSize()
 check("fit_font 会缩小", _fit)
-
 print("[3] 5 种样式渲染（翻译 / 时间 / 光晕全开）")
 def render_all():
     for style in L.STYLE_NAMES:
@@ -148,7 +114,6 @@ def render_all():
         _render()
         assert ov.width() > 40 and ov.height() > 20, (style, ov.width(), ov.height())
 check("render all styles", render_all)
-
 print("[4] 布局尺寸：开翻译后应变高")
 def size_delta():
     ov.set_style_mode("glass")
@@ -162,7 +127,6 @@ def size_delta():
         ov.set_style_mode(s)
         ov._relayout()
 check("trans 增高", size_delta)
-
 print("[5] 新开关 / 锁定 / 热键")
 def toggles():
     ov.set_glow(False); ov.set_glow(True)
@@ -173,7 +137,6 @@ def toggles():
     assert ov.locked is True
     ov.set_locked(False)
 check("toggles", toggles)
-
 def lock_blocks_drag():
     class E:
         def button(self): return Qt.LeftButton
@@ -189,7 +152,6 @@ def lock_blocks_drag():
     assert ov._drag_offset is not None, "解锁后无法拖动"
     ov._drag_offset = None
 check("锁定阻止拖动", lock_blocks_drag)
-
 print("[6] 悬浮控制条 6 格命中")
 def ctrl_hit():
     ov._ctrl_t = 1.0
@@ -199,7 +161,6 @@ def ctrl_hit():
         assert ov._ctrl_button_at(ov._cell_rect(i, r).center()) == i
     assert ov._ctrl_button_at(r.topLeft() - QPointF(30, 30)) == -1
 check("ctrl 6 格", ctrl_hit)
-
 print("[7] 暂停自动淡出")
 def pause_fade():
     ov.pause_fade = True
@@ -210,11 +171,9 @@ def pause_fade():
     ov._apply_pause_opacity(anim=False)
     assert abs(ov.windowOpacity() - ov.opacity) < 0.02
 check("暂停淡出", pause_fade)
-
 print("[8] 时间格式")
 check("fmt_time", lambda: (_ for _ in ()).throw(AssertionError(ov._fmt_time(200)))
       if ov._fmt_time(200) != "3:20" else None)
-
 print("[9] 设置面板构建 / 换肤 / 刷新")
 def panel():
     ov._open_panel()
@@ -239,7 +198,6 @@ def panel():
     assert p.color_seg.value() == ov.color_mode, p.color_seg.value()
     assert p.swatches._cur == ov.color_theme, p.swatches._cur
 check("settings panel", panel)
-
 print("[10] 驱动主循环 _on_frame（黑胶 / 光晕 / 切行动画）")
 def drive_frames():
     ov.song = {"title": "测试歌曲", "artist": "测试歌手", "source": "qq", "cover": None}
@@ -259,7 +217,6 @@ def drive_frames():
             ov._on_frame()
         _render()
 check("drive frames", drive_frames)
-
 print("[11] 9 种逐字动画逐帧渲染（含扇形 / 波浪 / 打字机 / 弹跳）")
 def all_anims():
     ov.anim_style = "slide"
@@ -276,7 +233,6 @@ def all_anims():
                 ov._on_frame()
                 _render()
 check("all anim styles", all_anims)
-
 print("[12] 空态（无歌）渲染")
 def empty_state():
     ov.song = None
@@ -286,7 +242,6 @@ def empty_state():
         ov.set_style_mode(style)
         _render()
 check("empty render", empty_state)
-
 print("[13] 字体库：状态 / 族名匹配 / 下载入口")
 def fontlib():
     st = L.font_library_state()
@@ -307,8 +262,6 @@ def fontlib():
             assert all(u.startswith("http") for u in urls), (e["id"], urls)
     assert L.FONT_MATCH and len(L.FONT_MATCH) == len(L.FONT_LIBRARY)
 check("font library", fontlib)
-
-
 print("[14] 氛围屏保：黑底渲染 / 漂移不越界 / 输入即退")
 def saver():
     ov.song = {"title": "测试歌曲", "artist": "测试歌手", "source": "qq", "cover": None}
@@ -333,8 +286,6 @@ def saver():
     saver_.mousePressEvent(type("E", (), {"button": lambda self: Qt.LeftButton})())
     assert got == [1], got
 check("ambient saver", saver)
-
-
 print("[14b] 空闲阈值自动进屏保 → 关闭回环")
 def idle_roundtrip():
     saved_idle, saved_locked = L.idle_seconds, L.session_locked
@@ -362,7 +313,6 @@ def idle_roundtrip():
         if ov.saver is not None:
             ov.close_saver()
 check("idle -> saver", idle_roundtrip)
-
 print("[15] 系统能力：空闲 / 锁屏 / 保活命令 / 菜单皮肤")
 def sysstuff():
     assert isinstance(L.idle_seconds(), float) and L.idle_seconds() >= 0
@@ -379,8 +329,6 @@ def sysstuff():
     qss = L.menu_qss(QColor("#22cc88"))
     assert "#22cc88" in qss and "QMenu" in qss
 check("system helpers", sysstuff)
-
-
 print("[16] 开关 / 分段选择器组件")
 def widgets():
     hits = []
@@ -403,8 +351,6 @@ def widgets():
     sg.resize(240, 32)
     assert sg.grab().toImage().pixelColor(220, 16).alpha() == 255, "分段选择器没画出内容"
 check("switch / segmented", widgets)
-
-
 print("[17] 播放进度锚点连续性（切主题/跳变不抖、不丢同步）")
 def anchor_continuity():
     import time as _t
@@ -425,8 +371,6 @@ def anchor_continuity():
     ov._apply_tick(50.0, 200.0, "PAUSED")
     assert abs(ov._current_pos() - 50.0) < 0.001, ov._current_pos()
 check("anchor continuity", anchor_continuity)
-
-
 print("[17b] 上报冻结免疫：播放器 pos 不动而音乐在放，外推不得被反复拽回")
 def frozen_report():
     import time as _t
@@ -446,8 +390,6 @@ def frozen_report():
     ov._apply_tick(74.0, 200.0, "PLAYING")
     assert abs(ov._current_pos() - 74.0) < 1.2, ov._current_pos()
 check("frozen report immunity", frozen_report)
-
-
 print("[17c] _live_pos 直传（v2.4.12 回退 v2.4.9 外推）：任何输入都原样返回播放器给的 position")
 def live_pos_passthrough():
     import datetime as _dt
@@ -471,8 +413,6 @@ def live_pos_passthrough():
         p = L._live_pos(raw, lu, st, now=now)
         assert p == raw, (raw, lu, st, p)
 check("live pos passthrough", live_pos_passthrough)
-
-
 print("[17d] 幽灵会话规避：_lut_age 与 _pick_session 新鲜度排序")
 def ghost_session_pick():
     import datetime as _dt
@@ -490,8 +430,6 @@ def ghost_session_pick():
     c2 = L.MediaWatcher._pick_session(mgr2, "")
     assert c2 is not None
 check("ghost session pick", ghost_session_pick)
-
-
 print("[18] 字体库国内镜像回退（主站挂 → 落镜像；全挂 → 抛错）")
 def mirror_fallback():
     import io, urllib, urllib.request as _ureq, urllib.error as _uerr
@@ -544,8 +482,6 @@ def mirror_fallback():
         except OSError:
             pass
 check("font mirror fallback", mirror_fallback)
-
-
 print("[19] 屏保四风格渲染（粒子 / 极简 / 音浪 / 星轨，均纯黑底不烧屏）")
 def saver_styles():
     ov.song = {"title": "测试歌曲", "artist": "测试歌手", "source": "qq", "cover": None}
@@ -559,13 +495,10 @@ def saver_styles():
         assert pm.toImage().pixelColor(2, 2).red() < 40, (style, pm.toImage().pixelColor(2, 2).red())
         s.finish()
 check("saver styles", saver_styles)
-
-
 print("[19b] 屏保版式门禁：文字不被动画遮挡 / 不越安全边距 / AOD 换位行程不为 0")
 def saver_layout():
     """这里只是快子集；全量巡检在 _diag_saver_layout.py（4 风格 × 7 分辨率 ×
     整个换位周期 × 两种行数 + 变异自检）。
-
     为什么必须有这道门禁：曾经真实漏过一次 —— 4 行版式把文字区填满，
     换位行程只剩 0.1px，换位代码在跑却一点位移都没有，防烧屏悄悄失效，
     而当时所有测试都是绿的。
@@ -603,8 +536,6 @@ def saver_layout():
                         "%s 面板缩略图丢了歌词行：%s" % (style, keys)
             s.deleteLater()
 check("saver layout guard", saver_layout)
-
-
 print("[20] 屏保风格切换即时生效（面板实时预览 / 托盘单选同步）")
 def saver_switch():
     ov.set_saver_style("particle")
@@ -621,8 +552,6 @@ def saver_switch():
     assert checked == ["orbits"], checked
     assert ov.saver_style == "orbits"
 check("saver switch", saver_switch)
-
-
 print("[21] 逐字时间轴：未覆盖的字必须在本行结束前唱完（不能只亮前几个字就跳行）")
 def char_span_bounds():
     ov.lines = [[0.0, "第一句"],
@@ -656,8 +585,6 @@ def char_span_bounds():
     assert not over3, "极端用例仍有字排到行外: %s" % over3
     assert all(t1 <= 6.0 + 1e-6 for (t0, t1) in sp3), sp3
 check("char span bounds", char_span_bounds)
-
-
 print("[22] 升级接管：restart.sig 写入后旧实例应退出让位（删哨兵 + 写停机哨兵）")
 def takeover():
     sig, sent = L.RESTART_SIG, L.STOP_SENTINEL
@@ -691,8 +618,6 @@ def takeover():
         elif os.path.exists(sent):
             os.remove(sent)
 check("takeover signal", takeover)
-
-
 print("[23] 歌词格式识别 / 时间轴工具 / 酷狗 KRC（借鉴 Lyricify-Lyrics-Helper）")
 def lyric_formats():
     plain = ("[ti:测试]\n[offset:0]\n"
@@ -704,13 +629,11 @@ def lyric_formats():
         buf[i] ^= L._KRC_XOR_KEY[i % len(L._KRC_XOR_KEY)]
     enc = base64.b64encode(b"krc1" + bytes(buf)).decode("ascii")
     assert L.decrypt_krc(enc).strip() == plain.strip(), L.decrypt_krc(enc)
-
     lines, words, trans = L.parse_krc(L.decrypt_krc(enc))
     assert len(lines) == 2 and len(words) == 2, (len(lines), len(words))
     assert abs(lines[0][0]) < 1e-6 and lines[0][1] == "你好吗", lines[0]
     assert abs(words[1][0][0] - 2.0) < 1e-6, words[1][0]        # 逐字是绝对时间
     assert [c[0] for c in words[1]] == sorted(c[0] for c in words[1]), words[1]
-
     # 格式自动识别 + 自动分发解析
     assert L.detect_lyric_format(plain) == "krc"
     assert L.detect_lyric_format("[00:12.30]你好") == "lrc"
@@ -718,12 +641,10 @@ def lyric_formats():
     assert L.detect_lyric_format("没有时间轴的纯文本") == "unsynced"
     al, aw, _at = L.parse_lyrics_auto(plain)
     assert len(al) == len(lines) and len(aw) == len(words)
-
     # 信息行（歌手 - 歌名 / 版权声明）要剔掉，真歌词要留住
     assert L.is_info_line("买辣椒也用券 - 起风了 (旧版)")
     assert L.is_info_line("（未经著作人许可，不得翻唱、翻录或使用）")
     assert not L.is_info_line("这一路上走走停停")
-
     # 时间轴偏移 / 逐字降级 / LRC 导出往返
     ol, ow, _ot = L.offset_lines(lines, words, trans, 0.5)
     assert abs(ol[1][0] - lines[1][0] - 0.5) < 1e-6
@@ -733,7 +654,6 @@ def lyric_formats():
     back, _bw = L.parse_lrc(L.generate_lrc(lines))
     assert len(back) == len(lines) and back[0][1] == lines[0][1], back[:2]
 check("lyric formats / krc / tools", lyric_formats)
-
 print("[24] 歌词质量评分 / 清洗 / 繁简转换（借鉴 Lyricify 智能匹配引擎 + Lyrics Optimization）")
 def lyric_quality():
     # 评分：普通 < 带逐字 < 满配（逐字+翻译）；空结果 -1；串词（末行远超时长）要更低
@@ -747,7 +667,6 @@ def lyric_quality():
     # 末行贴合歌曲全长时应当加满分
     tight = L.score_lyrics([[0.0, "a"], [154.0, "b"]] + plain[2:], None, None, 155.0)
     assert tight > L.score_lyrics([[0.0, "a"], [500.0, "b"]] + plain[2:], None, None, 155.0)
-
     # 清洗：信息行 / 空行 / 纯符号行丢掉，同时间戳去重，words 行号要跟着重建
     raw = [[0.0, "买辣椒也用券 - 起风了"],
            [1.0, "未经许可不得翻唱或使用"],
@@ -766,7 +685,6 @@ def lyric_quality():
     assert cw[0][0][2] == "这" and cw[1][0][2] == "顺", cw
     assert ct == [[10.0, "这一路上走走停停"], [21.0, "沿着少年漂流的痕迹"]], ct
     assert L.clean_lyrics([], {}, []) == ([], {}, [])
-
     # 繁简转换：字表必须两两成对，且不允许"一字两简"的冲突映射
     toks = L.T2S_PARTIAL.split()
     assert toks and all(len(t) == 2 for t in toks), [t for t in toks if len(t) != 2]
@@ -779,7 +697,6 @@ def lyric_quality():
     assert L.to_simplified("风里的花") == "风里的花"      # 简体原样返回
     assert L.to_simplified("") == ""
     assert L.to_simplified("龘", {}) == "龘"             # 未收录字符不猜，原样保留
-
     # 制作名单 / 致谢行必须剔掉，正常歌词一个字都不能误伤（冒号是安全阀）
     for s in ("作词：李荣浩", "曲：周杰伦", "编曲 Arrangement：陈伟", "小提琴：须磨和声",
               "母带工程师：Chris", "录音工程：玉乃井光纪", "特别支持：中村光雄",
@@ -790,7 +707,6 @@ def lyric_quality():
               "这一路上走走停停"):
         assert not L.is_info_line(s), "正常歌词被误判: " + s
 check("lyric quality / clean / t2s", lyric_quality)
-
 print("[25] 摆放位置预设（借鉴 FluentFlyout 的可定制浮层位置）")
 def position_presets():
     from PySide6.QtWidgets import QMenu          # noqa: F401
@@ -798,7 +714,6 @@ def position_presets():
     m = L.POSITION_MARGIN
     ov.resize(600, 200)
     w, h = ov.width(), ov.height()
-
     # 每个预设都要落在屏幕安全区内、互不重合，且窗口真的挪过去了
     seen = set()
     for key, _name in L.POSITION_PRESETS:
@@ -811,19 +726,16 @@ def position_presets():
         assert (ov.pos().x(), ov.pos().y()) == (x, y), key
         assert ov._current_position_key() == key, (key, ov._current_position_key())
         assert ov.pos_preset == key
-
     # 贴边预设必须真的贴边（好分辨率/任务栏高度变化也跟着走）
     assert ov._preset_point("top")[1] == g.y() + m
     assert ov._preset_point("bottom")[1] + h == g.y() + g.height() - m
     assert ov._preset_point("top_left")[0] == g.x() + m
     assert ov._preset_point("top_right")[0] + w == g.x() + g.width() - m
-
     # 手动挪走后应判为"自由摆放"，且不再被预设接管
     ov.move(ov.pos().x() + 37, ov.pos().y() - 19)
     assert ov._current_position_key() == L.POS_FREE, ov._current_position_key()
     ov._set_pos_free()
     assert ov.pos_preset == L.POS_FREE and ov.cfg.get("pos_preset") == L.POS_FREE
-
     # 重启还原：配了预设就按当前屏幕重算，没配就回到记忆坐标
     ov.cfg["pos_preset"] = "top_right"
     ov._restore_position()
@@ -832,7 +744,6 @@ def position_presets():
     ov.cfg["x"], ov.cfg["y"] = g.x() + 11, g.y() + 22
     ov._restore_position()
     assert (ov.pos().x(), ov.pos().y()) == (g.x() + 11, g.y() + 22)
-
     # 菜单要真的建得出来，当前项有勾
     menu = QMenu()
     sub = ov._build_pos_menu(menu, track=True)
@@ -841,20 +752,18 @@ def position_presets():
     assert len(ov._pos_actions) == len(L.POSITION_PRESETS)
     ov._sync_tray_menu()
 check("position presets", position_presets)
-
-
 print("[26] 多源并行抓词：快源先到即用、慢源不得拖链路（打桩，不走网络）")
 def parallel_fetch():
     real = L._fetch_source
-
-    def mk(lines_n, words_n, trans_n):
+    def mk(lines_n, words_n, trans_n, singer=""):
         lines = [[i * 3.0, "第%d句" % i] for i in range(lines_n)]
         words = {i: [[i * 3.0, 0.5, "字"]] for i in range(words_n)}
         trans = [[i * 3.0, "t%d" % i] for i in range(trans_n)]
-        return {"lines": lines, "words": words, "trans": trans, "cover": None}
-
-    def run(plan, budget_note=""):
-        """plan: {源: (延迟秒, 候选或 None)}；返回 (耗时, lines, words, trans, used, by_src)"""
+        return {"lines": lines, "words": words, "trans": trans, "cover": None,
+                "singer": singer}
+    def run(plan, artist="a", budget_note=""):
+        """plan: {源: (延迟秒, 候选或 None)}
+        返回 (耗时, lines, words, trans, used, by_src, singer_ok)"""
         def fake(src, query, tc, ac):
             delay, cand = plan.get(src, (0.0, None))
             if delay:
@@ -863,15 +772,15 @@ def parallel_fetch():
         L._fetch_source = fake
         try:
             t0 = time.perf_counter()
-            lines, words, trans, cover, used, by_src = L._gather_sources(
-                "q", "t", "a", 200.0, False)
-            return time.perf_counter() - t0, lines, words, trans, used, by_src
+            lines, words, trans, cover, used, by_src, singer_ok = L._gather_sources(
+                "q", "t", artist, 200.0, False)
+            return (time.perf_counter() - t0, lines, words, trans, used, by_src,
+                    singer_ok)
         finally:
             L._fetch_source = real
-
     try:
         # 1) 慢源（LRCLIB 2.2s）绝不能挡住链路：国内源已给满配 → 必须立刻收工
-        dt, lines, words, trans, used, _ = run({
+        dt, lines, words, trans, used, _, _ = run({
             "qq": (0.03, mk(40, 40, 40)),
             "netease": (0.05, mk(38, 0, 0)),
             "kugou": (0.04, mk(39, 39, 39)),
@@ -880,9 +789,8 @@ def parallel_fetch():
         assert dt < 0.8, "慢源把链路拖住了: %.2fs" % dt
         assert words and trans, (len(words), len(trans))
         assert used in ("qq", "kugou"), used
-
         # 2) 满配后的小宽限期要生效：稍慢但逐字更全的同级源应能翻盘
-        dt, lines, words, trans, used, _ = run({
+        dt, lines, words, trans, used, _, _ = run({
             "qq": (0.02, mk(30, 30, 30)),         # 先到，逐字覆盖少
             "netease": (0.12, mk(45, 45, 45)),    # 慢 100ms，但明显更全
             "kugou": (0.05, mk(20, 20, 20)),
@@ -891,18 +799,16 @@ def parallel_fetch():
         assert used == "netease", "没让更优的同级结果翻盘: " + str(used)
         assert len(lines) == 45 and len(words) == 45
         assert dt < 0.8, dt
-
         # 3) 两个满配源、其中一个很慢：必须在宽限期后就走，不等慢的那个
-        dt, _l, _w, _t, _u, _b = run({
+        dt, _l, _w, _t, _u, _b, _s = run({
             "qq": (0.03, mk(30, 30, 30)),
             "netease": (1.5, mk(60, 60, 60)),
             "kugou": (0.0, None),
             "lrclib": (0.0, None),
         })
         assert dt < 0.8, "等了慢源: %.2fs" % dt
-
         # 4) 缺逐字时才等 LRCLIB 兜底，且总耗时卡死在预算内
-        dt, lines, words, trans, used, _ = run({
+        dt, lines, words, trans, used, _, _ = run({
             "qq": (0.03, mk(30, 0, 0)),
             "netease": (0.05, None),
             "kugou": (0.04, None),
@@ -910,9 +816,8 @@ def parallel_fetch():
         })
         assert used == "lrclib" and words, (used, len(words))
         assert dt < 1.5, dt
-
         # 5) 已有正文时，不带逐字的 LRCLIB 候选应被忽略（别用更差的覆盖好的）
-        dt, lines, words, trans, used, _ = run({
+        dt, lines, words, trans, used, _, _ = run({
             "qq": (0.03, mk(30, 0, 0)),
             "netease": (0.05, None),
             "kugou": (0.04, None),
@@ -923,9 +828,106 @@ def parallel_fetch():
     finally:
         L._fetch_source = real
 check("parallel fetch", parallel_fetch)
+def singer_mismatch_guard():
+    """错配否决：歌手对不上的候选不能靠「有逐字」抢赢（v2.0.1 起）"""
+    # 1) 歌手相关性判定：大小写 / 括号原唱名 / 合唱名单 / 不同人
+    assert L._singer_matches("周杰伦", "周杰伦")
+    assert L._singer_matches("Beyond", "BEYOND")
+    assert L._singer_matches("买辣椒也用券", "冯沁苑(买辣椒也用券)")
+    assert L._singer_matches("陈慧娴", "陈慧娴、千千阙歌")
+    assert not L._singer_matches("杨千嬅", "杨坤")
+    assert not L._singer_matches("周杰伦", "周深")
+    assert not L._singer_matches("杨千嬅", "")
+    # 2) 候选否决：全都不是该歌手时退化为「只按歌名」，不返回空
+    cands = [{"name": "无所谓", "singer": "杨坤"},
+             {"name": "无所谓", "singer": "蔡健雅"},
+             {"name": "无所谓 (Live)", "singer": "方大同"}]
+    sel = L._match_candidates(cands, "无所谓", "杨千嬅")
+    assert sel, "全不匹配时不该返回空（宁可同名歌也不要没歌词）"
+    assert all("无所谓" in c["name"] for c in sel), sel
+    # 有一个歌手对得上时，只留对得上的那一个
+    cands2 = [{"name": "无所谓", "singer": "杨坤"},
+              {"name": "无所谓", "singer": "杨千嬅"}]
+    sel2 = L._match_candidates(cands2, "无所谓", "杨千嬅")
+    assert len(sel2) == 1 and sel2[0]["singer"] == "杨千嬅", sel2
+    # 都对得上时，歌名完全一致的排前面
+    cands3 = [{"name": "无所谓 (Live)", "singer": "杨千嬅"},
+              {"name": "无所谓", "singer": "杨千嬅"}]
+    sel3 = L._match_candidates(cands3, "无所谓", "杨千嬅")
+    assert sel3[0]["name"] == "无所谓", sel3
+    # 3) 打分重罚：错配的「逐字齐全」必须输给歌手正确的「只有行级」
+    good = L.score_lyrics([[0, "a"]] * 20, {}, [], 0.0, "杨千嬅", "杨千嬅")
+    bad = L.score_lyrics([[0, "a"]] * 20, {i: [] for i in range(20)}, [], 0.0,
+                          "杨千嬅", "杨坤")
+    assert good > bad, (good, bad)
+    # 4) 多源竞速时错配不得胜出（score_lyrics 的 -60 生效）
+    real = L._fetch_source
+    def mk(n, w, singer):
+        return {"lines": [[i * 3.0, "第%d句" % i] for i in range(n)],
+                "words": {i: [[i * 3.0, 0.5, "字"]] for i in range(w)},
+                "trans": [], "cover": None, "singer": singer}
+    def fake(src, query, tc, ac):
+        delay, cand = {"qq": (0.01, mk(40, 40, "杨坤")),      # 错配但逐字齐全
+                        "kugou": (0.02, mk(30, 0, "杨千嬅"))
+                       }.get(src, (0.0, None))                # 歌手对但只有行级
+        if delay:
+            time.sleep(delay)
+        return cand
+    L._fetch_source = fake
+    try:
+        _l, _w, _t, _c, used, _b, singer_ok = L._gather_sources(
+            "无所谓 杨千嬅", "无所谓", "杨千嬅", 200.0, False)
+    finally:
+        L._fetch_source = real
+    assert used == "kugou", "错配的逐字版本抢赢了: " + str(used)
+    assert singer_ok, "歌手正确的候选应标记 singer_ok=True"
+    # 5) 翻唱元数据 vs 真错配：靠歌词内容交叉验证区分，不能一刀切
+    def mk2(singer, first, n=30):
+        return {"lines": [[i * 3.0, first if i == 0 else "第%d句" % i]
+                          for i in range(n)],
+                "words": {i: [[i * 3.0, 0.5, "字"]] for i in range(n)},
+                "trans": [], "cover": None, "singer": singer}
 
+    def probe(plan, artist, title="无所谓"):
+        def fake2(src, query, tc, ac):
+            delay, cand = plan.get(src, (0.0, None))
+            if delay:
+                time.sleep(delay)
+            return cand
+        L._fetch_source = fake2
+        try:
+            return L._gather_sources(title + " " + artist, title, artist,
+                                     200.0, False)
+        finally:
+            L._fetch_source = real
 
+    # 5a) 两源歌词**不同**且歌手都不符 → 真错配，必须报出来
+    _l, _w, _t, _c, used, _b, sk = probe(
+        {"qq": (0.01, mk2("杨坤", "谁会爱上谁")),
+         "kugou": (0.02, mk2("蔡健雅", "让我将你心儿摘下"))}, "杨千嬅")
+    assert not sk, "真错配（两源歌词不同）应判 singer_ok=False"
+    assert _l, "真错配时仍应退回同名歌歌词：" + str(used)
+
+    # 5b) 两源歌词**一致**（同一首歌的不同发行，元数据歌手写得不同）→ 不该报
+    _l, _w, _t, _c, _u, _b, sk = probe(
+        {"qq": (0.01, mk2("王菲", "爱上一个天使的缺点")),
+         "kugou": (0.02, mk2("王菲", "爱上一个天使的缺点"))},
+        "陈慧娴", "流年")
+    assert sk, "两源歌词一致属同一首歌，不该误报错配"
+
+    # 5c) 歌手完全匹配 → 不该报
+    _l, _w, _t, _c, _u, _b, sk = probe(
+        {"qq": (0.01, mk2("陈慧娴", "爱上一个天使的缺点")),
+         "kugou": (0.02, mk2("陈慧娴", "爱上一个天使的缺点"))},
+        "陈慧娴", "流年")
+    assert sk, "歌手匹配时不该报"
+
+    # 5d) singer 带「翻唱/cover」标记 → 直接放行，不做否决
+    assert L._singer_matches("陈慧娴", "王菲 翻唱")
+    assert L._singer_matches("陈慧娴", "陈慧娴 (cover)")
+check("singer mismatch guard", singer_mismatch_guard)
 print("[27] 省电：隐藏即停帧、静止不空转重绘")
+
 def idle_power():
     from PySide6.QtCore import QVariantAnimation
     ov.show()

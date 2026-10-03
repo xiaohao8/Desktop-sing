@@ -1362,10 +1362,17 @@ def generate_lrc(lines, trans=None) -> str:
 _EMPTY_RE = re.compile(r"^[\s\-–—~·.、,，!！?？…]*$")
 
 
-def score_lyrics(lines, words=None, trans=None, duration: float = 0.0) -> int:
+def score_lyrics(lines, words=None, trans=None, duration: float = 0.0,
+                 artist_c: str = "", singer: str = "") -> int:
     """候选质量分：有逐字 +30、有翻译 +12、行数（封顶 25）、末行贴合歌曲时长 +15
 
     宁可多试一个源拿到带逐字时间轴的版本，也不要先用普通 LRC 顶上。
+
+    ⚠️ `artist_c`/`singer` 是**错配否决项**（2026-10-03 加）：只要调用方能给出
+    目标歌手，就对「候选歌手与之不符」的结果重罚。原因是错配结果往往**恰恰带逐字
+    时间轴**，光看质量分反而会让「别人的歌词」击败「正确但只有行级的歌词」——
+    实测「无所谓 / 杨千嬅」三个源都返回杨坤/蔡健雅/方大同的版本且带逐字。
+    罚得比「逐字 +30」更重（-60），确保正确性永远优先于卡拉OK效果。
     """
     if not lines:
         return -1
@@ -1381,6 +1388,8 @@ def score_lyrics(lines, words=None, trans=None, duration: float = 0.0) -> int:
             score += 5
         if abs(last - duration) <= max(12.0, duration * 0.12):
             score += 10
+    if artist_c and singer and not _singer_matches(artist_c, singer):
+        score -= 60                                   # 错配重罚，压过逐字的 +30
     return score
 
 
@@ -1514,17 +1523,99 @@ def to_simplified(text: str, table: dict = None) -> str:
     return "".join(t.get(c, c) for c in text)
 
 
+def _singer_tokens(singer: str) -> set:
+    """把歌手字段拆成可比对的词元。
+
+    各源形态差异很大，要统一：
+      「买辣椒也用券」              → {买辣椒也用券}
+      「冯沁苑(买辣椒也用券)」      → {冯沁苑, 买辣椒也用券}   括号里常是原唱名
+      「BEYOND」vs「Beyond」        → 归一化后都是 beyond
+      「周深」/「周杰伦」            → 各自独立，不做子串误判
+    分隔符覆盖中英文括号、斜杠、逗号、连字符、&、feat. 等常见写法。
+    """
+    s = singer or ""
+    for sep in ("(", "（", ")", "）", "[", "]", "【", "】",
+                "/", "、", ",", "，", ";", "；", "·", "&", "|",
+                "feat", "ft", "and", "与", "、"):
+        s = s.replace(sep, " ")
+    return {t for t in norm_text(s).split() if t} or ({norm_text(singer)} if norm_text(singer) else set())
+
+
+# 音源元数据里的「翻唱」标记。出现这些词时，singer 字段填的是**翻唱者**而不是
+# 原唱，而平台给的歌词时轴通常仍来自原唱（实测网易云搜「流年 陈慧娴」，
+# 最佳候选 singer='王菲'——王菲翻唱版——但歌词是陈慧娴原词「爱上一个天使的缺点」）。
+# 这种情况下拿 singer 做否决会**误伤正确结果**，只能放行。
+_COVER_MARK = re.compile(r"翻唱|cover|covers|covered|remix|live|伴奏|instrumental|cover\s*by",
+                         re.I)
+
+
+def _singer_matches(artist_c: str, singer: str) -> bool:
+    """候选歌手与目标歌手是否算同一人（含艺名/原唱名/大小写差异）。
+
+    判定用**双向词元命中**而不是单向 `in`：原实现是
+    `norm_a in norm_text(singer)`，「杨千嬅」遇到「杨千嬅(电影《...》主题曲)」
+    能过，但遇到歌手名恰好互为前缀（「周杰伦」vs「周深杰」）就会误判为同一人。
+    整词命中 + 括号内别名覆盖，才是能站得住的相关性判定。
+
+    ⚠️ 带「翻唱/cover/live/伴奏」标记的一律**直接放行**：这类条目的 singer 是
+    翻唱者而非原唱，用它否决会把**正确的歌词**误判成错配（网易云「流年」实测）。
+    宁可放过，不可错杀——否决机制的代价是砍掉本来正确的候选。
+    """
+    if not norm_text(artist_c) or not norm_text(singer):
+        return False
+    if _COVER_MARK.search(singer or ""):
+        return True                      # 翻唱条目：歌手字段不可信，放行
+    norm_a = norm_text(artist_c)
+    norm_s = norm_text(singer)
+    if norm_a == norm_s or norm_a in norm_s or norm_s in norm_a:
+        return True
+    # 任一歌手词元整词命中即算同一人（覆盖「冯沁苑(买辣椒也用券)」这类写法）
+    a = norm_text(artist_c)
+    return any(t == a or a in t or t in a for t in _singer_tokens(singer))
+
+
 def _match_candidates(cands, title_c, artist_c=""):
-    """搜索结果排序：歌名+歌手都匹配 > 仅歌名匹配 > 其余，最多尝试 3 个"""
+    """搜索结果**择优 + 否决**：只保留歌名匹配且歌手对得上的候选，最多 3 个。
+
+    ⚠️ 旧实现只按 (歌名+歌手, 歌名) 排序后取前 3，**从不否决**明显不匹配的候选。
+    于是同名歌场景下会稳定翻车——实测「无所谓 / 杨千嬅」三个源的前 3 名
+    分别是杨坤、蔡健雅、方大同（没有一条是杨千嬅），程序照单全收；更糟的是
+    错配结果往往带逐字时间轴，score_lyrics 给它 +30，反而会**击败正确的歌词**。
+    用户听杨千嬅，屏幕滚的是杨坤的词。
+
+    现在的策略：
+      1. 歌手对不上 → 直接淘汰（除非**全都不对**，那退而求其次只按歌名挑，
+         宁可拿同名歌的歌词也不要没有——这是权衡后的选择，会打日志）；
+      2. 歌手对得上 → 按「都匹配 > 仅歌名」排序取前 3；
+      3. 歌名带后缀（「童话 (温柔女声版)」）且目标里没有该后缀 → 降权但不淘汰。
+    """
     cands = cands or []
     norm_t, norm_a = norm_text(title_c), norm_text(artist_c)
 
-    def rank(it):
-        name_ok = norm_text(it.get("name")) == norm_t
-        singer_ok = bool(norm_a) and norm_a in norm_text(it.get("singer") or "")
-        return (name_ok and singer_ok, name_ok)
+    def name_ok(it):
+        n = norm_text(it.get("name"))
+        return bool(n) and (n == norm_t or norm_t in n or n in norm_t)
 
-    return sorted(cands, key=rank, reverse=True)[:3]
+    def singer_ok(it):
+        return _singer_matches(artist_c, it.get("singer") or "")
+
+    # 歌手确实对得上的先留着
+    keep = [it for it in cands if name_ok(it) and singer_ok(it)]
+    rest = [it for it in cands if not (name_ok(it) and singer_ok(it))]
+
+    if keep:
+        # 歌名完全相同 > 歌名包含关系
+        def rank(it):
+            return (norm_text(it.get("name")) == norm_t,)
+        return sorted(keep, key=rank, reverse=True)[:3]
+
+    # 全都不匹配：只要有歌名能对上的就退而求其次（同名歌也算命中用户意图）
+    loose = [it for it in rest if name_ok(it)]
+    if loose and norm_a:
+        log("match: no candidate singer matches %r, falling back to title-only"
+            % artist_c)
+    return sorted(loose, key=lambda it: norm_text(it.get("name")) == norm_t,
+                  reverse=True)[:3]
 
 
 # ======================================================================
@@ -1554,14 +1645,16 @@ def _fetch_source(src: str, query: str, title_c: str, artist_c: str):
                     cover = ("https://y.gtimg.cn/music/photo_new/"
                              "T002R500x500M000%s.jpg" % it["albummid"])
                 cand = {"lines": pl, "words": pw,
-                        "trans": parse_trans(tr) if tr else [], "cover": cover}
+                        "trans": parse_trans(tr) if tr else [], "cover": cover,
+                        "singer": it.get("singer") or ""}
                 break
     elif src == "kugou":
         # 酷狗 KRC 自带逐字时间轴（借鉴 Lyricify 的酷狗源）
         for it in _match_candidates(fetch_kugou_search(query, timeout=to), title_c, artist_c):
             pl, pw, pt = fetch_kugou_lyric(it["name"], it["duration"], it["hash"], timeout=to)
             if pl:
-                cand = {"lines": pl, "words": pw, "trans": pt, "cover": None}
+                cand = {"lines": pl, "words": pw, "trans": pt, "cover": None,
+                        "singer": it.get("singer") or ""}
                 break
     elif src == "netease":
         for it in _match_candidates(fetch_netease_search(query, timeout=to), title_c, artist_c):
@@ -1569,7 +1662,8 @@ def _fetch_source(src: str, query: str, title_c: str, artist_c: str):
                           else ([], {}, []))
             if pl:
                 cand = {"lines": pl, "words": pw, "trans": pt,
-                        "cover": it["pic_url"] or None}
+                        "cover": it["pic_url"] or None,
+                        "singer": it.get("singer") or ""}
                 break
     else:                                   # lrclib：候选里挑质量分最高的一个
         best = None
@@ -1580,7 +1674,8 @@ def _fetch_source(src: str, query: str, title_c: str, artist_c: str):
                 best = c
         if best is not None:
             cand = {"lines": best["lines"], "words": best["words"], "trans": best["trans"],
-                    "cover": None, "duration": best["duration"]}
+                    "cover": None, "duration": best["duration"],
+                    "singer": artist_c}          # lrclib 按歌名+歌手精确查，视为同一人
     return cand
 
 
@@ -1616,6 +1711,7 @@ def _gather_sources(query, title_c, artist_c, duration, prefer_netease):
     by_src = {}
     lines, words, trans, cover = [], {}, [], None
     best_key, used_src = None, None
+    used_singer = ""                          # 胜出候选的歌手名（判断错配用）
 
     def take(src, cand):
         """按质量分择优；返回是否已拿到「逐字 + 翻译」满配
@@ -1623,18 +1719,23 @@ def _gather_sources(query, title_c, artist_c, duration, prefer_netease):
         同分时的备用比较（score_lyrics 对行数的加分封顶在 25，超过就分不出高下）：
         逐字覆盖的行数多 > 翻译条数多 > 正文行数多 > 来源优先级靠前。
         不这么排的话，一个「35 行但逐字齐全」的结果会被「45 行、逐字更全」的挤掉。
+
+        artist_c/cand["singer"] 一起传进 score_lyrics：多源竞速时，即使某个源
+        自己的 _match_candidates 放行了不匹配项，这一层也会把它重罚掉。
         """
-        nonlocal lines, words, trans, cover, best_key, used_src
+        nonlocal lines, words, trans, cover, best_key, used_src, used_singer
         if not cand or not cand.get("lines"):
             return False
         sc = score_lyrics(cand["lines"], cand["words"], cand["trans"],
-                          cand.get("duration") or duration)
+                          cand.get("duration") or duration,
+                          artist_c, cand.get("singer") or "")
         key = (sc, len(cand["words"] or {}), len(cand["trans"] or []),
                len(cand["lines"]), -rank.get(src, len(order) + 1))
         if best_key is None or key > best_key:
             best_key, used_src = key, src
             lines, words, trans = cand["lines"], cand["words"], cand["trans"]
             cover = cand.get("cover") or cover
+            used_singer = cand.get("singer") or ""
         return bool(words and trans)
 
     try:
@@ -1677,15 +1778,59 @@ def _gather_sources(query, title_c, artist_c, duration, prefer_netease):
                     pass
     except Exception:
         log("parallel fetch failed: " + traceback.format_exc())
-    return lines, words, trans, cover, used_src, by_src
+    # ---- 错配判定：宁可漏报也不误报 ----
+    # 单看音源的 singer 字段**不可靠**：平台常把翻唱者填进 singer 却不带任何标记
+    # （实测网易云搜「流年 陈慧娴」，netease/qq 两个源的最佳候选 singer 都是
+    #  「王菲」——王菲翻唱版——可歌词是陈慧娴原词「爱上一个天使的缺点」，
+    #  两个源返回同一份词，说明这是同一首歌的不同发行，不是匹配错）。
+    # 因此加一道**歌词内容交叉验证**：多源歌词正文高度一致时，说明大家都在提供
+    # 同一首歌（哪怕元数据歌手写得不同），此时不判错配。
+    # 只有「多源判不匹配 **且** 各源歌词内容互不相同」时，才认定为真错配。
+    singer_ok = (not lines) or (not artist_c)
+    if lines and artist_c:
+        votes_bad = votes_good = 0
+        fingerprints = []
+        for _s, _c in (by_src or {}).items():
+            if not (_c and _c.get("lines") and _s != "lrclib"):
+                continue
+            sg = _c.get("singer") or ""
+            if sg:
+                if _singer_matches(artist_c, sg):
+                    votes_good += 1
+                else:
+                    votes_bad += 1
+            # 取开头若干字当指纹。**必须拼成整串再比**：不同源的断句粒度不一样
+            # （QQ 会把「上帝在云端」「只眨了一眨眼」并成一行，网易云分开），
+            # 逐行比对会把同一份词判成不同，得用拼接后的连续文本。
+            fingerprints.append("".join(
+                norm_text(txt) for _tt, txt in (_c["lines"][:8]))[:60])
+        # 用「互为前缀」而非严格相等：各源收录的行数不同（同一首歌有的多一句导语），
+        # 截断长度可能差几个字。取较短的前缀比较，能容下这种无害差异。
+        same_lyrics = False
+        if len(fingerprints) >= 2:
+            shortest = min(fingerprints, key=len)
+            same_lyrics = all(f.startswith(shortest[:40]) for f in fingerprints)
+        singer_ok = same_lyrics or not (votes_bad >= 2 and votes_bad > votes_good)
+        if not singer_ok:
+            log("singer mismatch: %r vs %r (bad=%d good=%d same_lyrics=%s)"
+                % (artist_c, used_singer, votes_bad, votes_good, same_lyrics))
+    return lines, words, trans, cover, used_src, by_src, singer_ok
 
 
-def fetch_lyrics(title: str, artist: str, prefer_netease: bool = False, duration: float = 0.0):
-    """带缓存的歌词抓取，返回 (lines, words, cover_url, trans)
+def fetch_lyrics(title: str, artist: str, prefer_netease: bool = False,
+                 duration: float = 0.0, strict_artist: bool = False):
+    """带缓存的歌词抓取，返回 (lines, words, cover_url, trans, singer_ok)
 
     lines=[[t, 文本]...]；words={行号: [[t, dur, 词块]...]}（逐字数据存在时）
     trans=[[t, 翻译/音译]...]（QQ trans / 网易云 tlyric / 酷狗 KRC [language:]）
     来源：QQ音乐 / 网易云 / 酷狗（正在用网易云播放时优先）+ LRCLIB 兜底
+
+    singer_ok（2026-10-03 新增，**向后兼容**：老调用方只解前 4 个值不受影响）：
+      True  = 歌词就是当前歌手这一版；
+      False = 所有源都没找到该歌手的版本，退而求其次用了同名歌的歌词，
+              界面应标注「歌手不符疑似」并允许用户强制重取。
+    strict_artist=True 时不接受错配：宁可返回空（界面显示「暂无歌词」），
+        供「强制只取该歌手版本」的手动重试使用。
 
     借鉴 Lyricify 的智能匹配引擎：每个源都先算质量分再择优（有逐字 > 有翻译 > 行数多），
     四个源并行竞速，拿到「逐字 + 翻译」的满配结果立即收工。
@@ -1693,7 +1838,9 @@ def fetch_lyrics(title: str, artist: str, prefer_netease: bool = False, duration
     title_c, artist_c = clean_query_text(title), clean_query_text(artist)
     key = ("%s|%s" % (title_c, artist_c)).lower().strip()
     cp = _cache_path(key)
-    if os.path.exists(cp):
+    # strict_artist（用户手动「只要这一版」）必须绕过缓存：缓存里存的正是
+    # 那个错配结果，不绕开的话重试多少次都是同一份错的。
+    if os.path.exists(cp) and not strict_artist:
         try:
             with open(cp, encoding="utf-8") as f:
                 data = json.load(f)
@@ -1702,17 +1849,19 @@ def fetch_lyrics(title: str, artist: str, prefer_netease: bool = False, duration
                 cl, cw, ct = clean_lyrics(data.get("lines") or [],
                                           {int(k): v for k, v in w.items()},
                                           data.get("trans") or [])
-                return cl, cw, data.get("cover") or None, ct
+                # 老缓存没有 sk 字段：按「有词就算对」兼容，不误报错配
+                return (cl, cw, data.get("cover") or None, ct,
+                        data.get("sk", True) is not False)
             if isinstance(data, dict):
                 cl, cw, ct = clean_lyrics(data.get("lines") or [], {}, [])
-                return cl, cw, data.get("cover") or None, ct
+                return cl, cw, data.get("cover") or None, ct, True
             if isinstance(data, list):
                 cl, cw, ct = clean_lyrics(data, {}, [])
-                return cl, cw, None, ct
+                return cl, cw, None, ct, True
         except Exception:
             pass
     query = "%s %s" % (title_c, artist_c) if artist_c else title_c
-    lines, words, trans, cover_url, used_src, by_src = _gather_sources(
+    lines, words, trans, cover_url, used_src, by_src, singer_ok = _gather_sources(
         query, title_c, artist_c, duration, prefer_netease)
     if lines and (not words or not trans) and used_src != "netease":
         # 缺逐字 / 翻译时借网易云同版本时间轴（同一录音版本一致）；
@@ -1725,18 +1874,23 @@ def fetch_lyrics(title: str, artist: str, prefer_netease: bool = False, duration
                 trans = nc["trans"]
             if not cover_url and nc.get("cover"):
                 cover_url = nc["cover"]
+    if strict_artist and not singer_ok:
+        # 用户明确要求「只要这一版」：错配结果直接丢弃，宁可显示「暂无歌词」
+        log("strict_artist: dropping mismatched lyric for %s - %s" % (title_c, artist_c))
+        return [], {}, None, [], False
     if lines:
         lines, words, trans = clean_lyrics(lines, words, trans)
     if lines:
         try:
             with open(cp, "w", encoding="utf-8") as f:
                 json.dump({"v": 4, "cover": cover_url, "lines": lines, "trans": trans,
+                           "sk": bool(singer_ok),
                            "words": {str(k): v for k, v in words.items()}},
                           f, ensure_ascii=False)
             prune_cache()          # 写完顺手控一下总量（超限才会真动手）
         except OSError:
             pass
-    return lines, words, cover_url, trans
+    return lines, words, cover_url, trans, singer_ok
 
 
 # ======================================================================
@@ -2176,7 +2330,7 @@ FAN_R_FACTOR = 2.6      # 扇形半径 = 行宽 × 该系数（越大越平缓�
 FAN_R_MIN = 380.0       # 扇形半径下限（短句也保留弧度）
 WAVE_AMP = 0.11         # 波浪振幅，相对字号
 
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 
 # LRCLIB 的 User-Agent：Desktop-sing/<版本>，随 APP_VERSION 走（隐私声明里
 # 描述为「自己的名称标识 + 版本号」，改版本不用再动声明）。
@@ -3164,6 +3318,8 @@ class LyricOverlay(QWidget):
         self.lines = []             # [[t, text], ...]
         self.words = {}             # 行号 -> [[t, dur, 词块]...]
         self.trans = []             # [[t, 翻译], ...]
+        # 采用了同名歌的歌词（歌手对不上）→ 界面给「疑似错配」提示，可点按强制重取
+        self.singer_mismatch = False
         self._trans_map = {}        # 行号 -> 翻译文本（按时间最近匹配，抓取后构建一次）
         self.cur_idx = -1
         self.anchor_pos = 0.0
@@ -3510,6 +3666,11 @@ class LyricOverlay(QWidget):
         act_show.triggered.connect(self._toggle_visible)
         act_refetch = QAction(make_menu_icon("refresh"), "重新获取歌词", menu)
         act_refetch.triggered.connect(self._refresh_lyrics)
+        # 疑似错配时的补救入口：只认当前歌手这一版，宁可没歌词也不给同名歌的词
+        act_refetch_strict = QAction(make_menu_icon("refresh"),
+                                     "重新获取（只认当前歌手）", menu)
+        act_refetch_strict.triggered.connect(
+            lambda: self._refresh_lyrics(strict_artist=True))
         menu.addSeparator()
 
         # 播放控制（一键直达，不用多点）
@@ -3658,6 +3819,10 @@ class LyricOverlay(QWidget):
         menu.addAction(act_panel)
         menu.addAction(act_show)
         menu.addAction(act_refetch)
+        # 只有当前确实是错配（已显示同名歌的词）时，才露出「只认这一版」——
+        # 平时不加这个菜单项，避免「总是只有一版可选」的功能看起来像 bug。
+        if getattr(self, "singer_mismatch", False):
+            menu.addAction(act_refetch_strict)
         menu.addSeparator()
         menu.addMenu(m_play)
         menu.addMenu(m_style)
@@ -4165,8 +4330,12 @@ class LyricOverlay(QWidget):
     def media_command(self, cmd: str):
         send_media_command(cmd)
 
-    def _refresh_lyrics(self):
-        """清掉当前歌曲缓存后重新抓取（歌词匹配错误时手动纠正）"""
+    def _refresh_lyrics(self, strict_artist=False):
+        """清掉当前歌曲缓存后重新抓取（歌词匹配错误时手动纠正）
+
+        strict_artist=True 时只接受该歌手自己的版本：宁可显示「暂无歌词」，
+        也不给用户看同名歌的词。用于「疑似歌手不符」提示里的强制重取。
+        """
         if not self.song:
             return
         try:
@@ -4178,12 +4347,16 @@ class LyricOverlay(QWidget):
         except OSError:
             pass
         self.lines, self.words, self.trans = [], {}, []
+        self.singer_mismatch = False
         self._trans_map = {}
         self._reset_line_state()
         self._spans_cache.clear()
-        self.tray.showMessage("桌面歌词", "正在重新获取歌词…",
-                              QSystemTrayIcon.Information, 1200)
-        self._start_fetch(self.song)
+        self.tray.showMessage(
+            "桌面歌词",
+            "正在重新获取歌词（只取 %s 的版本）…" % (self.song.get("artist") or "该歌手")
+            if strict_artist else "正在重新获取歌词…",
+            QSystemTrayIcon.Information, 1600)
+        self._start_fetch(self.song, strict_artist=strict_artist)
 
     # ---------------- 全局快捷键 ----------------
 
@@ -4258,6 +4431,7 @@ class LyricOverlay(QWidget):
             self.lines = []
             self.words = {}
             self.trans = []
+            self.singer_mismatch = False
             self._trans_map = {}
             self._reset_line_state()
             self.duration = 0.0
@@ -4271,6 +4445,7 @@ class LyricOverlay(QWidget):
         self.lines = []
         self.words = {}
         self.trans = []
+        self.singer_mismatch = False
         self._trans_map = {}
         self._reset_line_state()
         self._fill = 0.0
@@ -4348,7 +4523,7 @@ class LyricOverlay(QWidget):
         if status != prev:
             self._apply_pause_opacity()
 
-    def _start_fetch(self, info):
+    def _start_fetch(self, info, strict_artist=False):
         self._req_id += 1
         req_id = self._req_id
         title, artist = info.get("title") or "", info.get("artist") or ""
@@ -4362,9 +4537,11 @@ class LyricOverlay(QWidget):
             # 「等待播放…」上——用户看到的就是「歌词坏了但没人告诉我」。
             # 兜住之后无论成败都 emit，让界面走到「纯音乐或暂无歌词」的降级显示。
             lines, words, cover_url, trans = [], {}, None, []
+            singer_ok = True
             try:
-                lines, words, cover_url, trans = fetch_lyrics(
-                    title, artist, prefer_netease=prefer_netease, duration=duration)
+                lines, words, cover_url, trans, singer_ok = fetch_lyrics(
+                    title, artist, prefer_netease=prefer_netease, duration=duration,
+                    strict_artist=strict_artist)
             except Exception:
                 log("fetch_lyrics crashed: " + traceback.format_exc())
                 lines, words, cover_url, trans = [], {}, None, []
@@ -4375,17 +4552,29 @@ class LyricOverlay(QWidget):
                 except Exception:
                     fallback_cover = None
             self.fetched.emit((req_id, lines or [], words or {},
-                               fallback_cover, trans or []))
+                               fallback_cover, trans or [], bool(singer_ok)))
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_fetched(self, payload):
-        req_id, lines, words, fallback_cover, trans = payload
+        req_id, lines, words, fallback_cover, trans = payload[:5]
+        singer_ok = payload[5] if len(payload) > 5 else True
         if req_id != self._req_id:
             return
         self.lines = lines
         self.words = words
         self.trans = trans or []
+        # 错配标记：采用了同名歌的歌词，界面据此给用户一个可点的提示
+        self.singer_mismatch = not singer_ok and bool(lines)
+        if self.singer_mismatch:
+            # 主动告知一次（托盘气泡）。不静默——用户听 A 歌手却看到 B 歌手的词，
+            # 自己未必发现得了；给一条可点的提示，菜单里也能随时强制重取。
+            art = (self.song or {}).get("artist") or "当前歌手"
+            self.tray.showMessage(
+                "桌面歌词", "没找到 %s 的《%s》版本，先显示同名歌歌词。\n"
+                "如需只认这一版，可点「重新获取歌词」再试。"
+                % (art, (self.song or {}).get("title") or ""),
+                QSystemTrayIcon.Warning, 6000)
         self._trans_map = self._build_trans_map()
         self._reset_line_state()
         self._spans_cache.clear()
@@ -5920,6 +6109,12 @@ class LyricOverlay(QWidget):
         a_next.triggered.connect(lambda: self.media_command("next"))
         a_refetch = menu.addAction(make_menu_icon("refresh"), "重新获取歌词")
         a_refetch.triggered.connect(self._refresh_lyrics)
+        # 同上：只在真错配时露出「只认这一版」
+        if getattr(self, "singer_mismatch", False):
+            a_refetch_strict = menu.addAction(
+                make_menu_icon("refresh"), "重新获取（只认当前歌手）")
+            a_refetch_strict.triggered.connect(
+                lambda: self._refresh_lyrics(strict_artist=True))
         menu.addSeparator()
 
         m_style = menu.addMenu("样式")
@@ -7083,6 +7278,24 @@ class SettingsPanel(QWidget):
         hl.addLayout(ctl)
         root.addWidget(head)
 
+        # ===== 疑似错配提示条 =====
+        # 找不到当前歌手的版本、暂用同名歌歌词时出现。给用户一个「只认这一版」
+        # 的按钮（宁可显示暂无歌词也不显示错歌），并说明为什么。
+        self.mismatch_bar = QWidget()
+        self.mismatch_bar.setObjectName("mismatchbar")
+        ml = QHBoxLayout(self.mismatch_bar)
+        ml.setContentsMargins(12, 8, 12, 8)
+        ml.setSpacing(10)
+        ml.addWidget(QLabel("⚠ 没找到这首歌的当前歌手版本，暂用同名歌歌词"), 1)
+        self.b_strict = QPushButton("只认当前歌手")
+        self.b_strict.setObjectName("ghost")
+        self.b_strict.setCursor(Qt.PointingHandCursor)
+        self.b_strict.setToolTip("重新搜索并只接受该歌手的版本；找不到就显示「暂无歌词」")
+        self.b_strict.clicked.connect(lambda: ov._refresh_lyrics(strict_artist=True))
+        ml.addWidget(self.b_strict)
+        self.mismatch_bar.setVisible(False)
+        root.addWidget(self.mismatch_bar)
+
         # ===== 滚动内容区 =====
         scroll = QScrollArea()
         scroll.setObjectName("scroll")
@@ -7631,6 +7844,9 @@ class SettingsPanel(QWidget):
     def refresh(self):
         """从 overlay 重新同步（面板外改动后调用）"""
         ov = self.ov
+        # 错配提示条随抓取结果显隐
+        if hasattr(self, "mismatch_bar"):
+            self.mismatch_bar.setVisible(bool(getattr(ov, "singer_mismatch", False)))
         for sl, val, lb, txt in (
                 (self.off_slider, int(round(ov.offset / 0.5)), self.off_label, "%+.1fs" % ov.offset),
                 (self.scale_slider, int(round(ov.font_scale * 10)), self.scale_label,
@@ -7824,6 +8040,11 @@ class SettingsPanel(QWidget):
         QPushButton#ctlplay:hover { background: rgba(255,255,255,20); }
         QPushButton#ghost { background: transparent; color: #98a0b2; }
         QPushButton#ghost:hover { color: __A__; border-color: __A__; }
+        /* 疑似错配提示条：琥珀色描边，醒目但不刺眼（深色面板上等宽一行的细条） */
+        QWidget#mismatchbar { background: rgba(251, 191, 36, 26);
+                              border: 1px solid rgba(251, 191, 36, 90);
+                              border-radius: 10px; }
+        QWidget#mismatchbar QLabel { color: #fcd34d; font-size: 12px; }
         QPushButton#primary { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                                                           stop:0 __AL__, stop:1 __A__);
                               color: #10131a; border: none;
