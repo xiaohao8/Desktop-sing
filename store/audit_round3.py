@@ -480,18 +480,25 @@ check("P5.12g 便携 zip 随包许可文件",
 # 已打出的包要真的带上（没跑过打包就跳过，不误报）
 _BUNDLE = ("LICENSE-THIRD-PARTY.txt", "PRIVACY.md", "使用说明.txt",
            "PRIVACY.en.md", "USAGE.en.txt")
-_msix = os.path.join(ROOT, "store", "out", "Desktop-sing-1.0.0.0-x64.msix")
-if os.path.exists(_msix):
+# MSIX 落包把中文「使用说明.txt」改名成 ASCII 的 USAGE-zh.txt（避免 makeappx 百分号编码），
+# 故校验包内时用落包名；渠道一致性（P5.12h）仍按各渠道实际文件名检查。
+_BUNDLE_MSIX = ("LICENSE-THIRD-PARTY.txt", "PRIVACY.md", "USAGE-zh.txt",
+                "PRIVACY.en.md", "USAGE.en.txt")
+# 动态取 store/out/ 根目录里最新的 .msix（不递归 dev/），而不是写死版本号——
+# 旧版写死 Desktop-sing-1.0.0.0 后，旧包挪到 dev/ 就会让这条检查**静默跳过**，等于没验。
+_msisx_files = sorted(glob.glob(os.path.join(ROOT, "store", "out", "*.msix")))
+_msix = max(_msisx_files, key=os.path.getmtime) if _msisx_files else None
+if _msix:
     import zipfile as _zf
     from urllib.parse import unquote as _unq
-    # ⚠️ makeappx 会把清单里的**非 ASCII 路径做百分号编码**（如 使用说明.txt 变成
-    #    %E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E.txt）。安装后 Windows 会解码回原名，
-    #    所以这里必须先 unquote 再比对，否则中文文件名永远「像是没打进包」。
     _names = _zf.ZipFile(_msix).namelist()
     _base = {_unq(n).rsplit("/", 1)[-1] for n in _names}
-    _miss = [f for f in _BUNDLE if f not in _base]
+    _miss = [f for f in _BUNDLE_MSIX if f not in _base]
     check("P5.12e 已打包的 MSIX 里含全部随包文档", not _miss,
-          "缺: %s（需重新打包）" % _miss if _miss else "共 %d 份" % len(_BUNDLE))
+          "缺: %s（需重新打包）" % _miss if _miss else "共 %d 份：%s"
+          % (len(_BUNDLE_MSIX), os.path.basename(_msix)))
+else:
+    warn("P5.12e store/out/ 里还没有 .msix（先跑 build_store.py）", "")
 
 # P5.12h 三条渠道必须带**同一套**随包文档。
 # 早先 MSIX 只带 LICENSE + PRIVACY.md，漏了使用说明 → 商店用户装完找不到任何使用说明，

@@ -167,8 +167,16 @@ EXCLUDE_FILES = {"卸载桌面歌词.bat"}
 # 只给中文声明等于英文用户拿不到可读的隐私说明。
 # 使用说明也一并带上：MSIX 的布局来自 onedir，而 onedir 里**没有**使用说明，
 # 早先只有便携版/安装版才有 → 商店用户装完找不到任何使用说明，两条渠道不一致。
-BUNDLED_LICENSES = ("LICENSE-THIRD-PARTY.txt", "PRIVACY.md",
-                    "使用说明.txt", "PRIVACY.en.md", "USAGE.en.txt")
+# 随包文档：(仓库源文件名, 落包文件名)。
+# 落包名用 ASCII：makeappx 会把包内**非 ASCII 文件名百分号编码**
+# （使用说明.txt → %E4%BD%BF…txt），虽 Windows 安装后会解码回原名、审计也用 unquote 兼容，
+# 但落包直接给 ASCII 名（USAGE-zh.txt）更干净、零歧义。仓库根目录仍保留中文名，
+# 供便携版/安装版（不走 makeappx）沿用，两条渠道内容一致、只是文件名不同。
+BUNDLED_LICENSES = (("LICENSE-THIRD-PARTY.txt", "LICENSE-THIRD-PARTY.txt"),
+                    ("PRIVACY.md", "PRIVACY.md"),
+                    ("使用说明.txt", "USAGE-zh.txt"),
+                    ("PRIVACY.en.md", "PRIVACY.en.md"),
+                    ("USAGE.en.txt", "USAGE.en.txt"))
 
 
 def app_version() -> str:
@@ -288,12 +296,12 @@ def stage_layout():
             os.remove(p)
 
     # 许可与隐私声明必须随包（见 BUNDLED_LICENSES 注释）
-    for f in BUNDLED_LICENSES:
-        src = os.path.join(ROOT, f)
+    for src_name, dst_name in BUNDLED_LICENSES:
+        src = os.path.join(ROOT, src_name)
         if not os.path.isfile(src):
-            raise SystemExit("缺少随包声明文件：%s（许可合规要求，不能省）" % f)
-        shutil.copyfile(src, os.path.join(app_dir, f))
-        print("  [声明] 已随包 %s" % f)
+            raise SystemExit("缺少随包声明文件：%s（许可合规要求，不能省）" % src_name)
+        shutil.copyfile(src, os.path.join(app_dir, dst_name))
+        print("  [声明] 已随包 %s" % dst_name)
     assets_dst = os.path.join(LAYOUT, "Assets")
     os.makedirs(assets_dst, exist_ok=True)
     import make_store_assets
