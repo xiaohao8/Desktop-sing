@@ -276,6 +276,50 @@ FONT_LIBRARY = [
 ]
 
 
+
+
+# 字体下载来源白名单：只信任这些主机，杜绝任意站点拉文件。
+# 注意：ghproxy.net / ghfast.top / mirror.ghproxy.com 是 GitHub 代理，
+# 它们把 github.com 的真实文件透传出来（URL 形如
+# https://ghproxy.net/https://github.com/...），真实目标是 GitHub，故放行。
+# 其他任何主机一律拒绝（含裸 http，防降级劫持）。
+FONT_HOST_ALLOWLIST = frozenset([
+    "cdn.jsdelivr.net",                # jsDelivr（GitHub 官方源镜像）
+    "objects.githubusercontent.com",  # GitHub Release 直链对象存储
+    "github.com",                      # 部分 URL 直接走 github.com 原站
+    "raw.githubusercontent.com",       # GitHub 原始文件
+    "ghproxy.net", "ghfast.top", "mirror.ghproxy.com",  # GitHub 代理
+])
+
+
+def _font_url_allowed(url):
+    """字体下载 URL 是否落在白名单内（强制 HTTPS，代理 URL 取真实主机）。"""
+    import urllib.parse
+    try:
+        p = urllib.parse.urlparse(url)
+    except Exception:
+        return False
+    if p.scheme != "https":            # 裸 http 一律拒绝（防降级劫持）
+        return False
+    host = (p.netloc or "").lower()
+    if host in ("ghproxy.net", "ghfast.top", "mirror.ghproxy.com"):
+        inner = p.path.lstrip("/")
+        try:
+            inner_p = urllib.parse.urlparse(inner)
+        except Exception:
+            return False
+        return inner_p.scheme == "https" and inner_p.netloc.lower() in FONT_HOST_ALLOWLIST
+    return host in FONT_HOST_ALLOWLIST
+
+
+def _sha256_file(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
 # 已加载族名 → 字体库条目的匹配关键词（字体厂商命名差异大，用关键词兜住）
 FONT_MATCH = {
     "dingtalk": ("dingtalk", "钉钉"),
@@ -314,8 +358,35 @@ def _scan_font_files():
     return sorted(set(out))
 
 
+_FONT_MAGIC = (b"\x00\x01\x00\x00", b"OTTO", b"ttcf", b"wOFF", b"wOF2")
+
+
+def _looks_like_font(path: str) -> bool:
+    """轻量文件头校验：避免把损坏/伪造的文件喂给 Qt 字体解析器。
+
+    QFontDatabase.addApplicationFont 对坏文件会在 C++ 层直接进程崩溃
+    （segfault，Python try 抓不到）。任何落到 fonts/ 目录的坏文件
+    （下载截断、zip 解压出错、用户手放）都会让程序一启动就崩。
+    只认 TrueType / OpenType(CFF) / TTC / WOFF 的 magic 头即可挡住绝大部分。
+    """
+    try:
+        with open(path, "rb") as f:
+            head = f.read(4)
+    except OSError:
+        return False
+    if len(head) < 4:
+        return False
+    return any(head.startswith(m) for m in _FONT_MAGIC)
+
+
 def load_font_file(path: str) -> list:
-    """加载单个字体文件，返回其中的族名列表"""
+    """加载单个字体文件，返回其中的族名列表
+
+    加载前先校验文件头 magic：坏文件直接跳过，绝不交给 Qt（避免 segfault）。
+    """
+    if not _looks_like_font(path):
+        log("跳过非字体文件（magic 不符）: %s" % os.path.basename(path))
+        return []
     try:
         fid = QFontDatabase.addApplicationFont(path)
         if fid < 0:
@@ -377,11 +448,17 @@ def download_font(entry: dict, on_progress=None) -> list:
         if isinstance(urls, str):        # 兼容老格式（单地址）
             urls = [urls]
         dst = os.path.join(USER_FONT_DIR, fname)
+        expect_sha = entry.get("sha256")
         if not (os.path.exists(dst) and os.path.getsize(dst) > 1024):
             tmp = dst + ".part"
             fetched = False
+            sha_ok = False
             exc_hint = ""
             for url in urls:
+                if not _font_url_allowed(url):
+                    exc_hint = "来源不在白名单，已拒绝: %s" % url
+                    log("字体来源拒绝 %s (%s)" % (fname, url))
+                    continue
                 try:
                     req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA})
                     with urllib.request.urlopen(req, timeout=90) as r:
@@ -396,6 +473,15 @@ def download_font(entry: dict, on_progress=None) -> list:
                                 done += len(chunk)
                                 if on_progress:
                                     on_progress(done, total, entry["name"])
+                    sha_ok = (not expect_sha) or _sha256_file(tmp) == expect_sha
+                    if not sha_ok:
+                        try:
+                            os.remove(tmp)
+                        except OSError:
+                            pass
+                        exc_hint = "sha256 不符，已丢弃: %s" % url
+                        log("字体 sha256 不符 %s (%s)" % (fname, url))
+                        continue
                     os.replace(tmp, dst)
                     fetched = True
                     break
@@ -405,15 +491,42 @@ def download_font(entry: dict, on_progress=None) -> list:
                     continue
             if not fetched:
                 raise RuntimeError("字体下载失败：%s" % exc_hint)
+        elif expect_sha and _sha256_file(dst) != expect_sha:
+            log("已存在的字体 sha256 不符，删除后重下: %s" % fname)
+            try:
+                os.remove(dst)
+            except OSError:
+                pass
+            return download_font(entry, on_progress=on_progress)
         if fname.lower().endswith(".zip"):    # 压缩包：挑出字体文件解压
             try:
                 with zipfile.ZipFile(dst) as z:
                     for zf in z.namelist():
                         if zf.lower().endswith((".ttf", ".otf")):
-                            out = os.path.join(USER_FONT_DIR, os.path.basename(zf))
-                            if not os.path.exists(out):
-                                with z.open(zf) as src, open(out, "wb") as fp:
-                                    fp.write(src.read())
+                            # 路径穿越防护：只取文件名，绝不照抄压缩包内的相对/绝对路径
+                            base = os.path.basename(zf.replace("\\", "/"))
+                            if not base or base in (".", ".."):
+                                continue
+                            out = os.path.join(USER_FONT_DIR, base)
+                            if os.path.exists(out):
+                                families += load_font_file(out)
+                                continue
+                            with z.open(zf) as src, open(out, "wb") as fp:
+                                written = 0
+                                # 解压大小上限：防 zip 炸弹（50 MB 字体足够）
+                                while written < 50 * 1024 * 1024:
+                                    chunk = src.read(65536)
+                                    if not chunk:
+                                        break
+                                    fp.write(chunk)
+                                    written += len(chunk)
+                                if written >= 50 * 1024 * 1024:
+                                    log("字体解压超上限，丢弃: %s" % zf)
+                                    try:
+                                        os.remove(out)
+                                    except OSError:
+                                        pass
+                                    continue
                             families += load_font_file(out)
             except Exception:
                 log("字体解压失败:\n" + traceback.format_exc())

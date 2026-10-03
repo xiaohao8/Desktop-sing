@@ -324,9 +324,15 @@ def main() -> int:
         for sub in WINSDK_NEEDED:
             cmd += ["--collect-submodules", sub]
     elif has("winrt"):
+        # winrt-* 的投影模块会**延迟导入**依赖命名空间（foundation / foundation.collections /
+        # storage），PyInstaller 静态分析看不见，必须显式收集齐——少一个就在运行时报
+        # ModuleNotFoundError（2.0.1 实测：只收 control + streams 时缺 winrt.windows.foundation）。
         cmd += ["--collect-submodules", "winrt.windows.media.control",
-                "--collect-submodules", "winrt.windows.storage.streams"]
-        print("  + 精准收集 winrt")
+                "--collect-submodules", "winrt.windows.storage.streams",
+                "--collect-submodules", "winrt.windows.foundation",
+                "--collect-submodules", "winrt.windows.foundation.collections",
+                "--collect-submodules", "winrt.windows.storage"]
+        print("  + 精准收集 winrt（5 个命名空间）")
 
     if has("Crypto"):
         cmd += ["--hidden-import", "Crypto"]   # pycryptodome，网易云歌词接口用
