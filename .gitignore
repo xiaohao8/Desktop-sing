@@ -4,7 +4,10 @@ __pycache__/
 .buildenv/
 
 # 构建产物（发版产物不入库，走 GitHub Releases / 蓝奏云 / 商店分发）
-build/
+build/*
+!build/bootloader-src/
+build/bootloader-src/backup-bootloader/
+build/bootloader-src/*.tar.gz
 dist/
 store/build/
 store/out/

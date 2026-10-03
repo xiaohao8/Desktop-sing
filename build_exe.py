@@ -252,6 +252,40 @@ def archive_old_dist(keep_ver: str):
               % (len(moved), sum(m for _, m in moved)))
 
 
+def _version_file(ver: str):
+    """按 APP_VERSION 动态生成 PyInstaller 版本资源文件，返回其路径。
+
+    version_info.txt 模板里的 filevers/prodvers/FileVersion/ProductVersion
+    原来写死 2.0.0.0——升版本后 exe「属性」里永远是旧号，与商店包名、
+    update.json 三处口径不一致。改为构建时替换；顺带让每次构建的 exe
+    哈希随版本变化（防报毒：AV 对哈希/模糊哈希命中的家族版本会失效一次）。
+    模板缺失或替换失败时返回 None（不传 --version-file，构建继续）。
+    """
+    tpl_path = os.path.join(BASE, "version_info.txt")
+    if not os.path.isfile(tpl_path):
+        print("  ! 缺少 version_info.txt 模板，exe 将没有版本信息资源（更易被误报）")
+        return None
+    parts = ver.split(".")
+    while len(parts) < 4:
+        parts.append("0")
+    nums = ", ".join(parts[:4])
+    ver_full = ".".join(parts[:4])
+    try:
+        with open(tpl_path, encoding="utf-8") as f:
+            txt = f.read()
+        txt = txt.replace("(2, 0, 0, 0)", "(%s)" % nums)
+        txt = txt.replace("'2.0.0.0'", "'%s'" % ver_full)
+        out = os.path.join(BASE, "build", "version_info.gen.txt")
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        with open(out, "w", encoding="utf-8") as f:
+            f.write(txt)
+        print("  + 版本资源已按 APP_VERSION 生成: %s" % ver_full)
+        return out
+    except OSError as ex:
+        print("  ! 版本资源生成失败（%s），退回静态模板" % ex)
+        return tpl_path if os.path.isfile(tpl_path) else None
+
+
 def main() -> int:
     full_fonts = "--full" in sys.argv
     no_font = "--no-font" in sys.argv
@@ -274,11 +308,12 @@ def main() -> int:
 
     # 防报毒基础三件套：真实图标 + 完整版本信息资源（详见 version_info.txt）。
     # 杀软启发式对「无图标、无版本信息」的 PyInstaller 产物最敏感。
+    # 版本号不再用写死的模板值，按 APP_VERSION 动态生成（见 _version_file）。
     ico = os.path.join(BASE, "icon.ico")
-    vinfo = os.path.join(BASE, "version_info.txt")
+    vinfo = _version_file(ver)
     if os.path.isfile(ico):
         cmd += ["--icon", ico]
-    if os.path.isfile(vinfo):
+    if vinfo:
         cmd += ["--version-file", vinfo]
 
     # 应用图标 PNG（托盘/窗口图标与 exe 图标同源；make_app_icon 运行时加载）
@@ -404,7 +439,21 @@ def main() -> int:
     exe = (os.path.join(BASE, "dist", NAME, NAME + ".exe") if onedir
            else os.path.join(BASE, "dist", NAME + ".exe"))
     if not os.path.isfile(exe):
-        print("\n[失败] 未找到产物 %s" % exe)
+        # 区分「构建本身没产出」与「产出后被杀软实时防护删除」：
+        # onedir 下 _internal 完整而主 exe 消失，是 Defender 秒删未签名
+        # PyInstaller exe 的典型现场（2026-10-03 实测：云端判定升级后
+        # 新哈希落盘即删，旧哈希因判定缓存幸存）。
+        internal = os.path.join(BASE, "dist", NAME, "_internal")
+        if onedir and os.path.isdir(internal) and os.listdir(internal):
+            print(
+                "\n[失败] PyInstaller 已产出主 exe，但落盘后被杀软实时防护删除"
+                "（_internal 完整而 %s 消失）。\n"
+                "  处理：按 store/fp-submission/README-误报申诉.md 给本项目目录加"
+                " Defender 排除（管理员 PowerShell），然后重跑本脚本。\n"
+                "  示例：Add-MpPreference -ExclusionPath '%s'" % (exe, BASE)
+            )
+        else:
+            print("\n[失败] 未找到产物 %s" % exe)
         return 1
 
     if onedir:
