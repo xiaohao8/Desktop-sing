@@ -1099,6 +1099,111 @@ def stale_fetch_guard():
 check("stale fetch guard", stale_fetch_guard)
 
 
+def mismatch_ui_flow():
+    """错配标注 UI 链路（v2.0.1 任务#3）：标志位 / 严格重取绕缓存 / 提示条显隐
+
+    singer_mismatch_guard 锁的是取词层；这里锁「从抓取结果到用户可操作」的
+    后半段：_on_fetched 置标志 → 气泡（stale_fetch_guard 已覆盖）→
+    fetch_lyrics(strict_artist=True) 绕缓存并丢弃错配 → _refresh_lyrics 传播 →
+    设置面板 mismatch_bar 随 refresh() 显隐。
+    """
+    import json as _json
+    import os as _os
+
+    # ---- 1) _on_fetched 置 singer_mismatch 标志 ----
+    ov = _mk_overlay()
+    ov._apply_media({"title": "无所谓", "artist": "杨千嬅", "cover": None})
+    rid = ov._req_id
+    ov._on_fetched((rid, [[1.0, "同名歌的词"]], {}, None, [], False))
+    assert ov.singer_mismatch is True, "错配结果应置 singer_mismatch=True"
+    assert ov.lines, "错配时仍应显示同名歌歌词（宁可同名也不开天窗）"
+    ov._on_fetched((ov._req_id, [[1.0, "对版歌词"]], {}, None, [], True))
+    assert ov.singer_mismatch is False, "对版结果应清除标志"
+    ov._on_fetched((ov._req_id, [], {}, None, [], False))
+    assert ov.singer_mismatch is False, "空结果不该报错配（没词可标）"
+
+    # ---- 2) fetch_lyrics 严格模式：绕缓存 + 丢弃错配 ----
+    t_c, a_c = L.clean_query_text("smoke-strict"), L.clean_query_text("smoke-artist")
+    key = ("%s|%s" % (t_c, a_c)).lower().strip()
+    cp = L._cache_path(key)
+    seeded = {"v": 4, "cover": None, "lines": [[0.0, "缓存里的错配歌词"]],
+              "trans": [], "sk": False, "words": {}}
+    with open(cp, "w", encoding="utf-8") as f:
+        _json.dump(seeded, f, ensure_ascii=False)
+    real_gather = L._gather_sources
+    try:
+        # 2a) 非严格：命中缓存，且 sk=False 原样透出（界面据此标注）
+        L._gather_sources = lambda *a, **k: ([], {}, [], None, "", {}, True)
+        cl, _cw, _cv, _ct, sk = L.fetch_lyrics("smoke-strict", "smoke-artist")
+        assert cl == [[0.0, "缓存里的错配歌词"]], cl
+        assert sk is False, "缓存里 sk=False 应透出为 singer_ok=False"
+        # 2b) 严格：绕过缓存（否则读到的还是这份错的）+ 错配结果直接丢弃
+        L._gather_sources = lambda *a, **k: (
+            [[0.0, "同名歌歌词"]], {}, [], None, "qq", {}, False)
+        dl, _dw, _dv, _dt, dsk = L.fetch_lyrics("smoke-strict", "smoke-artist",
+                                                strict_artist=True)
+        assert dl == [], "严格模式应丢弃错配结果: %r" % (dl,)
+        assert dsk is False, dsk
+        # 2c) 严格 + 歌手对版：正常放行
+        L._gather_sources = lambda *a, **k: (
+            [[0.0, "正确歌手的歌词"]], {}, [], None, "qq", {}, True)
+        gl, _gw, _gv, _gt, gsk = L.fetch_lyrics("smoke-strict", "smoke-artist",
+                                                strict_artist=True)
+        assert gl == [[0.0, "正确歌手的歌词"]] and gsk is True, (gl, gsk)
+    finally:
+        L._gather_sources = real_gather
+        if _os.path.exists(cp):
+            _os.remove(cp)
+
+    # ---- 3) _refresh_lyrics(strict_artist=True)：删缓存 + 严格参数传播 ----
+    ov2 = _mk_overlay()
+    ov2._apply_media({"title": "smoke-strict2", "artist": "smoke-artist2",
+                      "cover": None})
+    ov2._on_fetched((ov2._req_id, [[1.0, "错配词"]], {}, None, [], False))
+    assert ov2.singer_mismatch is True
+    key2 = ("%s|%s" % (L.clean_query_text("smoke-strict2"),
+                       L.clean_query_text("smoke-artist2"))).lower().strip()
+    cp2 = L._cache_path(key2)
+    with open(cp2, "w", encoding="utf-8") as f:
+        _json.dump(seeded, f, ensure_ascii=False)
+    captured = []
+    saved_fetch = ov2._start_fetch
+
+    def _cap(info, strict_artist=False):
+        captured.append(strict_artist)
+
+    ov2._start_fetch = _cap
+    try:
+        ov2._refresh_lyrics(strict_artist=True)
+    finally:
+        if "_start_fetch" in ov2.__dict__:
+            del ov2.__dict__["_start_fetch"]
+    assert captured == [True], "严格参数没传到 _start_fetch: %r" % (captured,)
+    assert not _os.path.exists(cp2), "强制重取没有删掉旧缓存（重试只会拿到同一份错的）"
+    assert ov2.singer_mismatch is False, "重取时应先清掉错配标志"
+    assert saved_fetch is not None
+
+    # ---- 4) 设置面板提示条随 refresh() 显隐 ----
+    ov3 = _mk_overlay()
+    ov3._open_panel()
+    p = ov3.panel
+    assert p is not None and hasattr(p, "mismatch_bar")
+    p.show()
+    try:
+        ov3.singer_mismatch = True
+        p.refresh()
+        assert p.mismatch_bar.isVisible(), "错配时提示条应显示"
+        assert p.mismatch_bar.isVisibleTo(p), "提示条应为面板可见子控件"
+        ov3.singer_mismatch = False
+        p.refresh()
+        assert not p.mismatch_bar.isVisible(), "对版后提示条应隐藏"
+    finally:
+        p.close()
+
+
+check("mismatch ui flow", mismatch_ui_flow)
+
+
 def async_fetch_ordering():
     """歌词上屏不得被封面下载阻塞；封面走 cover_ready 补发，且只发一次"""
     import time as _t
