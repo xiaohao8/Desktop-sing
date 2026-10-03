@@ -1004,21 +1004,27 @@ else:
               "  ← 除当前版本外（含自签测试包）都移到 store/out/dev/，别在上传时选错"
               if len(_msixes) > 1 else ""))
 
-    # P5.20f 包内必须带 SMTC 绑定 _winrt.pyd（winsdk 投影的唯一二进制，歌词链路硬依赖）。
+    # P5.20f 包内必须带 SMTC 绑定 _winrt.pyd（winrt 投影的唯一二进制，歌词链路硬依赖）。
     # 没有它，watcher 启动即退、浮层永远停在待机卡 —— 这正是 10.1.2.10
     # 「loads indefinitely at launch」拒审报告的技术形态。
     # 教训（2026-09-22 排查）：--collect-submodules 只收 .py 不收 .pyd，
-    # winsdk 收集失败时包照样能出、浮层照样能画，故障在打包机上完全隐形
-    # （源码运行用系统 Python 的 winsdk，一切正常），只有干净机器才暴露。
+    # winrt 收集失败时包照样能出、浮层照样能画，故障在打包机上完全隐形
+    # （源码运行用系统 Python 的 winrt，一切正常），只有干净机器才暴露。
+    # ⚠️ 历史包用 winsdk 投影（路径 winsdk/_winrt.pyd），2.0.1 起改用 winrt
+    #    投影（路径 winrt/_winrt.pyd）。两种都认，避免升级后误报。
     try:
         import zipfile as _zf2
         with _zf2.ZipFile(_newest) as _z2:
             _names2 = set(_z2.namelist())
-        _need_bin = "Desktop-sing/_internal/winsdk/_winrt.pyd"
+        _need_winrt = "Desktop-sing/_internal/winrt/_winrt.pyd"
+        _need_winsdk = "Desktop-sing/_internal/winsdk/_winrt.pyd"
+        _have = _need_winrt in _names2 or _need_winsdk in _names2
+        _which = _need_winrt if _need_winrt in _names2 else (
+            _need_winsdk if _need_winsdk in _names2 else "")
         check("P5.20f 包内含 SMTC 绑定 _winrt.pyd（歌词链路硬依赖）",
-              _need_bin in _names2,
-              ("就位：%s" % _need_bin) if _need_bin in _names2 else
-              "**缺失** %s —— 检查 build_exe.py 的 winsdk 收集逻辑后 --fresh 重出包" % _need_bin)
+              _have,
+              ("就位：%s" % _which) if _have else
+              "**缺失** winrt/_winrt.pyd —— 检查 build_exe.py 的 winrt 收集逻辑后 --fresh 重出包")
     except Exception as _ex3:
         check("P5.20f 能枚举包内文件清单", False, repr(_ex3))
 

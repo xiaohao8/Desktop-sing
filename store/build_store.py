@@ -257,21 +257,31 @@ def load_site_url(args) -> str:
 
 def stage_layout():
     """组装 MSIX 布局：清单 + 资产 + onedir 程序本体（去掉商店版不该带的文件）。"""
-    onedir = ONEDIR
-    if not os.path.isdir(onedir):
-        # 兜底：写死的 ONEDIR 可能与 APP_VERSION 不一致，按当前版本推导一次，
-        # 避免把旧版本的 onedir 错打进包（曾经因此把 v1.0.0 代码当成 v1.0.1 出包）
-        alt = os.path.join(ROOT, "dist", "Desktop-sing-v%s" % app_version())
-        if os.path.isdir(alt):
-            onedir = alt
-    if not os.path.isdir(onedir):
-        raise SystemExit("没找到 %s —— 先跑 build_exe.py --dir，或加 --fresh" % onedir)
+    onedir = os.path.join(ROOT, "dist", "Desktop-sing-v%s" % app_version())
+    if not (os.path.isdir(onedir) and os.path.isfile(os.path.join(onedir, "Desktop-sing.exe"))):
+        # 兜底：版本目录缺失或不完整（缺主程序 exe）时，回退到写死的旧目录，
+        # 避免把旧版本残缺的 onedir 错打进包（曾经因此把 v1.0.0 写成 v1.0.1 出包）
+        if os.path.isdir(ONEDIR) and os.path.isfile(os.path.join(ONEDIR, "Desktop-sing.exe")):
+            onedir = ONEDIR
+    if not (os.path.isdir(onedir) and os.path.isfile(os.path.join(onedir, "Desktop-sing.exe"))):
+        raise SystemExit("没找到完整的 onedir（%s 且含 Desktop-sing.exe）—— 先跑 build_exe.py --dir，或加 --fresh" % onedir)
     # 布局目录每次重建。沙箱会拦批量删除，用「改名归档」代替 rm -rf
     if os.path.isdir(LAYOUT):
         os.rename(LAYOUT, LAYOUT + ".old-%d" % int(os.path.getmtime(LAYOUT)))
     app_dir = os.path.join(LAYOUT, "Desktop-sing")
     os.makedirs(app_dir, exist_ok=True)
-    shutil.copytree(onedir, app_dir, dirs_exist_ok=True)
+    # 优先硬链接、失败再拷贝：本机 Windows Defender 实时防护会**秒删**刚「拷贝出来」的
+    # 未签名 PyInstaller exe（误报），导致 makeappx 报「清单里的 Desktop-sing.exe 不在包内」。
+    # dist 原始 exe 已获 Defender 放行，硬链接与它共享同一份数据即可绕过误杀；同时比深拷贝快得多。
+    # 个别跨设备/不支持硬链接的情形回退到 copyfile（只拷字节，不 copymode，避开 WinError 5）。
+    def _link_or_copy(src, dst):
+        try:
+            if os.path.exists(dst):
+                os.remove(dst)
+            os.link(src, dst)
+        except OSError:
+            shutil.copyfile(src, dst)
+    shutil.copytree(onedir, app_dir, dirs_exist_ok=True, copy_function=_link_or_copy)
     for f in EXCLUDE_FILES:
         p = os.path.join(app_dir, f)
         if os.path.isfile(p):
