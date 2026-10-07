@@ -103,10 +103,14 @@
 
 ### 1. 环境依赖
 
-需要 Windows 10/11 与 Python 3.8+：
+需要 Windows 10/11。**推荐 Python 3.12**（3.8 亦可运行，但 3.12 可用更轻的
+`winrt-*` 媒体监听后端，安装目录体积约 -27%、常驻内存约 -9MB）：
 
 ```bat
-pip install -r requirements.txt
+:: Python 3.12（推荐）
+pip install PySide6 winrt-Windows.Media.Control winrt-Windows.Storage.Streams pycryptodome
+:: Python <= 3.11
+pip install PySide6 winsdk pycryptodome
 ```
 
 ### 2. 运行
@@ -125,35 +129,47 @@ set QT_QPA_PLATFORM=offscreen
 ### 3. 打包 exe
 
 Qt6/PySide6 需要 **PyInstaller 5+**（系统自带的老版本太旧）。先建一次构建虚拟环境
-（用 `--system-site-packages` 继承系统已装的 PySide6 / winsdk，不污染系统环境）：
+（**Python 3.12 命名为 `.buildenv312`，与旧 3.8 环境共存**）：
 
 ```bat
-python -m venv .buildenv --system-site-packages
-.buildenv\Scripts\python.exe -m pip install -U "pyinstaller>=6"
+py -3.12 -m venv .buildenv312
+.buildenv312\Scripts\python.exe -m pip install PySide6 ^
+    winrt-Windows.Media.Control winrt-Windows.Storage.Streams ^
+    winrt-Windows.Foundation winrt-Windows.Foundation.Collections ^
+    winrt-Windows.Storage pycryptodome "pyinstaller>=6"
 ```
 
 之后每次发版只需一条命令：
 
 ```bat
-.buildenv\Scripts\python.exe build_exe.py            :: 精简（默认）
-.buildenv\Scripts\python.exe build_exe.py --full     :: 带全部内置字体（+15MB）
-.buildenv\Scripts\python.exe build_exe.py --no-font  :: 不内置字体，体积最小
-.buildenv\Scripts\python.exe build_exe.py --dir      :: onedir 目录版（启动更快）
+.buildenv312\Scripts\python.exe build_exe.py            :: 精简（默认）
+.buildenv312\Scripts\python.exe build_exe.py --full     :: 带全部内置字体（+15MB）
+.buildenv312\Scripts\python.exe build_exe.py --no-font  :: 不内置字体，体积最小
+.buildenv312\Scripts\python.exe build_exe.py --dir      :: onedir 目录版（启动更快）
 ```
 
-- 版本号自动取自 `lyrics_overlay.py` 的 `APP_VERSION`
+- 版本号自动取自 `lyrics_overlay.py` 的 `APP_VERSION`，版本资源亦按其自动生成
 - 产物带变体后缀、互不覆盖：默认 / `-lite`（--no-font）/ `-full`
-- 自动收集 `fonts/`、`winsdk`（SMTC 后端）与 `Crypto`；**排除 pywin32 整族**
-  （本项目不用它，装残会让 PyInstaller 的 pythoncom hook 直接崩）
+- 自动收集 `fonts/`、SMTC 后端（3.12 收 `winrt` 5 个命名空间 / 旧版收 `winsdk`）
+  与 `Crypto`；**排除 pywin32 整族**（本项目不用它，装残会让 PyInstaller 的
+  pythoncom hook 直接崩）
+- 自动剔除无用的 Qt 二进制/插件（opengl32sw、Qml/Quick/Pdf、TLS 后端等）、
+  pywin32 残留与 Windows API Set 桩（仅 Win10+ 需要）
+- **原生保活守护进程**：`tools\watchdog.exe`（源码 `tools\watchdog.c`，常驻内存
+  ~2MB，替代旧 Python 版的 ~55MB）会自动复制进产物；重编译见
+  `tools\build_watchdog.bat`
+- ⚠️ **杀软可能实时删除无签名的新构建产物**（火绒实测会在构建中途删 exe，
+  报 `Failed to compute PE checksum!`）。构建失败时先把项目目录加入杀软信任区
+  （如 `Add-MpPreference -ExclusionPath '<项目目录>'` 或在火绒信任区添加）再重试
 - 存在 `icon.ico` / `version_info.txt` 时自动带上 `--icon` / `--version-file`
 - 历史产物自动挪进 `dist\archive\`（只改名不删除），旧版本随时能找回来
 
 ### 4. 安装包与便携版
 
 ```bat
-.buildenv\Scripts\python.exe build_exe.py --dir   :: 先产出 dist\Desktop-sing-v<版本>\
-python pkg_portable.py                            :: 便携版 zip
-makensis.exe installer\installer.nsi              :: 安装版 exe（NSIS 3.11）
+.buildenv312\Scripts\python.exe build_exe.py --dir   :: 先产出 dist\Desktop-sing-v<版本>\
+.buildenv312\Scripts\python.exe pkg_portable.py      :: 便携版 zip（版本号自动）
+makensis -DPRODUCT_VER=<版本> installer\installer.nsi :: 安装版 exe（NSIS 3.11）
 ```
 
 - **安装版**（NSIS）：欢迎 → 隐私声明（须勾选同意）→ 安装目录（默认 `D:/Desktop-sing`，无 D 盘或
@@ -161,7 +177,7 @@ makensis.exe installer\installer.nsi              :: 安装版 exe（NSIS 3.11�
   安装/卸载前会检测并提示关闭正在运行的实例，并对目标目录做**可写性实测探测**，覆盖
   「进程占用」与「目录无权限」两类失败
 - **便携版**：解压即用，含程序本体与随包文档（使用说明、隐私声明、第三方许可，中英各一份）
-- `pkg_portable.py` 里的源目录与输出名含版本号（当前写死 v1.0.0），发新版时需同步更新
+- 两个打包脚本的版本号均自动取自 `APP_VERSION`，发新版零手改
 - 卸载脚本会先自复制到 `%TEMP%` 再运行，因此能连程序目录（含脚本自身）一起删干净；
   安装版卸载器还会清除开机自启项，并**询问**是否一并删除本机配置与缓存
 

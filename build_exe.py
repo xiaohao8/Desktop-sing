@@ -73,6 +73,8 @@ QT_EXCLUDE = [
     "PySide6.QtTest", "PySide6.QtUiTools", "PySide6.QtPrintSupport",
     "PySide6.QtSql", "PySide6.QtConcurrent", "PySide6.QtScxml",
     "PySide6.QtStateMachine", "PySide6.QtSpatialAudio", "PySide6.QtTextToSpeech",
+    # v2.0.1：单实例信标改用 Win32 命名互斥锁，QtNetwork 全族不再需要
+    "PySide6.QtNetwork",
 ]
 
 # 用不到的 Qt 二进制（按文件名后缀筛）：软件渲染器 opengl32sw 19.7MB 是最大单项；
@@ -99,6 +101,8 @@ QT_DROP_DLL = (
     # Qt 的 OpenSSL 3：本项目 HTTP 走 urllib（Python 自带 OpenSSL 1.1），
     # QtNetwork 只用来起 QLocalServer 做单实例 IPC，不需要 TLS 后端。
     "libcrypto-3-x64.dll", "libssl-3-x64.dll",
+    # v2.0.1：QtNetwork 已不再被引用（见 QT_EXCLUDE 注释）
+    "Qt6Network.dll", "QtNetwork.pyd",
 )
 # 平台插件只留 qwindows（Windows 原生）；图像格式留常用的 jpeg/png/gif/webp；
 # imageformats 里其余的、以及全部 Qt 自带翻译（我们不用 QTranslator）都不要。
@@ -121,7 +125,12 @@ QT_DROP_PLUGIN = (
 # 整目录剔除（按 TOC 路径前缀）：pywin32 残留。本项目完全不用 pywin32
 # （build_exe.py 已排除 win32* 全族模块），这两个文件是 PyInstaller 分析期
 # 自己拖进来的（win32wnet 是它构建期的依赖），冻结后没有运行时会用到。
-DROP_PREFIX = ("win32/",)
+DROP_PREFIX = ("win32/",
+               # Windows API Set 桩 DLL（api-ms-win-*，约 39 个 / 1MB）：只是转发到
+               # ucrtbase / kernelbase 的重定向层，Win8.1+ 加载器原生解析 apiset 名，
+               # 物理文件只有 Win7/8 需要。本程序声明支持 Win10/11（Python 3.12
+               # 运行时本身也不支持 Win8.1-），可安全剔除。
+               "api-ms-")
 
 # 被 hook 间接拖进来的打包期依赖（运行时用不到）
 PKG_EXCLUDE = [
@@ -212,6 +221,22 @@ def copy_uninstall_bat(dest_dir: str):
     if os.path.isfile(bat) and os.path.isdir(dest_dir):
         shutil.copy2(bat, os.path.join(dest_dir, os.path.basename(bat)))
         print("  + 附带卸载脚本 卸载桌面歌词.bat")
+
+
+def copy_watchdog(dest_dir: str):
+    """把原生保活守护进程放进程序目录（源码 tools/watchdog.c 编译产物）。
+
+    watchdog.exe 常驻内存 ~1-2MB，替代「再跑一份完整 Qt 应用当监工」的
+    Python 版（~55MB）。产物不存在时只警告不失败 —— 主程序会自动回落
+    Python 版守护进程，功能不缺、只是内存占用大。
+    """
+    wd = os.path.join(BASE, "tools", "watchdog.exe")
+    if os.path.isfile(wd) and os.path.isdir(dest_dir):
+        shutil.copy2(wd, os.path.join(dest_dir, "watchdog.exe"))
+        print("  + 附带原生守护进程 watchdog.exe (%.0f KB)"
+              % (os.path.getsize(wd) / 1024.0))
+    else:
+        print("  ! 未找到 tools\\watchdog.exe，保活将回落 Python 版（内存占用大）")
 
 
 def unique_path(path: str) -> str:
@@ -466,6 +491,7 @@ def main() -> int:
             os.rename(out, unique_path(os.path.join(arc, os.path.basename(out) + ".prev")))
         os.rename(os.path.join(BASE, "dist", NAME), out)
         copy_uninstall_bat(out)
+        copy_watchdog(out)
         total = sum(os.path.getsize(os.path.join(dp, f))
                     for dp, _, fs in os.walk(out) for f in fs)
         print("\n[完成] %s\\  (%.1f MB)" % (out, total / 1048576.0))

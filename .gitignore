@@ -17,3 +17,7 @@ store/identity.local.json
 
 # 诊断沙箱
 .tmp_appdata/
+
+# 本地工作记忆（Agent 会话记忆，不入库；REST 推送脚本 SKIP_DIRS 同样跳过它，
+# 若本地入库会导致本地 tree 与推上去的 tree 不一致 → commit sha 分叉）
+.workbuddy/

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import binascii
 import codecs
 import ctypes
 import hashlib
@@ -51,7 +50,6 @@ from PySide6.QtWidgets import (
     QMenu, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSlider,
     QSystemTrayIcon, QTextEdit, QVBoxLayout, QWidget,
 )
-from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 # ---- SMTC 绑定：延迟导入 ----------------------------------------------------
 # 只 import winsdk 就要 ~155ms（它是一大坨 winrt 投影模块），启动关键路径上完全没必要
@@ -231,18 +229,18 @@ FONT_LIBRARY = [
     {"id": "alibaba", "name": "阿里巴巴普惠体 3.0", "mb": 17.0,
      "note": "阿里官方免费商用，中英文兼顾，字重齐全",
      "files": [("AlibabaPuHuiTi-3-55-Regular.ttf",
-                ["https://cdn.jsdelivr.net/gh/hongzhi725/AlibabaPuHuiTi@master/font/"
+                ["https://cdn.jsdelivr.net/gh/hongzhi725/AlibabaPuHuiTi@main/font/"
                  "AlibabaPuHuiTi/AlibabaPuHuiTi-3-55-Regular/AlibabaPuHuiTi-3-55-Regular.ttf",
-                 "https://ghfast.top/https://github.com/hongzhi725/AlibabaPuHuiTi/raw/master/font/"
+                 "https://ghfast.top/https://github.com/hongzhi725/AlibabaPuHuiTi/raw/main/font/"
                  "AlibabaPuHuiTi/AlibabaPuHuiTi-3-55-Regular/AlibabaPuHuiTi-3-55-Regular.ttf",
-                 "https://ghproxy.net/https://github.com/hongzhi725/AlibabaPuHuiTi/raw/master/font/"
+                 "https://ghproxy.net/https://github.com/hongzhi725/AlibabaPuHuiTi/raw/main/font/"
                  "AlibabaPuHuiTi/AlibabaPuHuiTi-3-55-Regular/AlibabaPuHuiTi-3-55-Regular.ttf"]),
                ("AlibabaPuHuiTi-3-65-Medium.ttf",
-                ["https://cdn.jsdelivr.net/gh/hongzhi725/AlibabaPuHuiTi@master/font/"
+                ["https://cdn.jsdelivr.net/gh/hongzhi725/AlibabaPuHuiTi@main/font/"
                  "AlibabaPuHuiTi/AlibabaPuHuiTi-3-65-Medium/AlibabaPuHuiTi-3-65-Medium.ttf",
-                 "https://ghfast.top/https://github.com/hongzhi725/AlibabaPuHuiTi/raw/master/font/"
+                 "https://ghfast.top/https://github.com/hongzhi725/AlibabaPuHuiTi/raw/main/font/"
                  "AlibabaPuHuiTi/AlibabaPuHuiTi-3-65-Medium/AlibabaPuHuiTi-3-65-Medium.ttf",
-                 "https://ghproxy.net/https://github.com/hongzhi725/AlibabaPuHuiTi/raw/master/font/"
+                 "https://ghproxy.net/https://github.com/hongzhi725/AlibabaPuHuiTi/raw/main/font/"
                  "AlibabaPuHuiTi/AlibabaPuHuiTi-3-65-Medium/AlibabaPuHuiTi-3-65-Medium.ttf"])]},
     {"id": "noto", "name": "思源黑体 / Noto Sans SC", "mb": 17.8,
      "note": "开源 SIL OFL，字形规整，屏幕阅读性极佳",
@@ -261,9 +259,7 @@ FONT_LIBRARY = [
                  "https://ghfast.top/https://github.com/lxgw/LxgwWenKai/releases/download/"
                  "v1.522/LXGWWenKai-Regular.ttf",
                  "https://ghproxy.net/https://github.com/lxgw/LxgwWenKai/releases/download/"
-                 "v1.522/LXGWWenKai-Regular.ttf",
-                 "https://mirror.ghproxy.com/https://github.com/lxgw/LxgwWenKai/releases/"
-                 "download/v1.522/LXGWWenKai-Regular.ttf"])]},
+                 "v1.522/LXGWWenKai-Regular.ttf"])]},
     {"id": "smiley", "name": "得意黑", "mb": 5.8,
      "note": "开源 SIL OFL，强对比斜体美术字，很抓眼",
      "files": [("smiley-sans.zip",
@@ -2661,8 +2657,30 @@ def supervisor_alive() -> bool:
         return False
 
 
+def _watchdog_exe() -> str:
+    """C 版守护进程的路径（打包后与主程序同目录）。不存在返回空串。
+
+    v2.0.1 起 Python 版守护进程（--supervise 再跑一份完整应用，~55MB 常驻）
+    由约 10KB 的原生 watchdog.exe 替代（常驻内存 ~1-2MB）；源码运行仍走
+    Python 版，打包产物优先用原生版。
+    """
+    if not getattr(sys, "frozen", False):
+        return ""
+    p = os.path.join(os.path.dirname(sys.executable), "watchdog.exe")
+    return p if os.path.isfile(p) else ""
+
+
 def _app_command(supervise: bool = False, watch_pid: int = 0) -> list:
-    """当前程序的重启命令行（兼容源码运行 / 打包 exe）"""
+    """当前程序的重启命令行（兼容源码运行 / 打包 exe）
+
+    打包产物优先返回原生 watchdog 的命令行（协议见 tools/watchdog.c），
+    老版本升级过来时 watchdog 可能还没就位，此时回落 Python 版自守护。
+    """
+    wd = _watchdog_exe() if supervise else ""
+    if wd:
+        if watch_pid:
+            return [wd, WATCH_PID_FLAG, str(int(watch_pid))]
+        return [wd]
     if getattr(sys, "frozen", False):
         cmd = [sys.executable]
     else:
@@ -3488,6 +3506,34 @@ def _salvage_json(text: str) -> dict:
     return out
 
 
+# ---- 单实例信标：命名互斥锁 ---------------------------------------------------
+# 旧实现用 QLocalServer/QLocalSocket 做存活探测与驻留信标，为此拖进整个
+# QtNetwork（Qt6Network.dll + QtNetwork.pyd ≈ 2.4MB 磁盘 + 常驻内存）。
+# 换成 Win32 命名互斥锁：三个语义一一对应，功能不变、依赖归零。
+#   · 驻留信标   CreateMutexW（句柄持有到进程退出）
+#   · 存活探测   OpenMutexW（命中 = 已有实例）
+#   · 接管轮询   循环 OpenMutexW 直到打不开（旧实例退出时系统自动释放，
+#                崩溃也不会留幽灵信标——比 QLocalServer 还要干净）
+INSTANCE_MUTEX = "Local\\Desktop-sing.Instance"
+_SYNCHRONIZE = 0x00100000
+
+
+def _instance_alive() -> int:
+    """已有实例的信标句柄（0 = 无）。调用方用完必须 CloseHandle。"""
+    h = ctypes.windll.kernel32.OpenMutexW(_SYNCHRONIZE, False, INSTANCE_MUTEX)
+    return int(h) if h else 0
+
+
+def _acquire_instance_mutex() -> int:
+    """创建本实例的驻留信标（进程存活期间持有，退出自动释放）"""
+    return int(ctypes.windll.kernel32.CreateMutexW(None, False, INSTANCE_MUTEX) or 0)
+
+
+def _close_handle(h: int):
+    if h:
+        ctypes.windll.kernel32.CloseHandle(h)
+
+
 def load_config():
     """读配置。损坏不静默吞掉：留一份 .corrupt 并尽力抢救可读的键。"""
     try:
@@ -3626,6 +3672,7 @@ class LyricOverlay(QWidget):
         self._current_text = ""
         self._next_text = ""
         self._spans_cache = {}      # 行号 -> (text, spans)，避免每帧重算逐字时间轴
+        self._fit_cache = {}        # 长句字号拟合缓存（见 _fit_font），播放态每帧都查
         self._sig_tick = 0          # 接管哨兵轮询计数（约每 15 帧查一次文件）
         self._cover_scaled = None   # 封面缩放缓存，避免每帧 SmoothTransformation
         self._cover_scaled_size = 0
@@ -3735,15 +3782,36 @@ class LyricOverlay(QWidget):
 
     def _fit_font(self, make, base_px: float, text: str, avail: float,
                   min_ratio: float = 0.55):
-        """长句自适应：按 5% 逐级缩小字号直到放得下（最低 55%），仍放不下再截断"""
+        """长句自适应：按 5% 逐级缩小字号直到放得下（最低 55%），仍放不下再截断
+
+        播放态每帧都会进来（逐字高亮要用字体度量），而同一行的输入几乎不变——
+        最坏一轮要做 9 次 QFont 构造 + 文本整形，30fps 下是实打实的热点。
+        用（字体函数, 基准字号, 文本, 可用宽) 做键缓存结果；字体族 / 字号变化时
+        由 set_font_family / set_font_scale 清空。可用宽取整参与键值：亚像素
+        差异带来的取舍变化 < 1px，被外层 elide 完全吸收。
+        """
+        key = (getattr(make, "__func__", make), round(base_px, 1),
+               text, int(avail), min_ratio)
+        hit = self._fit_cache.get(key)
+        if hit is not None:
+            return hit
         px = base_px
+        found = None
         while px > base_px * min_ratio:
             f = make(px)
             if QFontMetrics(f).horizontalAdvance(text) <= avail:
-                return f, QFontMetrics(f)
+                found = f
+                break
             px -= max(1.0, base_px * 0.05)
-        f = make(px)
-        return f, QFontMetrics(f)
+        if found is not None:
+            out = (found, QFontMetrics(found))
+        else:
+            f = make(px)
+            out = (f, QFontMetrics(f))
+        if len(self._fit_cache) > 12:          # 换行后旧键自然失效，兜底防涨
+            self._fit_cache.clear()
+        self._fit_cache[key] = out
+        return out
 
     # ---------------- 位置 / 配置 ----------------
 
@@ -4388,11 +4456,13 @@ class LyricOverlay(QWidget):
 
     def set_font_scale(self, v: float):
         self.font_scale = min(2.0, max(0.5, v))
+        self._fit_cache.clear()
         self._save_position()
         self._relayout()
 
     def set_font_family(self, name: str):
         self.font_family = name or ""
+        self._fit_cache.clear()      # 字体族变了，旧度量全部作废
         self._save_position()
         self._relayout()
 
@@ -4952,10 +5022,11 @@ class LyricOverlay(QWidget):
         """
         if not self.isVisible():
             return False
-        if not self.song:
-            return True                      # 等待态有呼吸动画
-        if self.status == "PLAYING":
+        if self.song and self.status == "PLAYING":
             return True                      # 进度 / 逐字 / 黑胶 / 光晕都在动
+        # 暂停 / 无歌（静态待机卡，10.1.2.10 静态语义）只在有动画跑时才画：
+        # 旧版曾让「等待态呼吸动画」无条件重绘（6.7fps 常驻），而待机卡在商店
+        # 审核改静态后已无任何动画元素，这条是无谓的常驻功耗，已删。
         return (self._line_anim.state() == QVariantAnimation.Running
                 or self._size_anim.state() == QPropertyAnimation.Running
                 or self._pause_anim.state() == QPropertyAnimation.Running
@@ -4991,9 +5062,11 @@ class LyricOverlay(QWidget):
                 self._quit()
                 return
         if not self.song:
-            self._set_rate(150)
+            # 静态待机卡：无任何动画元素，不重绘；定时器只做低频巡检
+            # （restart.sig 接管哨兵 / 悬停收胶囊），重绘全部由事件驱动
+            self._set_rate(500)
             if self._needs_repaint():
-                self.update()  # 等待态呼吸动画
+                self.update()
             return
         pos = self._lyric_pos()
         changed = abs(pos - self._last_frame_pos) > 0.02   # 时间轴动了 → 逐字高亮要跟着动
@@ -7425,7 +7498,7 @@ class AmbientSaver(QWidget):
 class SettingsPanel(QWidget):
     """设置面板：卡片式现代 UI（开关 / 分段选择器 / 字体库 / 屏保 / 系统）"""
 
-    font_prog = Signal(int, int)     # 字体下载进度：(已下载字节, 总字节)
+    font_prog = Signal(str, int, int)  # 字体下载进度：(条目id, 已下载字节, 总字节)
     font_done = Signal(str, object)  # 字体下载完成：(条目 id, 族名列表 或 异常)
 
     def __init__(self, ov: LyricOverlay):
@@ -7442,7 +7515,7 @@ class SettingsPanel(QWidget):
         self._switches = []
         self._segs = []
         self._fontrows = {}
-        self._dl_id = ""
+        self._dl_ids = set()   # 正在下载的字体条目 id 集合（支持并发下载多个字体）
         self._build()
         self._apply_qss()
         self.refresh()
@@ -7906,7 +7979,7 @@ class SettingsPanel(QWidget):
         self.font_combo.blockSignals(False)
 
     def _on_font_action(self, ent: dict):
-        """字体库按钮：未装 → 下载；已装 → 直接使用"""
+        """字体库按钮：未装 → 下载；已装 → 直接使用。支持多个字体同时下载。"""
         if font_library_state().get(ent["id"]):
             fams = [f for f in LOADED_FAMILIES if _font_family_match(f, ent["id"])]
             if not fams:
@@ -7919,41 +7992,66 @@ class SettingsPanel(QWidget):
                 self._sync_fontlib()
                 self.font_status.setText("已切换到「%s」" % fam)
             return
-        if self._dl_id:
+        eid = ent["id"]
+        if eid in self._dl_ids:          # 该字体已在下载，忽略重复点击
             return
-        self._dl_id = ent["id"]
-        btn = self._fontrows[ent["id"]][0]
+        self._dl_ids.add(eid)
+        btn = self._fontrows[eid][0]
         btn.setEnabled(False)
         btn.setText("0%")
-        self.font_status.setText("正在下载「%s」…" % ent["name"])
+        self._refresh_dl_status()
 
-        def prog(done, total):
-            self.font_prog.emit(done, total)
+        def prog(done, total, _name=None):
+            # download_font 的 on_progress 会传 (done, total, name)，这里带上条目 id
+            self.font_prog.emit(eid, done, total)
 
         def work():
             try:
-                self.font_done.emit(ent["id"], download_font(ent, on_progress=prog))
+                self.font_done.emit(eid, download_font(ent, on_progress=prog))
             except Exception as ex:      # 网络失败不崩面板，回主线程提示
-                self.font_done.emit(ent["id"], ex)
+                self.font_done.emit(eid, ex)
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _on_font_prog(self, done: int, total: int):
-        if not self._dl_id:
+    def _refresh_dl_status(self):
+        """根据正在下载的集合刷新状态栏（支持并发进度提示）"""
+        if not self._dl_ids:
             return
-        btn = self._fontrows[self._dl_id][0]
+        names = []
+        for eid in self._dl_ids:
+            nm = eid
+            for e in FONT_LIBRARY:
+                if e["id"] == eid:
+                    nm = e["name"]
+                    break
+            names.append(nm)
+        self.font_status.setText("正在下载：%s …" % "、".join(names))
+
+    def _on_font_prog(self, eid: str, done: int, total: int):
+        if eid not in self._dl_ids:
+            return
+        btn = self._fontrows[eid][0]
         if total > 0:
             btn.setText("%d%%" % int(done * 100 / total))
         else:
             btn.setText("%.1fM" % (done / 1048576.0))
 
     def _on_font_done(self, eid: str, result):
-        self._dl_id = ""
+        self._dl_ids.discard(eid)
         btn = self._fontrows[eid][0]
         btn.setEnabled(True)
+        name = eid
+        for e in FONT_LIBRARY:
+            if e["id"] == eid:
+                name = e["name"]
+                break
         if isinstance(result, Exception) or not result:
             btn.setText("重试")
-            self.font_status.setText("字体下载失败，请检查网络后重试。")
+            # 失败：若还有其它字体在下载，状态栏继续提示；否则提示失败
+            if self._dl_ids:
+                self._refresh_dl_status()
+            else:
+                self.font_status.setText("「%s」下载失败，请检查网络后重试。" % name)
             return
         _load_fonts()                                    # 重新扫描并加载
         self._rebuild_font_combo()
@@ -7967,9 +8065,14 @@ class SettingsPanel(QWidget):
                 self.font_combo.blockSignals(True)
                 self.font_combo.setCurrentIndex(j)
                 self.font_combo.blockSignals(False)
-            self.font_status.setText("已下载并启用「%s」" % fam)
+            done_msg = "已下载并启用「%s」" % fam
         else:
-            self.font_status.setText("字体已下载，可用字体列表里选择。")
+            done_msg = "字体已下载，可在字体列表里选择。"
+        # 并发：若还有其它字体在下载，状态栏提示剩余；否则给出本条目结果
+        if self._dl_ids:
+            self._refresh_dl_status()
+        else:
+            self.font_status.setText(done_msg)
         self._sync_fontlib()
 
     def _sync_fontlib(self):
@@ -8403,11 +8506,9 @@ def _request_takeover(timeout: float = 8.0) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(0.25)
-        s = QLocalSocket()
-        s.connectToServer(APP_NAME)
-        alive = s.waitForConnected(200)
-        s.abort()
-        if not alive:
+        h = _instance_alive()
+        _close_handle(h)
+        if not h:
             try:
                 if os.path.exists(RESTART_SIG):
                     os.remove(RESTART_SIG)
@@ -8521,6 +8622,20 @@ def main():
                 watch = int(sys.argv[sys.argv.index(WATCH_PID_FLAG) + 1])
             except (IndexError, ValueError):
                 watch = 0
+        # 打包产物优先转发给原生 watchdog（~10KB / 1-2MB 内存），别再起
+        # 一份完整 Qt 应用当监工。老版本升级留下的自启项写的是
+        # 「Desktop-sing.exe --supervise」，在这里转发保证它们也走原生版。
+        wd = _watchdog_exe()
+        if wd:
+            import subprocess
+            flags = 0x00000008 | 0x08000000   # DETACHED_PROCESS | CREATE_NO_WINDOW
+            cmd = [wd] + ([WATCH_PID_FLAG, str(watch)] if watch else [])
+            try:
+                subprocess.Popen(cmd, creationflags=flags, close_fds=True)
+                return 0
+            except Exception:
+                log("原生 watchdog 拉起失败，回落 Python 守护进程:\n"
+                    + traceback.format_exc())
         return run_supervisor(watch)
 
     # 打包后自检：Desktop-sing.exe --selftest（验证依赖收全，不拉守护进程、不改配置）
@@ -8534,9 +8649,9 @@ def main():
     app.setWindowIcon(make_app_icon())
 
     # 单实例守护：已有实例在运行时先请求它让位（升级自动接管），失败才放弃
-    probe = QLocalSocket()
-    probe.connectToServer(APP_NAME)
-    if probe.waitForConnected(300):
+    probe = _instance_alive()
+    if probe:
+        _close_handle(probe)
         if _request_takeover():
             log("旧实例已让位，v%s 接管启动" % APP_VERSION)
         else:
@@ -8548,10 +8663,9 @@ def main():
             except Exception:
                 pass
             return
-    probe.abort()
-    guard = QLocalServer()
-    QLocalServer.removeServer(APP_NAME)
-    guard.listen(APP_NAME)
+    # 驻留信标：句柄由本进程持有到退出（模块全局引用，防止被误回收）
+    global _instance_guard
+    _instance_guard = _acquire_instance_mutex()
 
     _load_fonts()
 
@@ -8574,6 +8688,25 @@ def main():
 
     overlay = LyricOverlay(watcher)
     overlay.show()
+
+    # 启动内存整理（v2.0.1）：首帧出来、导入尘埃落定后做两件一次性的事
+    #   ① gc.freeze：启动期对象转进「永久代」，GC 不再每代扫描它们（降空闲 CPU 抖动）
+    #   ② 工作集整理：把启动期只路过一次的页交还给系统（任务管理器里可见的常驻内存立减）。
+    #     被换出的页用到时会自动调回，纯收益无副作用；启动 3 秒后做，避开首帧关键路径。
+    def _settle_memory():
+        try:
+            import gc
+            gc.collect()
+            gc.freeze()
+        except Exception:
+            pass
+        try:
+            h = ctypes.windll.kernel32.GetCurrentProcess()
+            ctypes.windll.psapi.SetProcessWorkingSetSize(h, -1, -1)
+        except Exception:
+            pass
+
+    QTimer.singleShot(3000, _settle_memory)
     sys.exit(app.exec())
 
 

@@ -2,4 +2,8 @@ PySide6>=6.5
 winsdk>=1.0.0b10 ; python_version < "3.12"
 winrt-Windows.Media.Control>=2.3 ; python_version >= "3.12"
 winrt-Windows.Storage.Streams>=2.3 ; python_version >= "3.12"
+# winrt 投影的延迟导入依赖（frozen 打包要显式收集，见 build_exe.py）
+winrt-Windows.Foundation>=2.3 ; python_version >= "3.12"
+winrt-Windows.Foundation.Collections>=2.3 ; python_version >= "3.12"
+winrt-Windows.Storage>=2.3 ; python_version >= "3.12"
 pycryptodome>=3.9

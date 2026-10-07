@@ -159,7 +159,10 @@ def _counted_paint(self, event):
 
 L.LyricOverlay.paintEvent = _counted_paint
 
-ov = L.LyricOverlay(L.MediaWatcher())
+watcher2 = L.MediaWatcher()
+watcher2.mediaChanged.disconnect()
+watcher2.ticked.disconnect()
+ov = L.LyricOverlay(watcher2)
 ov.show()
 app.processEvents()
 r0 = rss_mb()
@@ -215,7 +218,6 @@ def cpu_percent_frames(seconds=3.0, keep_visible=True):
             _frames[0] / elapsed, _paints[0] / elapsed)
 
 
-# 无歌（等待态）
 ov.song = None
 ov.lines, ov.words = [], {}
 ov._on_frame()

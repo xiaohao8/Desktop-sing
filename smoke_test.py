@@ -1621,10 +1621,16 @@ def idle_power():
     assert ov._timer.interval() == 250, ov._timer.interval()
     assert ov._last_frame_pos == ov._lyric_pos()
 
-    # 等待态有呼吸动画：仍要重绘
+    # 等待态：卡片完全静态（10.1.2.10 静态语义），不该重绘，巡检降到 500ms
     ov.song = None
-    assert ov._needs_repaint() is True
-    ov._on_frame()
+    ov._line_anim.stop()
+    ov._size_anim.stop()
+    ov._pause_anim.stop()
+    ov._ctrl_anim.stop()
+    assert ov._needs_repaint() is False
+    for _ in range(3):
+        ov._on_frame()
+    assert ov._timer.interval() == 500, ov._timer.interval()
 
     # 隐藏：定时器整条停掉；重新可见要能自己恢复
     ov.hide()
@@ -2669,6 +2675,86 @@ def color_theme20():
     ov.cover_pix = None
     ov.set_color_mode("auto")
 check("配色主题 v2.0", color_theme20)
+
+
+print("[36] 原生守护进程接入：_app_command / --supervise 转发 / 保活回落")
+def watchdog_integration():
+    """v2.0.1 保活守护进程 C 重构后的接入逻辑：
+    · 打包产物（mock sys.frozen）下 _app_command(supervise=True) 返回原生
+      watchdog.exe 命令行（带 --watch-pid），不再拉「第二份完整应用」；
+    · watchdog 不存在时回落 Python 版命令行（老产物升级兼容）；
+    · 源码运行永远走 Python 版命令行（带 --supervise 标记）；
+    · 仓库里必须带着 tools/watchdog.exe 与其源码（发布物要随包）。"""
+    import types
+    real_frozen = getattr(sys, "frozen", None)
+    real_exe = sys.executable
+    real_file = sys.modules["lyrics_overlay"].__file__ if "lyrics_overlay" in sys.modules else __file__
+    try:
+        # —— 源码运行：永远 Python 版 ——
+        sys.frozen = False
+        cmd = L._app_command(supervise=True, watch_pid=123)
+        assert cmd[-4:] == ["--supervise", "--watch-pid", "123"] or \
+               cmd[-3:] == ["--supervise", "--watch-pid", "123"], cmd
+        assert "watchdog.exe" not in " ".join(cmd), cmd
+
+        # —— mock 冻结 + watchdog 就位：应返回 watchdog 命令行 ——
+        fake_dir = tempfile.mkdtemp(prefix="wd_mock_")
+        fake_wd = os.path.join(fake_dir, "watchdog.exe")
+        fake_app = os.path.join(fake_dir, "Desktop-sing.exe")
+        open(fake_wd, "wb").close()
+        open(fake_app, "wb").close()
+        try:
+            sys.frozen = True
+            sys.executable = fake_app
+            cmd = L._app_command(supervise=True, watch_pid=456)
+            assert cmd == [fake_wd, "--watch-pid", "456"], cmd
+            # 开机自启场景（不盯现有进程）：裸 watchdog 命令行
+            cmd2 = L._app_command(supervise=True)
+            assert cmd2 == [fake_wd], cmd2
+            # 运行命令（非 supervise）不受影响：仍是主程序自身
+            cmd3 = L._app_command(supervise=False)
+            assert cmd3 == [fake_app], cmd3
+
+            # —— watchdog 缺席：回落 Python 版（老产物升级兼容）——
+            os.remove(fake_wd)
+            cmd4 = L._app_command(supervise=True, watch_pid=456)
+            assert "watchdog.exe" not in " ".join(cmd4), cmd4
+            assert cmd4[0] == fake_app and cmd4[1] == "--supervise", cmd4
+        finally:
+            shutil.rmtree(fake_dir, ignore_errors=True)
+    finally:
+        if real_frozen is None:
+            try:
+                del sys.frozen
+            except AttributeError:
+                pass
+        else:
+            sys.frozen = real_frozen
+        sys.executable = real_exe
+        sys.modules["lyrics_overlay"].__file__ = real_file
+
+    # —— 仓库完整性：源码与产物都要在 ——
+    root = os.path.dirname(os.path.abspath(__file__))
+    assert os.path.isfile(os.path.join(root, "tools", "watchdog.c")), \
+        "tools/watchdog.c 源码缺失"
+    assert os.path.isfile(os.path.join(root, "tools", "watchdog.exe")), \
+        "tools/watchdog.exe 产物缺失（发版要随包分发）"
+    # —— 单实例信标：命名互斥锁（v2.0.1 替代 QLocalServer，QtNetwork 已退役）——
+    pre = L._instance_alive()
+    if pre:                     # 本机正跑着真实实例：只能验证探测到，不能动它
+        L._close_handle(pre)
+        print("  --  跳过互斥锁创建/释放断言：检测到真实实例在运行")
+    else:
+        h = L._acquire_instance_mutex()
+        assert h, "CreateMutexW 应成功"
+        p1 = L._instance_alive()          # 探测句柄必须成对关闭，泄漏会让对象存活
+        assert p1 != 0, "持有互斥锁后应探测到实例存在"
+        L._close_handle(h)
+        L._close_handle(p1)
+        p2 = L._instance_alive()
+        assert p2 == 0, "释放后不应再探测到实例"
+        L._close_handle(p2)
+check("原生守护进程接入", watchdog_integration)
 
 
 # ---- 收尾：注销热键、还原配置 ----
