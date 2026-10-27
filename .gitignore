@@ -2,8 +2,11 @@
 __pycache__/
 *.pyc
 .buildenv/
+.buildenv312/
 
 # 构建产物（发版产物不入库，走 GitHub Releases / 蓝奏云 / 商店分发）
+# build/ 用 build/* + 白名单，别写成 build/ ——那样连 build/bootloader-src/
+# （自编译引导器的工具链，刻意入库）也一起被忽略，新加的文件不会进 git add
 build/*
 !build/bootloader-src/
 build/bootloader-src/backup-bootloader/
@@ -17,6 +20,9 @@ store/identity.local.json
 
 # 诊断沙箱
 .tmp_appdata/
+
+# 误报申诉样本：二进制可执行文件只放本机备查，进了仓库等于给杀软多一个扫描面
+store/fp-submission/*.exe
 
 # 本地工作记忆（Agent 会话记忆，不入库；REST 推送脚本 SKIP_DIRS 同样跳过它，
 # 若本地入库会导致本地 tree 与推上去的 tree 不一致 → commit sha 分叉）

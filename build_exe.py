@@ -139,10 +139,26 @@ PKG_EXCLUDE = [
 ]
 
 
+def _disable_upx(txt: str):
+    """把 spec 里的 upx=True 全部改成 False（返回新文本，无匹配时原样返回）。
+
+    makespec 生成的 spec 默认 upx=True，命令行的 --noupx 不会写进 spec。
+    UPX 加壳后的 PE 是杀软启发式的高风险特征，这里从源头关掉。
+    """
+    n = len(re.findall(r"^\s*upx=True", txt, re.M))
+    if not n:
+        return txt
+    print("  + spec 已关闭 UPX 加壳（%d 处）" % n)
+    return re.sub(r"^(\s*)upx=True", r"\1upx=False", txt, flags=re.M)
+
+
 def patch_spec(spec_path: str):
     """在 Analysis 之后插入裁剪逻辑：去掉用不到的 Qt 二进制 / 插件 / 翻译文件"""
     txt = open(spec_path, encoding="utf-8").read()
+    # 关 UPX 不依赖裁剪是否已注入：已注入过也要保证 upx=False 落到盘上
+    txt = _disable_upx(txt)
     if "_slim_toc" in txt:
+        open(spec_path, "w", encoding="utf-8").write(txt)
         return
     inject = (
         "\n"
@@ -298,8 +314,13 @@ def _version_file(ver: str):
     try:
         with open(tpl_path, encoding="utf-8") as f:
             txt = f.read()
-        txt = txt.replace("(2, 0, 0, 0)", "(%s)" % nums)
-        txt = txt.replace("'2.0.0.0'", "'%s'" % ver_full)
+        # 用正则按字段名替换，不依赖模板里的具体旧值：旧写法只匹配字面量
+        # "(2, 0, 0, 0)" / "'2.0.0.0'"，模板一旦被人手改过（2.0.1 就改过），
+        # 替换会静默失配，产物版本资源永远停在模板旧值上。
+        txt = re.sub(r"filevers=\([\d,\s]*\)", "filevers=(%s)" % nums, txt)
+        txt = re.sub(r"prodvers=\([\d,\s]*\)", "prodvers=(%s)" % nums, txt)
+        txt = re.sub(r"('FileVersion',\s*)'\d[\d.]*'", r"\g<1>'%s'" % ver_full, txt)
+        txt = re.sub(r"('ProductVersion',\s*)'\d[\d.]*'", r"\g<1>'%s'" % ver_full, txt)
         out = os.path.join(BASE, "build", "version_info.gen.txt")
         os.makedirs(os.path.dirname(out), exist_ok=True)
         with open(out, "w", encoding="utf-8") as f:
@@ -329,7 +350,11 @@ def main() -> int:
            "--onedir" if onedir else "--onefile",
            "--noconsole",
            "--name", NAME,
-           "--paths", BASE]
+           "--paths", BASE,
+           # 不加壳：UPX 压缩过的 PE 是杀软启发式的高风险特征，省下的那点体积
+           # 远不如「不被误报」值钱。本机 PATH 里没有 upx 时它本来也不会生效，
+           # 但换机器/装了 upx 后就会静默开启，所以显式关掉。
+           "--noupx"]
 
     # 防报毒基础三件套：真实图标 + 完整版本信息资源（详见 version_info.txt）。
     # 杀软启发式对「无图标、无版本信息」的 PyInstaller 产物最敏感。

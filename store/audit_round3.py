@@ -9,7 +9,7 @@
   P3 提审材料里引用的资产/文案在仓库里真实存在
   P4 隐私政策如实覆盖程序真正的网络行为与本地写入
 
-用法：.buildenv\\Scripts\\python.exe store\\audit_round3.py
+用法：.buildenv312\\Scripts\\python.exe store\\audit_round3.py
 """
 import glob
 import json
@@ -19,6 +19,15 @@ import sys
 import traceback
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+# 汇总段要打印 ✗ / ! 等符号：GBK 控制台下这些字符会抛 UnicodeEncodeError，
+# 而它偏偏只在「有失败项」时才走到那几行 —— 最需要看结果的时候反而崩掉。
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except OSError:
+        pass
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -1019,19 +1028,25 @@ else:
     # （源码运行用系统 Python 的 winrt，一切正常），只有干净机器才暴露。
     # ⚠️ 历史包用 winsdk 投影（路径 winsdk/_winrt.pyd），2.0.1 起改用 winrt
     #    投影（路径 winrt/_winrt.pyd）。两种都认，避免升级后误报。
+    # ⚠️ 文件名带不带 ABI 段取决于打包用的 Python 版本：3.8 出 `_winrt.pyd`，
+    #    3.12 出 `_winrt.cp312-win_amd64.pyd`。按精确路径判会漏，改成按目录+前缀匹配。
     try:
         import zipfile as _zf2
         with _zf2.ZipFile(_newest) as _z2:
             _names2 = set(_z2.namelist())
-        _need_winrt = "Desktop-sing/_internal/winrt/_winrt.pyd"
-        _need_winsdk = "Desktop-sing/_internal/winsdk/_winrt.pyd"
-        _have = _need_winrt in _names2 or _need_winsdk in _names2
-        _which = _need_winrt if _need_winrt in _names2 else (
-            _need_winsdk if _need_winsdk in _names2 else "")
+        def _find_binding(_prefix):
+            for _n in sorted(_names2):
+                if _n.startswith(_prefix) and "_winrt" in os.path.basename(_n) \
+                        and _n.lower().endswith(".pyd"):
+                    return _n
+            return ""
+        _which = (_find_binding("Desktop-sing/_internal/winrt/")
+                  or _find_binding("Desktop-sing/_internal/winsdk/"))
+        _have = bool(_which)
         check("P5.20f 包内含 SMTC 绑定 _winrt.pyd（歌词链路硬依赖）",
               _have,
               ("就位：%s" % _which) if _have else
-              "**缺失** winrt/_winrt.pyd —— 检查 build_exe.py 的 winrt 收集逻辑后 --fresh 重出包")
+              "**缺失** winrt/_winrt*.pyd —— 检查 build_exe.py 的 winrt 收集逻辑后 --fresh 重出包")
     except Exception as _ex3:
         check("P5.20f 能枚举包内文件清单", False, repr(_ex3))
 

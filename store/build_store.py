@@ -35,7 +35,6 @@ import sys
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(BASE)
-ONEDIR = os.path.join(ROOT, "dist", "Desktop-sing-v1.0.1")
 LAYOUT = os.path.join(BASE, "build", "layout")
 OUTDIR = os.path.join(BASE, "out")
 TEMPLATE = os.path.join(BASE, "AppxManifest.template.xml")
@@ -155,7 +154,12 @@ Test guide for Desktop-sing v{version}:
 5. 更新由 Microsoft Store 统一分发，程序内没有自更新通道。"""
 
 # 商店版不要带的文件（卸载器没有意义：商店应用从系统设置里卸载）
-EXCLUDE_FILES = {"卸载桌面歌词.bat"}
+#
+# watchdog.exe 也排除：商店版 STORE_MODE 下保活整体禁用
+# （lyrics_overlay.py 的 spawn_supervisor 直接 return），这个原生 exe 在包里
+# 永远不会被拉起，却多出一个「未签名的 CreateProcess 型小工具」给杀软扫。
+# 便携版/安装版仍由 build_exe.py 附带，功能不受影响。
+EXCLUDE_FILES = {"卸载桌面歌词.bat", "watchdog.exe"}
 
 # 必须随包分发的许可/声明文件。
 # 为什么不能只放在仓库里：Apache-2.0 第 4 条要求「向接收者提供一份 NOTICE」，
@@ -263,16 +267,21 @@ def load_site_url(args) -> str:
     return url.rstrip("/")
 
 
-def stage_layout():
+def stage_layout(version: str = ""):
     """组装 MSIX 布局：清单 + 资产 + onedir 程序本体（去掉商店版不该带的文件）。"""
-    onedir = os.path.join(ROOT, "dist", "Desktop-sing-v%s" % app_version())
-    if not (os.path.isdir(onedir) and os.path.isfile(os.path.join(onedir, "Desktop-sing.exe"))):
-        # 兜底：版本目录缺失或不完整（缺主程序 exe）时，回退到写死的旧目录，
-        # 避免把旧版本残缺的 onedir 错打进包（曾经因此把 v1.0.0 写成 v1.0.1 出包）
-        if os.path.isdir(ONEDIR) and os.path.isfile(os.path.join(ONEDIR, "Desktop-sing.exe")):
-            onedir = ONEDIR
-    if not (os.path.isdir(onedir) and os.path.isfile(os.path.join(onedir, "Desktop-sing.exe"))):
-        raise SystemExit("没找到完整的 onedir（%s 且含 Desktop-sing.exe）—— 先跑 build_exe.py --dir，或加 --fresh" % onedir)
+    # 布局版本必须与将要写进清单的版本一致：以前这里在目录缺失时回退到一个
+    # 写死的旧 onedir，结果把旧产物（旧 Python 运行时、旧 exe 哈希）打进新号包里。
+    # 现在只认目标版本目录，缺就直接失败，宁可不打包也不出错包。
+    ver = version or app_version()
+    onedir = os.path.join(ROOT, "dist", "Desktop-sing-v%s" % ver)
+    exe = os.path.join(onedir, "Desktop-sing.exe")
+    if not (os.path.isdir(onedir) and os.path.isfile(exe)):
+        raise SystemExit(
+            "没找到 v%s 的完整 onedir：%s\n"
+            "  先跑 .buildenv312\\Scripts\\python.exe build_exe.py --dir，"
+            "或给本脚本加 --fresh。\n"
+            "  注意：不要靠回退旧目录出包——那会把旧构建打进新版本号里。"
+            % (ver, onedir))
     # 布局目录每次重建。沙箱会拦批量删除，用「改名归档」代替 rm -rf
     if os.path.isdir(LAYOUT):
         os.rename(LAYOUT, LAYOUT + ".old-%d" % int(os.path.getmtime(LAYOUT)))
@@ -371,6 +380,10 @@ def verify_msix(msix_path: str, identity_is_placeholder: bool) -> bool:
                 ok = False
         if "Desktop-sing/卸载桌面歌词.bat" in nameset:
             print("  [FAIL] 商店包里不该有卸载脚本")
+            ok = False
+        # 商店版 STORE_MODE 下保活整体禁用，watchdog.exe 只会多一个未签名 exe 被杀软扫
+        if "Desktop-sing/watchdog.exe" in nameset:
+            print("  [FAIL] 商店包里不该有 watchdog.exe（见 EXCLUDE_FILES）")
             ok = False
         mf = z.read("AppxManifest.xml").decode("utf-8")
         for bad in ("{{", "}}"):
@@ -550,15 +563,25 @@ def main():
 
     sys.path.insert(0, BASE)
 
+    src_ver = args.version or app_version()
+    if src_ver != app_version():
+        raise SystemExit(
+            "--version %s 与 APP_VERSION %s 不一致：onedir 目录按 APP_VERSION 命名，"
+            "这样出包会把错版本的产物写进新号清单。改 lyrics_overlay.py 的 "
+            "APP_VERSION 后重跑，别用 --version 跨版本出包。"
+            % (src_ver, app_version()))
+
     if args.fresh:
         print("[构建] 先跑 build_exe.py --dir …")
-        r = subprocess.run([os.path.join(ROOT, ".buildenv", "Scripts", "python.exe"),
+        # 用 3.12 构建环境：2.0.1 起运行时已迁到 .buildenv312，
+        # 走老的 .buildenv 会打出 python38.dll 的包（体积与内存都回退）。
+        r = subprocess.run([os.path.join(ROOT, ".buildenv312", "Scripts", "python.exe"),
                             "-u", os.path.join(ROOT, "build_exe.py"), "--dir"],
                            cwd=ROOT)
         if r.returncode != 0:
             raise SystemExit("build_exe.py 失败（退出码 %d）" % r.returncode)
 
-    ver = package_version(args.version or app_version())
+    ver = package_version(src_ver)
     name, publisher = load_identity(args)
     display_name = load_display_name(args)
     pub_display_name = load_publisher_display_name(args)
@@ -574,7 +597,7 @@ def main():
     print("隐私页 : %s" % (("%s/privacy.html" % site_url) if site_url
                            else "（未配 site_url，提审文案里会留占位地址）"))
 
-    stage_layout()
+    stage_layout(src_ver)
     write_manifest(name, publisher, ver, display_name, pub_display_name)
 
     os.makedirs(OUTDIR, exist_ok=True)

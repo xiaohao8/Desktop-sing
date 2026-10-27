@@ -17,6 +17,9 @@
   **ASCII 版**，与本地/网盘渠道的中文名的对应关系写在 `SHA256SUMS.txt` 开头；
   核对方式 `certutil -hashfile <文件> SHA256`（详见下文「发布与安全」）。
 - **不需要配更新地址**：程序内置更新源（主源 GitHub Releases，失败自动回退国内镜像），装好即用。
+- **版本号从 2.0.1 回到 1.0.2**：这是同一条产品线的编号统一，不是功能回退——1.0.2 已包含
+  2.0.1 的全部功能与修复。此后商店版与下载版一律按 1.0.x 递增。装了 2.0.1 的用户需要
+  **手动下载一次**：程序内「检查更新」按版本号大小比较，不会提示降级后的新号。
 
 ## 核心功能
 
@@ -158,6 +161,9 @@ py -3.12 -m venv .buildenv312
 - **原生保活守护进程**：`tools\watchdog.exe`（源码 `tools\watchdog.c`，常驻内存
   ~2MB，替代旧 Python 版的 ~55MB）会自动复制进产物；重编译见
   `tools\build_watchdog.bat`
+- **不加壳**：构建固定 `--noupx`、spec 里 `upx=False`。UPX 压缩后的 PE 是杀软启发式
+  （尤其 `Python.ShellLoader` 家族）的高风险特征，省的那点体积不值当。商店版（MSIX）
+  也不再附带 `watchdog.exe`——`STORE_MODE` 下保活整体禁用，多一个未签名 exe 只是多一处扫描面
 - ⚠️ **杀软可能实时删除无签名的新构建产物**（火绒实测会在构建中途删 exe，
   报 `Failed to compute PE checksum!`）。构建失败时先把项目目录加入杀软信任区
   （如 `Add-MpPreference -ExclusionPath '<项目目录>'` 或在火绒信任区添加）再重试
@@ -249,6 +255,13 @@ Windows SmartScreen 对一个「没签名 + 下载量还没攒起来」的新 ex
 | Edge / Chrome 提示「此文件可能有危险」 | 在下载栏点 **… → 保留**；若被自动删除，去「下载 → 显示已阻止的内容」恢复 |
 | 杀毒软件启发式误报 | 把程序目录加进信任/白名单（PyInstaller 打包的无签名程序容易被启发式规则命中） |
 | 想确认文件没被换包 | 见下方「校验文件真伪」 |
+
+> **火绒 / Defender 的处置不一样**：`Add-MpPreference` 那类排除命令只对 Defender 有效，
+> 火绒是独立引擎，只能在火绒自己的「信任区」里加目录或按进程信任。
+> 商店版若被火绒判为 `Trojan/Python.ShellLoader.*` 并删了 exe，加信任后要走
+> 「设置 → 应用 → 桌面歌词 → 高级选项 → **修复**」把文件补回来；
+> **不要**手动往 `WindowsApps` 拷文件或改该目录权限，那会破坏 MSIX 包完整性。
+> 根治靠向厂商报白，见 `store\fp-submission\README-误报申诉.md`。
 
 ### 校验文件真伪
 

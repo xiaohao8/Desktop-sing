@@ -1,4 +1,4 @@
-﻿Desktop-sing 2.0 - User Guide
+﻿Desktop-sing - User Guide
 =============================
 
 Note: the application interface is currently Simplified Chinese only.
@@ -57,6 +57,10 @@ Note: the application interface is currently Simplified Chinese only.
   settings panel.
 - Manifest JSON format: {"version":"x.y.z","url":"download link","notes":"release notes"}.
   You may also include the two mirror fields "lanzou_setup" and "lanzou_portable".
+- Version numbering: 1.0.2 and 2.0.1 are the same code. The number was unified with the
+  Store release line, and 1.0.2 already includes every feature and fix from 2.0.1. Users on
+  2.0.1 must download once by hand: "Check for updates" compares numbers, so it will not
+  offer the renumbered build automatically.
 
 [Security and allowing the app]
 - This program has no code-signing certificate yet, so on first run Windows may show the blue
@@ -65,6 +69,11 @@ Note: the application interface is currently Simplified Chinese only.
   automatically, restore it from the downloads list.
 - A few antivirus engines produce heuristic false positives (common for unsigned PyInstaller builds).
   Add the whole program folder to your trusted / allowed list.
+  Huorong and Windows Defender are separate engines: Defender exclusion commands do nothing for
+  Huorong, so add the folder in Huorong's own trust list (or trust Desktop-sing.exe by process).
+  If Huorong deleted the Store build's main exe, add the trust entry first, then run
+  Settings -> Apps -> Desktop-sing -> Advanced options -> Repair. Never copy files into
+  WindowsApps by hand - that breaks package integrity.
 - To confirm the file was not replaced, find SHA256SUMS.txt among the release assets and run:
       certutil -hashfile <filename> SHA256
   If the hash matches, the file is the original build output.

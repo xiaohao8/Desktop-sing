@@ -179,6 +179,11 @@ After that, a release is a single command:
   family is excluded** — this project does not use it, and a stale install makes PyInstaller's
   pythoncom hook crash outright.
 - `--icon` / `--version-file` are added automatically when `icon.ico` / `version_info.txt` exist.
+- **No packing**: the build pins `--noupx` and `upx=False` in the spec. A UPX-compressed PE is a
+  high-risk heuristic signature for antivirus engines (the `Python.ShellLoader` family in
+  particular), which is not worth the few saved megabytes. The Store (MSIX) build also drops
+  `watchdog.exe` — keep-alive is disabled under `STORE_MODE` anyway, so shipping it only adds one
+  more unsigned executable to scan.
 - Older artefacts are moved into `dist\archive\` (renamed, never deleted), so any previous build can
   always be recovered.
 
