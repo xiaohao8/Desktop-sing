@@ -312,6 +312,39 @@ h3 { font-size: clamp(19px, 2vw, 24px); letter-spacing: -.012em; line-height: 1.
    留在下一行的左半格，看起来像排版坏了。两张等宽并排，靠配色区分主次。 */
 .dl--main { background: linear-gradient(135deg, rgba(125, 211, 252, .1), rgba(196, 181, 253, .12)); border-color: rgba(125, 211, 252, .34); }
 
+/* 商店优先：第一张卡独占整行，下面三张作为下载包/历史版本备选。 */
+.dl--store {
+  grid-column: 1 / -1;
+  position: relative;
+  overflow: hidden;
+  padding: 34px 38px;
+  color: #f7fbff;
+  background:
+    radial-gradient(circle at 88% 20%, rgba(58, 160, 255, .4), transparent 32%),
+    linear-gradient(118deg, #07111f 0%, #10233d 58%, #0b3159 100%);
+  border-color: rgba(87, 174, 255, .45);
+}
+.dl--store::after {
+  content: "";
+  position: absolute;
+  right: -54px;
+  bottom: -86px;
+  width: 250px;
+  height: 250px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 50%;
+  box-shadow: 0 0 0 34px rgba(255, 255, 255, .035), 0 0 0 68px rgba(255, 255, 255, .02);
+}
+.dl--store > * { position: relative; z-index: 1; }
+.dl--store .k,
+.dl--store .d { color: rgba(235, 246, 255, .72); }
+.dl--store .v { font-size: clamp(25px, 3.2vw, 34px); }
+.dl--store .go { color: #8bc8ff; }
+.dl--store:hover { border-color: rgba(111, 190, 255, .78); box-shadow: 0 22px 54px rgba(8, 26, 48, .24); }
+@media (max-width: 720px) {
+  .dl--store { padding: 28px 24px; }
+}
+
 .dl-meta { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 26px; font-size: 14px; color: var(--l-dim); }
 .dl-meta span { display: inline-flex; align-items: center; gap: 7px; }
 .dl-meta span::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--brand1); }

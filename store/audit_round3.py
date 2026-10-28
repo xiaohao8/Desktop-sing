@@ -839,6 +839,121 @@ for _f, _name in (("README.md", "中文"), ("README.en.md", "英文")):
     check("P5.18e %s README 有下载指引（指向 Releases + 说明 asset 名）" % _name, _ok,
           "" if _ok else "仓库首页没有下载入口，访客找不到安装包")
 
+# ---------------------------------------------------------------- P5.18f 发版口径一致性
+# 发版最怕「代码是 1.0.2、清单还是 1.0.1、官网按钮又指去旧包」。
+# 这里把版本号、更新清单、下载链接和商店入口绑在一起查，任何一处漂移都直接 FAIL。
+head("P5.18f 发版口径一致性（APP_VERSION / update.json / 官网 / 商店入口）")
+
+_rel_ver = str(ov.APP_VERSION).strip().lstrip("vV")
+_upd_path = os.path.join(ROOT, "update.json")
+_upd = {}
+try:
+    with open(_upd_path, encoding="utf-8") as _f:
+        _upd = json.load(_f)
+    _upd_ok = isinstance(_upd, dict) and bool(str(_upd.get("version") or "").strip())
+    check("P5.18f update.json 可解析且含版本号", _upd_ok,
+          "version=%s" % _upd.get("version") if _upd_ok else "缺 version 字段")
+except Exception as _e:
+    check("P5.18f update.json 可解析且含版本号", False, repr(_e))
+
+_upd_ver = str(_upd.get("version") or "").strip().lstrip("vV") if _upd else ""
+check("P5.18f1 APP_VERSION 与 update.json.version 一致",
+      bool(_rel_ver) and _upd_ver == _rel_ver,
+      "APP_VERSION=%r ｜ update.json=%r" % (_rel_ver, _upd_ver))
+
+_upd_url = str(_upd.get("url") or "").strip() if _upd else ""
+_url_ver_ok = bool(_rel_ver and _upd_url) and (
+    ("v%s" % _rel_ver).lower() in _upd_url.lower()
+    or re.search(r"(?:^|[/_-])%s(?:$|[/_.-])" % re.escape(_rel_ver), _upd_url))
+check("P5.18f2 update.json.url 指向当前版本",
+      bool(_url_ver_ok), _upd_url or "url 为空")
+
+_site_html = open(os.path.join(ROOT, "site", "index.html"), encoding="utf-8").read()
+_dl_cards = []
+for _m_card in re.finditer(
+        r'<a\b([^>]*\bclass="[^"]*\bdl\b[^"]*"[^>]*)>(.*?)</a>', _site_html, re.S):
+    _attrs, _body = _m_card.group(1), _m_card.group(2)
+    _m_cls = re.search(r'\bclass="([^"]*)"', _attrs)
+    _m_href = re.search(r'\bhref="([^"]*)"', _attrs)
+    _m_tag = re.search(r'\bdata-dl="([^"]*)"', _attrs)
+    _dl_cards.append({
+        "class": _m_cls.group(1) if _m_cls else "",
+        "href": _m_href.group(1) if _m_href else "",
+        "data": _m_tag.group(1) if _m_tag else "",
+        "body": _body,
+    })
+
+_cards_by_tag = {c["data"]: c for c in _dl_cards if c["data"]}
+_version_bad = []
+for _tag, _label in (("github-setup", "GitHub 安装版"),
+                     ("github-portable", "GitHub 便携版")):
+    _card = _cards_by_tag.get(_tag)
+    if not _card:
+        _version_bad.append("缺 %s 卡" % _label)
+    elif ("v%s" % _rel_ver).lower() not in _card["href"].lower():
+        _version_bad.append("%s 链接=%s" % (_label, _card["href"]))
+check("P5.18f3 官网安装版 / 便携版链接均指向当前版本",
+      not _version_bad, "；".join(_version_bad) if _version_bad
+      else "两个 GitHub 下载卡均为 v%s" % _rel_ver)
+
+# 商店必须是下载区第一入口，并链到 Product ID 的真实详情页。
+_ident_release = {}
+_ident_release_path = os.path.join(ROOT, "store", "identity.local.json")
+if os.path.isfile(_ident_release_path):
+    try:
+        with open(_ident_release_path, encoding="utf-8") as _f:
+            _ident_release = json.load(_f)
+    except Exception:
+        _ident_release = {}
+_store_pid = str(_ident_release.get("store_product_id") or "").strip()
+_store_card = _cards_by_tag.get("microsoft-store")
+_store_href = _store_card["href"] if _store_card else ""
+_store_is_first = bool(_dl_cards and _dl_cards[0].get("data") == "microsoft-store")
+_store_link_ok = (
+    _store_href.startswith("https://apps.microsoft.com/detail/")
+    and bool(_store_pid)
+    and _store_pid.lower() in _store_href.lower()
+)
+check("P5.18f4 官网下载区以 Microsoft Store 为首选入口",
+      _store_is_first and _store_link_ok,
+      "首卡=%s ｜ 商店链接=%s ｜ Product ID=%s" % (
+          _dl_cards[0].get("data", "?") if _dl_cards else "(无)",
+          _store_href or "(无)", _store_pid or "(未填)"))
+
+# 便携包是 onedir：准确说法是「完整解压整个文件夹后运行 exe」，不是单文件。
+check("P5.18f5 官网不再把便携包描述成单文件 exe",
+      "单文件" not in _site_html,
+      "把「单文件 exe / 双击即用」改成「完整解压文件夹后运行 Desktop-sing.exe」")
+
+# 没有当前版本蓝奏云镜像时，清单必须明确说明，避免官网/弹窗承诺一个不存在的入口。
+_lz_has_current = _rel_ver in ov.LANZOU_MIRRORS
+_lz_status = str(_upd.get("lanzou_status") or "").strip().lower() if _upd else ""
+_lz_note = str(_upd.get("lanzou_note") or "").strip() if _upd else ""
+_lz_explicit_absent = _lz_status in (
+    "pending", "not_available", "unavailable", "none", "disabled") and bool(_lz_note)
+check("P5.18f6 蓝奏云镜像状态与 update.json 一致",
+      _lz_has_current or _lz_explicit_absent,
+      "内置表=%s ｜ lanzou_status=%s ｜ note=%s" % (
+          "有 v%s" % _rel_ver if _lz_has_current else "无 v%s" % _rel_ver,
+          _lz_status or "(空)", _lz_note or "(空)"))
+
+if not _lz_has_current:
+    _packed_usage = os.path.join(ROOT, "使用说明.txt")
+    if os.path.isfile(_packed_usage):
+        _usage_txt = open(_packed_usage, encoding="utf-8").read()
+        if "同时给出蓝奏云与 GitHub 两个下载入口" in _usage_txt:
+            warn("P5.18f7 已打包的使用说明仍承诺蓝奏云与 GitHub 双入口",
+                 "v1.0.2 产物不重打包，避免改变哈希；1.0.3 构建时修正该文档")
+
+_checklist_path = os.path.join(ROOT, "store", "RELEASE-CHECKLIST.md")
+_checklist_txt = (open(_checklist_path, encoding="utf-8").read()
+                  if os.path.isfile(_checklist_path) else "")
+_checklist_need = ("--selftest", "selftest.txt", "RESULT PASS",
+                   "UPX0", "watchdog.exe", "Package Flight")
+check("P5.18f8 发版检查清单覆盖冻结 exe 自检与商店灰度",
+      all(x in _checklist_txt for x in _checklist_need),
+      "缺: %s" % [x for x in _checklist_need if x not in _checklist_txt])
+
 # ---------------------------------------------------------------- P5.19 站点部署副本
 # 商店表单里填的隐私政策 URL 指向**独立仓库**（xiaohao8/music → Netlify）而不是主仓库。
 # 于是"改了主仓库 site/ 却没同步过去"就会变成：商店里挂着一份过期的隐私政策。

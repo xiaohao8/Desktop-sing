@@ -9,14 +9,15 @@
 
 | 渠道 | 文件 | 说明 |
 |---|---|---|
-| **[GitHub Releases](https://github.com/xiaohao8/Desktop-sing/releases/latest)** | `Desktop-sing-v<版本>-setup.exe` | **推荐**：带安装向导，装完自动建快捷方式、可选开机自启，控制面板可正常卸载 |
-| 同上 | `Desktop-sing-v<版本>-portable.zip` | 免安装：解压即用、不写注册表，适合放 U 盘 |
-| 国内网盘 | —— | GitHub 下载慢时用；链接由内置更新清单给出，程序「检查更新」弹窗里也会提供 |
+| **[Microsoft Store](https://apps.microsoft.com/detail/9P252M4VJL12)** | 商店安装 | **推荐**：由微软商店安装和自动更新，不启用程序内更新 |
+| [GitHub Releases](https://github.com/xiaohao8/Desktop-sing/releases/latest) | `Desktop-sing-v<版本>-setup.exe` | 备用：带安装向导，装完自动建快捷方式、可选开机自启，控制面板可正常卸载 |
+| 同上 | `Desktop-sing-v<版本>-portable.zip` | 备用免安装：完整解压整个文件夹后运行其中的 `Desktop-sing.exe`，适合放 U 盘 |
 
 - **校验文件真伪**：同页 `SHA256SUMS.txt` 列出各发布物的 SHA256。注意发布页上的文件名是
   **ASCII 版**，与本地/网盘渠道的中文名的对应关系写在 `SHA256SUMS.txt` 开头；
   核对方式 `certutil -hashfile <文件> SHA256`（详见下文「发布与安全」）。
 - **不需要配更新地址**：程序内置更新源（主源 GitHub Releases，失败自动回退国内镜像），装好即用。
+- **1.0.2 暂无国内网盘镜像**：更新弹窗会回落到 GitHub 直链；商店版更新一律由 Microsoft Store 分发。
 - **版本号从 2.0.1 回到 1.0.2**：这是同一条产品线的编号统一，不是功能回退——1.0.2 已包含
   2.0.1 的全部功能与修复。此后商店版与下载版一律按 1.0.x 递增。装了 2.0.1 的用户需要
   **手动下载一次**：程序内「检查更新」按版本号大小比较，不会提示降级后的新号。
@@ -74,9 +75,9 @@
   听《无所谓》可能显示杨坤的词，而且错配结果往往带逐字时间轴，反而会「胜出」。
   现在正确歌手的版本优先；若所有源都找不到该歌手的版本，会在托盘提示并在设置面板显示
   「疑似错配」条，可点「只认当前歌手」强制重取（找不到就显示「暂无歌词」）
-- **检查更新（内置源，开箱即用）**：无需手填地址——主源 GitHub Releases，拉不到时自动依次回退
+- **检查更新（非商店版，内置源，开箱即用）**：无需手填地址——主源 GitHub Releases，拉不到时自动依次回退
   Gitee Releases → Gitee raw 清单 → jsDelivr 清单（国内直连优先），取版本号最高者，
-  任一源失败不影响其它源；下载提供国内网盘镜像与 GitHub 两个渠道；
+  任一源失败不影响其它源；商店版不运行应用内更新；1.0.2 下载暂走 GitHub 直链；
   也可在设置里把更新地址换成自己的 GitHub / Gitee Releases 或通用 JSON 清单（留空即恢复内置源）
 
 ## 可调项（均在设置面板里，自动保存）
