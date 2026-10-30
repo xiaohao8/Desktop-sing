@@ -45,8 +45,10 @@ $LASTEXITCODE
 > （进程秒退、无崩溃事件、文件保留），1.0.2 的 exe 挪到 %TEMP% 同样被杀、
 > 在原目录可跑——证实是**按路径/哈希的可执行拦截**，不是构建缺陷。
 > 对照：`smoke_test.py` 36 项全过、`audit_round3.py` FAIL 0 / WARN 0、
-> PE 版本资源 1.0.3.0、无 UPX 段。**冻结自检（本节 5 项）待用户在
-> Kaspersky / 管家里放行 `dist\Desktop-sing-v1.0.3\` 后补跑**，流程同 1.0.2。
+> PE 版本资源 1.0.3.0、无 UPX 段。
+> **23:56 用户放行后补跑完成**：`--selftest` 退出码 `0`，`selftest.txt`
+> `RESULT PASS`（qt ok / SMTC ok / render ok (5 styles)），主 exe SHA256
+> `04B01F6398611620…` 与 zip 内副本一致——自检未改动产物，硬门槛闭环。
 
 ## 3. PE 静态核对
 
