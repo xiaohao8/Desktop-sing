@@ -25,7 +25,7 @@ scheme is derived from the album art automatically.
   Check with `certutil -hashfile <file> SHA256` (see "Releases and security" below).
 - **No update URL to configure:** the app ships with a built-in update source (GitHub Releases
   first, automatic fallback to a domestic mirror), so it works out of the box.
-- **1.0.2 has no Chinese file-hosting mirror yet:** the update dialog falls back to the GitHub
+- **1.0.3 has no Chinese file-hosting mirror yet:** the update dialog falls back to the GitHub
   download link. Store installs are updated exclusively by Microsoft Store.
 
 ## Features

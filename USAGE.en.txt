@@ -52,13 +52,14 @@ Note: the application interface is currently Simplified Chinese only.
 - To point it at your own repository or manifest: Settings panel -> System -> Update URL. Leave it
   empty to restore the built-in sources.
 - With "Check for updates on launch" enabled, the version is compared on every start. When a new
-  version is found a dialog appears offering two download channels: a mirror and GitHub.
+  version is found a dialog appears offering a download link: the Lanzou mirror when the manifest
+  provides one, otherwise the GitHub direct link.
 - You can also right-click the tray icon -> System -> Check for updates, or click "Check now" in the
   settings panel.
 - Manifest JSON format: {"version":"x.y.z","url":"download link","notes":"release notes"}.
   You may also include the two mirror fields "lanzou_setup" and "lanzou_portable".
-- Version numbering: 1.0.2 and 2.0.1 are the same code. The number was unified with the
-  Store release line, and 1.0.2 already includes every feature and fix from 2.0.1. Users on
+- Version numbering: 1.0.3 and 2.0.1 are the same code. The number was unified with the
+  Store release line, and 1.0.3 already includes every feature and fix from 2.0.1. Users on
   2.0.1 must download once by hand: "Check for updates" compares numbers, so it will not
   offer the renumbered build automatically.
 

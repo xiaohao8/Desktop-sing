@@ -2493,7 +2493,7 @@ FAN_R_FACTOR = 2.6      # 扇形半径 = 行宽 × 该系数（越大越平缓�
 FAN_R_MIN = 380.0       # 扇形半径下限（短句也保留弧度）
 WAVE_AMP = 0.11         # 波浪振幅，相对字号
 
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 
 # LRCLIB 的 User-Agent：Desktop-sing/<版本>，随 APP_VERSION 走（隐私声明里
 # 描述为「自己的名称标识 + 版本号」，改版本不用再动声明）。

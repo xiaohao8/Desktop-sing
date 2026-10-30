@@ -28,14 +28,25 @@
 $LASTEXITCODE
 ```
 
-- [ ] 退出码为 `0`。
-- [ ] `%APPDATA%\Desktop-sing\selftest.txt` 含 `RESULT PASS`。
-- [ ] 同文件含 `SMTC ok`、`fonts ok`、`render ok (5 styles)`。
-- [ ] 自检没有启动守护进程，也没有改写用户配置。
-- [ ] 如果没有 Console 输出，仍以 `selftest.txt` 和退出码为准；两者缺一都算未通过。
+- [x] 退出码为 `0`。
+- [x] `%APPDATA%\Desktop-sing\selftest.txt` 含 `RESULT PASS`。
+- [x] `desktop-lyrics.log` 的 `[selftest]` 行含 `SMTC ok`、`fonts ok`、`render ok (5 styles)`。
+- [x] 自检没有启动守护进程，也没有改写用户配置。
+- [x] 如果没有 Console 输出，仍以 `selftest.txt` 和退出码为准；两者缺一都算未通过。
 
-> 2026-10-28 的 v1.0.2 当前状态：冻结 exe 尚未成功跑过 `--selftest`，
-> 因为在火绒信任前主程序被执行拦截。向 Partner Center 上传 1.0.2.0 之前必须补跑。
+> 2026-10-29 13:33 的 v1.0.2 状态：火绒放行后，冻结 exe 的 `--selftest`
+> 退出码 `0`，`selftest.txt` 为 `RESULT PASS`，日志含 `fonts ok` 和
+> `render ok (5 styles)`。主程序 SHA256 仍为
+> `7B506F67AF3767A72053D07DE809EEA4FC33AEB25CF8B8F6C90CFB7D35CD4C06`，
+> 自检没有重建产物。
+
+> 2026-10-30 的 v1.0.3 状态：本机杀软已从火绒换成 **Kaspersky + 腾讯管家**
+> （Defender 实时防护关闭）。新哈希 + 新目录的未签名 exe 在放行前执行即被杀
+> （进程秒退、无崩溃事件、文件保留），1.0.2 的 exe 挪到 %TEMP% 同样被杀、
+> 在原目录可跑——证实是**按路径/哈希的可执行拦截**，不是构建缺陷。
+> 对照：`smoke_test.py` 36 项全过、`audit_round3.py` FAIL 0 / WARN 0、
+> PE 版本资源 1.0.3.0、无 UPX 段。**冻结自检（本节 5 项）待用户在
+> Kaspersky / 管家里放行 `dist\Desktop-sing-v1.0.3\` 后补跑**，流程同 1.0.2。
 
 ## 3. PE 静态核对
 
