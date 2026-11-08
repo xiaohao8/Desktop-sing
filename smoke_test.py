@@ -430,6 +430,20 @@ def ghost_session_pick():
     c2 = L.MediaWatcher._pick_session(mgr2, "")
     assert c2 is not None
 check("ghost session pick", ghost_session_pick)
+print("[17e] 播放状态归一化：winrt 新投影 str() 是裸数字，必须认 .name")
+def status_name_both_projections():
+    class _NewProj:                    # py3.12 winrt-* 3.2.1：str() 给 '4'
+        name = "PLAYING"
+        def __str__(self):
+            return "4"
+    class _OldProj:                    # py3.8 winsdk：str() 给全限定名
+        def __str__(self):
+            return "GlobalSystemMediaTransportControlsSessionPlaybackStatus.PAUSED"
+    got_new = L._status_name(_NewProj())
+    got_old = L._status_name(_OldProj())
+    assert got_new == "PLAYING", got_new
+    assert got_old == "PAUSED", got_old
+check("status name both projections", status_name_both_projections)
 print("[18] 字体库国内镜像回退（主站挂 → 落镜像；全挂 → 抛错）")
 def mirror_fallback():
     import io, urllib, urllib.request as _ureq, urllib.error as _uerr

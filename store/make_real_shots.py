@@ -86,7 +86,7 @@ def compose_card(src_names, out_name, fg_scale, blur=28, darken=0.45, gap=56):
         fgs = srcs
 
     scaled = [_rounded(_cover(f, int(f.width * fg_scale), int(f.height * fg_scale))
-                       if fg_scale > 1 else f, 18) for f in fgs]
+                       if fg_scale != 1 else f, 18) for f in fgs]
     total_w = sum(f.width for f in scaled) + gap * (len(scaled) - 1)
     x = (W - total_w) // 2
     for f in scaled:
@@ -95,6 +95,30 @@ def compose_card(src_names, out_name, fg_scale, blur=28, darken=0.45, gap=56):
         canvas.alpha_composite(f, (x, y))
         x += f.width + gap
 
+    out = canvas.convert("RGB")
+    dst = os.path.join(OUT, out_name)
+    out.save(dst, "PNG", optimize=True)
+    print("  -> %s (%dx%d, %d KB)" % (os.path.relpath(dst, BASE), out.width, out.height,
+                                      os.path.getsize(dst) // 1024))
+
+
+def compose_over(bg_name, fg_name, out_name, fg_w, bg_crop=None):
+    """壁纸底 + 前景卡片：bg 全屏 cover+模糊+压暗，fg（带 alpha）按目标宽居中。
+
+    为 real-5-idle 而设：旧真机照片里的「等待播放…」文案已过时（1.0.3 起为
+    双语「桌面歌词已就绪 · Ready」，规避审核 10.1.2.10 误判），前景改用
+    render_panel_shots.py 离屏重渲的胶囊，壁纸底沿用旧照片保持观感连续。"""
+    bg_src = Image.open(os.path.join(SRC, bg_name)).convert("RGB")
+    if bg_crop:                          # 避开旧截图里已过时的胶囊区域，只取干净壁纸
+        bg_src = bg_src.crop(bg_crop)
+    canvas = _cover(bg_src, W, H).filter(ImageFilter.GaussianBlur(28))
+    canvas = ImageEnhance.Brightness(canvas).enhance(0.55).convert("RGBA")
+    fg = Image.open(os.path.join(SRC, fg_name)).convert("RGBA")
+    if fg.width != fg_w:
+        fg = fg.resize((fg_w, max(1, int(fg.height * fg_w / fg.width))), Image.LANCZOS)
+    _drop_shadow(canvas, ((W - fg.width) // 2 + 4, (H - fg.height) // 2 + 10,
+                          (W - fg.width) // 2 + fg.width + 4, (H - fg.height) // 2 + fg.height + 10))
+    canvas.alpha_composite(fg, ((W - fg.width) // 2, (H - fg.height) // 2))
     out = canvas.convert("RGB")
     dst = os.path.join(OUT, out_name)
     out.save(dst, "PNG", optimize=True)
@@ -120,8 +144,9 @@ def main():
     compose_card(["real-03-native.png"], "real-2-native-float.png", fg_scale=1.6)
     compose_fullbleed("real-04-screensaver.png", "real-3-screensaver.png")
     compose_card(["real-05-settings-saver.png", "real-06-settings-sync.png"],
-                 "real-4-settings.png", fg_scale=1.02, gap=48)
-    compose_card(["real-01-idle.png"], "real-5-idle.png", fg_scale=1.9)
+                 "real-4-settings.png", fg_scale=0.90, gap=48)   # 面板 1140 高，>1 会把头部版本徽章裁出画外
+    compose_over("real-01-idle.png", "real-01b-idle-bar.png", "real-5-idle.png",
+                 fg_w=560, bg_crop=(0, 170, 605, 239))
     print("完成。5 张都在 store/shots/（≥1366x768，可直接上传 Partner Center）")
 
 

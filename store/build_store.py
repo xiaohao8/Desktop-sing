@@ -24,6 +24,7 @@
       微软会用它自己的证书重签；本地自签测试见 README-STORE.md）。
 """
 import argparse
+import io
 import hashlib
 import json
 import os
@@ -433,6 +434,25 @@ def run_wack(msix_path: str):
     print(out[-1500:] if out.strip() else "[WACK] 无输出，退出码 %d" % r.returncode)
 
 
+def _update_notes_block(version: str) -> str:
+    """「此版本中的更改」填什么：更新提交必填，直接取 update.json 的 notes；
+    清单没跟上（版本不一致/文件缺失）时给出保守回落，避免误提交空更新说明。"""
+    uj = os.path.join(ROOT, "update.json")
+    try:
+        with io.open(uj, encoding="utf-8") as f:
+            data = json.load(f)
+        if str(data.get("version", "")).strip() == version and data.get("notes"):
+            notes = str(data["notes"])
+            # 「更新源说明：…」是 update.json 面向镜像机制的元信息，
+            # 对商店审核员无意义，别让它混进「此版本中的更改」表单。
+            notes = notes.split("更新源说明：")[0].rstrip()
+            return ("更新提交必填。直接粘贴（已按 update.json 自动同步）：\n"
+                    "```\n%s\n```" % notes)
+    except Exception:
+        pass
+    return "首次提交可留空；**更新提交必填**（update.json 版本与 APP_VERSION 不一致，未能自动读取，请手填本版更新日志）。"
+
+
 def export_listing(version: str, site_url: str = "", display_name: str = "") -> str:
     """把提审要往上贴的文案导出成一个 Markdown，免得到时手忙脚乱。
 
@@ -487,8 +507,8 @@ def export_listing(version: str, site_url: str = "", display_name: str = "") -> 
 ## 4. 搜索词（≤ 7 个，不得含价格词、不得用他人品牌名）
 `桌面歌词、歌词、悬浮歌词、卡拉OK、逐字歌词、桌面工具、音乐`
 
-## 5. 版本说明（首次提交留空）
-首次提交留空即可。
+## 5. 版本说明（「此版本中的更改」字段）
+{_update_notes_block(version)}
 
 ## 6. 受限功能说明（runFullTrust）★ 必填，别贴长的
 Partner Center 提示「需要请求批准才能使用受限功能 runFullTrust」，这是正常预警。
@@ -511,7 +531,7 @@ Partner Center 提示「需要请求批准才能使用受限功能 runFullTrust�
 2. `real-2-native-float.png` 原生浮字（无边框歌词铺在桌面）
 3. `real-3-screensaver.png` 全屏屏保（时间 + 歌词）
 4. `real-4-settings.png`    设置面板 ×2 并排
-5. `real-5-idle.png`        等待播放态
+5. `real-5-idle.png`        已就绪待机态（双语「桌面歌词已就绪 · Ready」）
 
 重合成（原图留档在 `store/shots/src/`）：
 `.buildenv\\Scripts\\python.exe store\\make_real_shots.py`

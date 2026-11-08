@@ -2202,6 +2202,20 @@ def _live_pos(raw_pos: float, last_updated, status: str, now: float = None) -> f
     return raw_pos
 
 
+def _status_name(ps) -> str:
+    """把 SMTC PlaybackStatus 归一化成 'PLAYING'/'PAUSED'/… 这类短名。
+
+    两代投影的 str() 行为不一样：py3.8 的 winsdk 给「全限定名」
+    （…PlaybackStatus.PLAYING），py3.12 的 winrt-* 3.2.1 却给裸数字（'4'）——
+    1.0.4 构建曾因此把「正在播放」判成非播放，歌词整体冻结。
+    枚举的 .name 在两代投影里都稳定，优先取它，str() 只作兜底。
+    """
+    name = getattr(ps, "name", None)
+    if isinstance(name, str) and name:
+        return name
+    return str(ps).split(".")[-1]
+
+
 # 会话切换防抖 / 陈旧判定（修复抖音网页版 SMTC 会话每秒闪烁导致跳到陈旧 QQ 音乐会话）
 SESSION_HYSTERESIS = 8.0     # 秒：当前会话刚消失时，多久内拒绝切换到「非播放」候选
 STALE_SESSION_AGE = 90.0     # 秒：未播放且时间线超过此陈旧度的会话视为「无有效播放」
@@ -2262,8 +2276,8 @@ class MediaWatcher(QObject):
 
         def score(s):
             try:
-                st = str(s.get_playback_info().playback_status)
-                playing = "PLAYING" in st
+                st = _status_name(s.get_playback_info().playback_status)
+                playing = st == "PLAYING"
                 src = (s.source_app_user_model_id or "").lower()
                 music_app = any(k in src for k in ("qq", "cloudmusic", "spotify",
                                                    "wmplayer", "zune", "foobar"))
@@ -2320,8 +2334,8 @@ class MediaWatcher(QObject):
                     await asyncio.sleep(1.0)
                     continue
                 sid = session.source_app_user_model_id or ""
-                status = str(session.get_playback_info().playback_status)
-                playing = "PLAYING" in status
+                status = _status_name(session.get_playback_info().playback_status)
+                playing = status == "PLAYING"
                 tl = session.get_timeline_properties()
                 age = self._lut_age(tl)
                 # ① 陈旧且未播放（如 QQ 音乐异常残留、用户已切走的暂停会话）视作
@@ -2381,7 +2395,7 @@ class MediaWatcher(QObject):
                         # 歌曲总时长：歌词多源择优时用来判断"末行是否贴合全长"
                         "duration": max(0.0, _to_seconds(tl.end_time)),
                     })
-                status = str(session.get_playback_info().playback_status).split(".")[-1]
+                status = _status_name(session.get_playback_info().playback_status)
                 raw_pos = _to_seconds(tl.position)
                 age = self._lut_age(tl)
                 dur = _to_seconds(tl.end_time)
