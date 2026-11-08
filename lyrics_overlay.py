@@ -758,6 +758,33 @@ def http_get(url: str, headers=None, timeout: float = 8.0) -> bytes:
     raise first_err
 
 
+def http_post(url: str, data: bytes, headers=None, timeout: float = 8.0) -> bytes:
+    """POST 取回响应字节。与 http_get 同一套出口策略（直连优先，失败退系统代理）。
+
+    之前 QQ/网易的加密 POST 是裸调 urlopen，永远吃系统代理——用户开着 Clash 时
+    这三个口全被塞进代理，代理一慢（实测 9~10s/请求）就直接爆掉 1.8s 的国内源
+    预算，全源空手而归且一行日志都没有。收编到这里统一走直连优先。
+    """
+    req = urllib.request.Request(url, data=data,
+                                 headers={"User-Agent": BROWSER_UA, **(headers or {})})
+    global _NET_MODE
+    order = ("direct", "proxy") if _NET_MODE == "direct" else ("proxy", "direct")
+    first_err = None
+    for mode in order:
+        if mode == "proxy" and not _system_proxy_set():
+            continue
+        try:
+            with _opener(mode == "proxy").open(req, timeout=timeout) as resp:
+                body = resp.read()
+            with _net_lock:
+                _NET_MODE = mode
+            return body
+        except Exception as e:
+            if first_err is None:
+                first_err = e
+    raise first_err
+
+
 # ======================================================================
 # 检查更新：版本比较 + 更新清单解析（GitHub Releases / 通用 JSON 清单）
 # ======================================================================
@@ -950,12 +977,11 @@ def fetch_qq_search(query: str, timeout: float = 8.0):
             "param": {"search_type": 0, "query": query, "page_num": 1, "num_per_page": 10},
         }
     }).encode("utf-8")
-    req = urllib.request.Request(
-        "https://u.y.qq.com/cgi-bin/musicu.fcg", data=payload,
-        headers={"User-Agent": BROWSER_UA, "Referer": "https://y.qq.com/",
-                 "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = json.loads(resp.read().decode("utf-8", "ignore"))
+    data = json.loads(http_post(
+        "https://u.y.qq.com/cgi-bin/musicu.fcg", payload,
+        headers={"Referer": "https://y.qq.com/",
+                 "Content-Type": "application/json"},
+        timeout=timeout).decode("utf-8", "ignore"))
     items = (((data.get("req") or {}).get("data") or {}).get("body") or {}).get("song") or {}
     results = []
     for it in items.get("list") or []:
@@ -1020,13 +1046,12 @@ def _weapi_post(path: str, payload: dict, timeout: float = 8.0):
     m = int.from_bytes(rnd[::-1].encode("ascii"), "big")
     enc_sec_key = ("%x" % pow(m, int(_WEAPI_PUB_E, 16), int(_WEAPI_PUB_N, 16))).zfill(256)
     body = urllib.parse.urlencode({"params": params, "encSecKey": enc_sec_key}).encode("ascii")
-    req = urllib.request.Request(
-        "https://music.163.com" + path, data=body,
-        headers={"User-Agent": BROWSER_UA, "Referer": "https://music.163.com/",
+    return json.loads(http_post(
+        "https://music.163.com" + path, body,
+        headers={"Referer": "https://music.163.com/",
                  "Content-Type": "application/x-www-form-urlencoded",
-                 "Cookie": "os=pc; appver=2.9.7"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8", "ignore"))
+                 "Cookie": "os=pc; appver=2.9.7"},
+        timeout=timeout).decode("utf-8", "ignore"))
 
 
 def netease_pic_id_to_url(pic_id) -> str:
@@ -1080,13 +1105,12 @@ def fetch_netease_search_plain(query: str, timeout: float = 8.0):
     """老版网易云搜索接口（未加密；未登录时排序差，仅作降级）"""
     body = urllib.parse.urlencode(
         {"s": query, "type": 1, "offset": 0, "limit": 20, "total": "true"}).encode("utf-8")
-    req = urllib.request.Request(
-        "https://music.163.com/api/search/get/web", data=body,
-        headers={"User-Agent": BROWSER_UA, "Referer": "https://music.163.com/",
+    data = json.loads(http_post(
+        "https://music.163.com/api/search/get/web", body,
+        headers={"Referer": "https://music.163.com/",
                  "Content-Type": "application/x-www-form-urlencoded",
-                 "Cookie": "os=pc; appver=2.9.7"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = json.loads(resp.read().decode("utf-8", "ignore"))
+                 "Cookie": "os=pc; appver=2.9.7"},
+        timeout=timeout).decode("utf-8", "ignore"))
     return (data.get("result") or {}).get("songs") or []
 
 
@@ -2026,6 +2050,13 @@ def fetch_lyrics(title: str, artist: str, prefer_netease: bool = False,
     query = "%s %s" % (title_c, artist_c) if artist_c else title_c
     lines, words, trans, cover_url, used_src, by_src, singer_ok = _gather_sources(
         query, title_c, artist_c, duration, prefer_netease)
+    if not lines:
+        # 全源空手以前是静默的——用户只看到「不出歌词」，日志里却查无实据。
+        # 落一行各源返回情况，事后一眼定位是「都没通」还是「通了但没匹配到」。
+        log("歌词：全部源均无结果 %s - %s（各源返回 %s）"
+            % (title_c, artist_c,
+               " ".join("%s=%d" % (s, len((c or {}).get("lines") or []))
+                        for s, c in (by_src or {}).items()) or "预算内无一响应"))
     if lines and (not words or not trans) and used_src != "netease":
         # 缺逐字 / 翻译时借网易云同版本时间轴（同一录音版本一致）；
         # 网易云已经在并行结果里了，这里只是取用，不发新请求。
@@ -2493,7 +2524,7 @@ FAN_R_FACTOR = 2.6      # 扇形半径 = 行宽 × 该系数（越大越平缓�
 FAN_R_MIN = 380.0       # 扇形半径下限（短句也保留弧度）
 WAVE_AMP = 0.11         # 波浪振幅，相对字号
 
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 
 # LRCLIB 的 User-Agent：Desktop-sing/<版本>，随 APP_VERSION 走（隐私声明里
 # 描述为「自己的名称标识 + 版本号」，改版本不用再动声明）。
