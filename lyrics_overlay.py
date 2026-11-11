@@ -938,16 +938,33 @@ _CREDIT_LOOSE = re.compile(
 #   3. 长度差 ≤12 且较短侧不短于较长侧的 1/3（排除「我 - 远远的太阳」这类不对称歌词）。
 # 另：整行**含句末标点一律放过**——「我想 - 你想，」是歌词，「周杰伦 - 起风了」不是。
 _SIDE = r"[^\s，。！？、,.!?；;：:](?:[^\s，。！？、,.!?；;：:]+[ ]?){0,22}[^\s，。！？、,.!?；;：:]"
-# 命名组：两侧量词里含 {} 分隔，编号组在重复代入后不好定位
-_TITLE_LINE_PAT = re.compile(
-    r"^\s*(?P<l>" + _SIDE + r")\s+-\s+(?P<r>" + _SIDE + r")\s*$")
+# ⚠️ 上面这个 _SIDE 正则**已废弃、不再使用**（保留仅作历史注释）：
+# 嵌套量词 `(?:S+[ ]?){0,22}` 的每段 S+ 都可任意伸缩，对超长无标点行
+# （异常源返回的 HTML/base64/URL 片段）会发生正则灾难回溯——单次 match
+# 永不返回，worker 线程霸占 GIL，主线程被饿死，整个 UI 冻结点不动
+# （2026-11-11 py-spy 实锤：worker 卡在 match 上 3 次采样纹丝不动，
+#  心跳日志停 9 分钟，用户「什么都点不动」）。标题行判断已改为
+# is_info_line 里的手写线性解析（split + 逐侧检查），零回溯。
 
 _INFO_PAT = re.compile(r"未经.{0,8}(许可|允许)|不得翻唱|不得用于|翻录|著作权|版权|本歌词由|歌词制作|"
                        r"酷狗音乐|QQ音乐|网易云音乐|纯音乐请欣赏")
 
+# 标题行分隔：「A - B」两侧的连字符必须被空白包住（避免误伤「G弦上的咏叹调」这类）
+_TITLE_DASH = re.compile(r"\s+-\s+")
+# 侧内不允许出现的字符：句读/分隔标点（与整行检查一致的扩展），连续空白
+_SIDE_BAD = re.compile(r"\s\s|[，。！？、,.!?；;：:]")
+
 
 def is_info_line(text: str) -> bool:
-    """是否为信息行（不是真正要唱的歌词）"""
+    """是否为信息行（不是真正要唱的歌词）
+
+    标题行「A - B」判断用手写线性解析，**绝不能改回嵌套量词正则**——
+    灾难回溯会冻死整个程序（详见 _SIDE 注释处的 2026-11-11 事故）。
+    手写版判定语义与原正则一致（整行形如 A - B、两侧非空不含句末标点、
+    至少一侧 ≥3 字、长度差 ≤12 且短侧 ≥ 长侧 1/3），差异只在：
+    行内出现**多个** " - " 时（如「A - B - C」），原正则可把「B - C」
+    整体当右侧，手写版按"宁漏删不误删"原则直接放过，不当作标题行。
+    """
     t = (text or "").strip()
     if not t:
         return False
@@ -956,10 +973,16 @@ def is_info_line(text: str) -> bool:
     # 含句末标点就放过——「我想 - 你想，」是歌词，「周杰伦 - 起风了」不是标题行
     if re.search(r"[，。！？、,.!?；;：:]", t):
         return False
-    m = _TITLE_LINE_PAT.match(t)
-    if not m:
+    parts = _TITLE_DASH.split(t)
+    if len(parts) != 2:
         return False
-    a, b = len(m.group("l")), len(m.group("r"))
+    l, r = parts[0].strip(), parts[1].strip()
+    if not l or not r:
+        return False
+    # 原 _SIDE 要求侧内无连续空白、无分隔标点（词间单个空格是允许的）
+    if _SIDE_BAD.search(l) or _SIDE_BAD.search(r):
+        return False
+    a, b = len(l), len(r)
     if max(a, b) < 3:                     # 两侧都 2 字 → 多半是对仗歌词
         return False
     if abs(a - b) > 12 or min(a, b) < max(a, b) / 3.0:
