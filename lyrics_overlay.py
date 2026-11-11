@@ -1160,6 +1160,7 @@ def fetch_netease_lyric_full(song_id: str, timeout: float = 8.0):
 
 _LRCLIB_HOST = "lrclib.net"
 _lrclib_ip_lock = threading.Lock()
+_lrclib_good_ip = None      # 上次成功的 Cloudflare IP（进程内记忆，热路径直接用它）
 
 
 def _lrclib_get_via_ips(url: str, timeout: float = 6.0) -> bytes:
@@ -1174,6 +1175,7 @@ def _lrclib_get_via_ips(url: str, timeout: float = 6.0) -> bytes:
     全局解析被永久定向到某个 IP 上）。
     """
     import socket
+    global _lrclib_good_ip
     p = urllib.parse.urlparse(url)
     host = p.hostname or _LRCLIB_HOST
     ips = []
@@ -1185,6 +1187,12 @@ def _lrclib_get_via_ips(url: str, timeout: float = 6.0) -> bytes:
         pass
     if not ips:
         ips = [host]                      # 解析失败：交给系统默认路径
+    # 好 IP 记忆：上次成功的 IP 排到首位（即使已不在本次 DNS 结果里也先试），
+    # 热路径省掉「先踩坏 IP 等 6s 超时」的冤枉时间。
+    if _lrclib_good_ip:
+        if _lrclib_good_ip in ips:
+            ips.remove(_lrclib_good_ip)
+        ips.insert(0, _lrclib_good_ip)
     last = None
     orig = socket.getaddrinfo
     with _lrclib_ip_lock:
@@ -1198,14 +1206,35 @@ def _lrclib_get_via_ips(url: str, timeout: float = 6.0) -> bytes:
                 req = urllib.request.Request(url,
                                              headers={"User-Agent": _LRCLIB_UA})
                 with _opener(False).open(req, timeout=timeout) as r:
-                    return r.read()
+                    data = r.read()
+                _lrclib_good_ip = ip
+                return data
             except Exception as e:
                 last = e
             finally:
                 socket.getaddrinfo = orig
+    _lrclib_good_ip = None               # 全挂：清掉记忆，下轮重新试
     if last is None:
         raise RuntimeError("lrclib 逐 IP 直连没有可用地址")
     raise last
+
+
+def _lrclib_fetch_json(url: str, timeout: float) -> bytes:
+    """按「好 IP 记忆 → 常规两路（直连/代理）→ 逐 IP 兜底」顺序取回响应体。
+
+    热路径（本进程已成功过一次）：直接打记住的好 IP，出词 ~3s；
+    冷启动：先走通用 http_get（含系统代理，代理好时更快），失败再逐 IP。
+    """
+    global _lrclib_good_ip
+    if _lrclib_good_ip:
+        try:
+            return _lrclib_get_via_ips(url, timeout=max(timeout, 6.0))
+        except Exception:
+            pass
+    try:
+        return http_get(url, headers={"User-Agent": _LRCLIB_UA}, timeout=timeout)
+    except Exception:
+        return _lrclib_get_via_ips(url, timeout=max(timeout, 6.0))
 
 
 def fetch_lrclib_candidates(title: str, artist: str, timeout: float = 8.0):
@@ -1218,14 +1247,7 @@ def fetch_lrclib_candidates(title: str, artist: str, timeout: float = 8.0):
     try:
         url = ("https://lrclib.net/api/search?track_name=%s&artist_name=%s"
                % (urllib.parse.quote(title), urllib.parse.quote(artist)))
-        try:
-            data = json.loads(http_get(url, headers={"User-Agent": _LRCLIB_UA},
-                                       timeout=timeout).decode("utf-8", "ignore"))
-        except Exception:
-            # 直连 / 系统代理两路全挂：lrclib 走 Cloudflare，可能有「握手成功
-            # 但响应数据被黑洞」的坏 IP 路径——逐 IP 直连完整请求避开它。
-            data = json.loads(_lrclib_get_via_ips(
-                url, timeout=max(timeout, 6.0)).decode("utf-8", "ignore"))
+        data = json.loads(_lrclib_fetch_json(url, timeout).decode("utf-8", "ignore"))
     except Exception:
         log("LRCLIB search failed: " + traceback.format_exc())
         return out
@@ -5632,6 +5654,11 @@ class LyricOverlay(QWidget):
         """
         if self.lines:
             return "♪ " + self._title_text()
+        # 歌词全部源失败、自动重试进行中：别再显示「纯音乐或暂无歌词」——
+        # 那会让用户以为这首歌本来没词，实际是网络没连上（2026-11-11 实测：
+        # 本机到 Cloudflare 整段不通时，欧美歌就是这个表现）。
+        if getattr(self, "_retry_timer", None) is not None and self._retry_timer.isActive():
+            return "♪ 歌词获取失败，正在自动重试…"
         return self.NO_LYRIC_HINT
 
     def _tr_text(self) -> str:
