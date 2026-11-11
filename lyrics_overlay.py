@@ -36,7 +36,7 @@ import urllib.request
 import zlib
 
 from PySide6.QtCore import (
-    QObject, QPropertyAnimation, Qt, QTimer, QPointF, QPoint,
+    QObject, QPropertyAnimation, Qt, QTimer, QPointF, QPoint, QEvent,
     QRectF, QEasingCurve, QVariantAnimation, Signal, QSize, QUrl,
 )
 from PySide6.QtGui import (
@@ -7700,6 +7700,38 @@ class AmbientSaver(QWidget):
         p.end()
 
 
+class _WheelToScroll(QObject):
+    """设置面板滚轮守卫：滚动页面时，数值控件不许抢走滚轮改值。
+
+    Qt 的 QSlider / QComboBox 默认在滚轮落到自己身上时**直接改值并 accept
+    事件**——用户想滚动设置页，指针滑过「字体」「透明度」等控件，字体和
+    透明度就被悄悄改掉，页面还滚不动（2026-11-11 用户实测）。这里把这类
+    控件的 Wheel 事件统一转交给滚动区域的垂直滚动条：QAbstractScrollArea
+    内部本来就是把滚轮事件转给滚动条处理的，所以滚动手感与原生一致，
+    且滑条/下拉框的值纹丝不动。想改值请拖动滑条或点开下拉框。
+
+    ⚠️ 守卫对象只能是「会吞滚轮的输入控件」，别把 QScrollBar 也装进来：
+       转发目标就是它，装上会自己转给自己死循环。
+    ⚠️ 下拉框展开后的弹层是独立顶层窗口，滚轮事件不经过 combo，
+       所以弹层里照常滚动选项列表，不受影响。
+    """
+
+    _GUARDED = (QSlider, QComboBox)
+
+    def __init__(self, scroll: QScrollArea):
+        super().__init__(scroll)
+        self._scroll = scroll
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.Wheel and isinstance(obj, self._GUARDED):
+            sb = self._scroll.verticalScrollBar()
+            # 事件对象里的 pos 是相对原控件的，QScrollBar::wheelEvent 只用
+            # angleDelta/pixelDelta 计算步进，不看坐标，直接转发是安全的。
+            QApplication.sendEvent(sb, ev)
+            return True
+        return super().eventFilter(obj, ev)
+
+
 class SettingsPanel(QWidget):
     """设置面板：卡片式现代 UI（开关 / 分段选择器 / 字体库 / 屏保 / 系统）"""
 
@@ -8162,6 +8194,15 @@ class SettingsPanel(QWidget):
         # 面板里所有下拉框统一修一次弹层白边（原因见 fix_combo_popup 的注释）
         for cb in self.findChildren(QComboBox):
             fix_combo_popup(cb)
+
+        # 滚轮守卫：**必须在所有控件建完之后装**（findChildren 拿的是当前快照）。
+        # 2026-11-11 用户实测：滚动设置页时指针滑过「字体」「透明度」，
+        # 字体被换、透明度被改，页面还滚不动 —— QSlider / QComboBox 默认
+        # 吞掉滚轮直接改值。装守卫后滚轮一律转给页面滚动条，值纹丝不动。
+        self._scroll_area = scroll
+        self._wheel_guard = _WheelToScroll(scroll)
+        for w in self.findChildren(QSlider) + self.findChildren(QComboBox):
+            w.installEventFilter(self._wheel_guard)
 
     # ---------- 字体库 ----------
 
