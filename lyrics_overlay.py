@@ -1959,7 +1959,15 @@ def _gather_sources(query, title_c, artist_c, duration, prefer_netease):
     """
     import queue as _queue
 
-    order = ("netease", "qq", "kugou") if prefer_netease else ("qq", "netease", "kugou")
+    # 源优先级固定网易云第一。实测基准（2026-11-11，本机，各 3 采样）：
+    #   网易云  中文 0.20+0.09s / 欧美 0.22+0.09s，3/3 全命中；weapi 通道
+    #           0.4s 内给「正文 + 逐字 YRC + 翻译」满配；
+    #   酷狗    0.32 / 0.44s，3/3；
+    #   QQ      中文 0.47s 可用，但欧美歌 0.12s 搜到却 0/3 拿不到歌词；
+    #   lrclib  13~17s，仅 1/3 命中（本机到 Cloudflare 不稳定）。
+    # rank 只用于「分数完全同分」时的排序，不改变并行竞速——所以固定网易云
+    # 优先不会有副作用，只在同分时选质量更好的那份。
+    order = ("netease", "qq", "kugou")
     srcs = order + ("lrclib",)
     rank = dict((s, i) for i, s in enumerate(order))
     rank["lrclib"] = len(order)
