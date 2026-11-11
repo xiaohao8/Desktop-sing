@@ -2036,9 +2036,13 @@ def _gather_sources(query, title_c, artist_c, duration, prefer_netease):
         # 第二轮：没结果 / 缺逐字时，才等 LRCLIB 兜底。循环收队列直到拿到
         # lrclib 或窗口关闭——窗口放宽（_FETCH_LRCLIB_BUDGET）后，国内源
         # 迟到的结果可能先插队，只 get 一次会把 lrclib 的结果永远丢掉。
+        # ⚠️ 已有正文（只缺逐字）时必须沿用短窗口 _FETCH_BUDGET：否则网易云
+        # 0.4s 就拿到正文+翻译的歌，也要等满 18s 才上屏（2026-11-11 实测：
+        # Welcome to Wonderland 网易云行级歌词齐全，但老接口没有逐字）。
         if (not lines or not words) and "lrclib" not in by_src:
+            wait_until = t0 + (_FETCH_BUDGET if lines else _FETCH_LRCLIB_BUDGET)
             while "lrclib" not in by_src:
-                left = (t0 + _FETCH_LRCLIB_BUDGET) - time.time()
+                left = wait_until - time.time()
                 if left <= 0:
                     break
                 try:
