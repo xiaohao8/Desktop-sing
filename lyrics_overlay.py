@@ -951,8 +951,10 @@ _INFO_PAT = re.compile(r"未经.{0,8}(许可|允许)|不得翻唱|不得用于|�
 
 # 标题行分隔：「A - B」两侧的连字符必须被空白包住（避免误伤「G弦上的咏叹调」这类）
 _TITLE_DASH = re.compile(r"\s+-\s+")
-# 侧内不允许出现的字符：句读/分隔标点（与整行检查一致的扩展），连续空白
-_SIDE_BAD = re.compile(r"\s\s|[，。！？、,.!?；;：:]")
+# 侧内不允许出现的字符：句读/分隔标点、连续空白、以及「非空格的空白」
+# （Tab/换行等）。原正则 _SIDE 只允许词间**单个空格**，若这里只查 `\s\s`，
+# 「周杰\t伦 - 起风了」这类行会被误判成标题行删掉（2026-11-11 回归核对发现）。
+_SIDE_BAD = re.compile(r"\s\s|[^\S ]|[，。！？、,.!?；;：:]")
 
 
 def is_info_line(text: str) -> bool:
@@ -7727,7 +7729,14 @@ class _WheelToScroll(QObject):
             sb = self._scroll.verticalScrollBar()
             # 事件对象里的 pos 是相对原控件的，QScrollBar::wheelEvent 只用
             # angleDelta/pixelDelta 计算步进，不看坐标，直接转发是安全的。
+            before = sb.value()
             QApplication.sendEvent(sb, ev)
+            # ⚠️ Qt 的 QScrollBar::wheelEvent **只认 angleDelta**：精确式触控板
+            # 在部分驱动下只给 pixelDelta（angleDelta=0），转发过去会被整个吞掉，
+            # 页面一动不动（2026-11-11 端到端实测：0/max=1518 仍停在 0）。
+            # 兜底按像素补滚；若 Qt 已处理过（值变了）就不重复滚。
+            if sb.value() == before and ev.pixelDelta().y():
+                sb.setValue(before - ev.pixelDelta().y())
             return True
         return super().eventFilter(obj, ev)
 

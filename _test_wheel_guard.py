@@ -60,8 +60,9 @@ def make_panel(guard: bool):
             w.installEventFilter(g)
     return scroll, slider, combo
 
-def wheel(widget, dy=-120):
-    ev = QWheelEvent(QPointF(8, 8), QPointF(8, 8), QPoint(0, 0), QPoint(0, dy),
+def wheel(widget, dy=-120, pixels=0):
+    ev = QWheelEvent(QPointF(8, 8), QPointF(8, 8),
+                     QPoint(0, pixels), QPoint(0, dy),
                      Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
     QApplication.sendEvent(widget, ev)
     app.processEvents()
@@ -89,6 +90,15 @@ after_down = sb.value()
 wheel(slider, 120)   # 反向滚
 chk("反向滚轮能滚回去", sb.value() < after_down, True)
 chk("反向滚轮后滑条值仍不变", slider.value(), before_sl)
+
+# 精确式触控板：部分驱动只给 pixelDelta（angleDelta=0），
+# QScrollBar::wheelEvent 不认它，守卫必须按像素补滚，否则页面滑不动。
+sb.setValue(sb.minimum())
+px0 = sb.value()
+wheel(combo, 0, pixels=-60)
+chk("pixelDelta 不改值", (slider.value(), combo.currentIndex()),
+    (before_sl, before_cb))
+chk("pixelDelta 仍能滚动页面", sb.value() > px0, True)
 
 # ---- 3) 非滚轮事件不受影响（过滤器必须放行） ----
 from PySide6.QtCore import QEvent as _QE

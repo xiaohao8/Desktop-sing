@@ -8,7 +8,7 @@ _CREDIT_PAT = re.compile(
     r"|lyric|by\s*[::]|制作|歌词", re.I)  # 简化版，仅测标题行逻辑用不到它
 _INFO_PAT = re.compile(r"(?!x)x")          # 永不匹配：专注测标题行逻辑
 _TITLE_DASH = re.compile(r"\s+-\s+")
-_SIDE_BAD = re.compile(r"\s\s|[，。！？、,.!?；;：:]")
+_SIDE_BAD = re.compile(r"\s\s|[^\S ]|[，。！？、,.!?；;：:]")
 
 def is_info_line(text):
     t = (text or "").strip()
@@ -93,6 +93,8 @@ align_cases = [
     "Taylor Swift - Love Story",
     "一二三四五六七八九十 - 一二三四五六七八九十",
     "loser - 来吧 亲爱的",
+    "周杰\t伦 - 起风了",
+    "A\tB - 起风了吧",
 ]
 print("== 行为对齐（新旧实现对比） ==")
 for t in align_cases:
