@@ -1158,6 +1158,56 @@ def fetch_netease_lyric_full(song_id: str, timeout: float = 8.0):
 # 版本号跟随 APP_VERSION 动态生成，见 APP_VERSION 定义处的 _LRCLIB_UA。
 
 
+_LRCLIB_HOST = "lrclib.net"
+_lrclib_ip_lock = threading.Lock()
+
+
+def _lrclib_get_via_ips(url: str, timeout: float = 6.0) -> bytes:
+    """lrclib 专用 GET：解析域名的全部 IP，逐个直连完整请求，命中即返回。
+
+    背景（2026-11-11 实测）：lrclib.net 在 Cloudflare 后面，DNS 返回 2 个 IP，
+    且好坏随时间互换——存在「TCP/TLS 握手都成功、但响应数据被黑洞」的坏路径。
+    urllib 只在 TCP 连接层换 IP（create_connection 按序尝试），握手一旦成功，
+    数据超时它就无能为力，表现为同一首歌反复 read timeout。这里逐 IP 发
+    完整请求并读回响应，主动避开坏路径。
+    串行锁保证并发切歌时不会嵌套替换 socket.getaddrinfo（否则 patch 会泄漏，
+    全局解析被永久定向到某个 IP 上）。
+    """
+    import socket
+    p = urllib.parse.urlparse(url)
+    host = p.hostname or _LRCLIB_HOST
+    ips = []
+    try:
+        for _af, _t, _pr, _c, sa in socket.getaddrinfo(host, 443, socket.AF_INET):
+            if sa[0] not in ips:
+                ips.append(sa[0])
+    except Exception:
+        pass
+    if not ips:
+        ips = [host]                      # 解析失败：交给系统默认路径
+    last = None
+    orig = socket.getaddrinfo
+    with _lrclib_ip_lock:
+        for ip in ips:
+            try:
+                def _patched(h, *a, **kw):
+                    if h == host:
+                        h = ip
+                    return orig(h, *a, **kw)
+                socket.getaddrinfo = _patched
+                req = urllib.request.Request(url,
+                                             headers={"User-Agent": _LRCLIB_UA})
+                with _opener(False).open(req, timeout=timeout) as r:
+                    return r.read()
+            except Exception as e:
+                last = e
+            finally:
+                socket.getaddrinfo = orig
+    if last is None:
+        raise RuntimeError("lrclib 逐 IP 直连没有可用地址")
+    raise last
+
+
 def fetch_lrclib_candidates(title: str, artist: str, timeout: float = 8.0):
     """LRCLIB 候选（免费、无需鉴权）：返回 [{lines, words, trans, duration, raw, name, artist}]
 
@@ -1168,8 +1218,14 @@ def fetch_lrclib_candidates(title: str, artist: str, timeout: float = 8.0):
     try:
         url = ("https://lrclib.net/api/search?track_name=%s&artist_name=%s"
                % (urllib.parse.quote(title), urllib.parse.quote(artist)))
-        data = json.loads(http_get(url, headers={"User-Agent": _LRCLIB_UA},
-                                   timeout=timeout).decode("utf-8", "ignore"))
+        try:
+            data = json.loads(http_get(url, headers={"User-Agent": _LRCLIB_UA},
+                                       timeout=timeout).decode("utf-8", "ignore"))
+        except Exception:
+            # 直连 / 系统代理两路全挂：lrclib 走 Cloudflare，可能有「握手成功
+            # 但响应数据被黑洞」的坏 IP 路径——逐 IP 直连完整请求避开它。
+            data = json.loads(_lrclib_get_via_ips(
+                url, timeout=max(timeout, 6.0)).decode("utf-8", "ignore"))
     except Exception:
         log("LRCLIB search failed: " + traceback.format_exc())
         return out
@@ -1812,9 +1868,13 @@ def _match_candidates(cands, title_c, artist_c=""):
 # 最坏要 12s+（国内网络访问 lrclib.net 不稳），用户点开一首歌要干等十几秒。
 # 现在四个源同时开跑，谁先到、分高就用谁：正常歌曲 ≈ 第一个满配源返回的时间
 # （实测 250~400ms），最坏也不超过单源上限。
-_FETCH_TIMEOUT = {"qq": 4.0, "netease": 4.0, "kugou": 4.0, "lrclib": 3.0}
+_FETCH_TIMEOUT = {"qq": 4.0, "netease": 4.0, "kugou": 4.0, "lrclib": 6.0}
 _FETCH_DOMESTIC_BUDGET = 1.8   # 等国内三源的硬上限（实测它们都 <400ms 到齐）
-_FETCH_BUDGET = 4.0            # 整条链路总预算，含 LRCLIB 兜底
+_FETCH_BUDGET = 4.0            # 整条链路总预算（国内源满配路径）
+_FETCH_LRCLIB_BUDGET = 18.0    # 等 LRCLIB 兜底的专用窗口。实测（2026-11-11）：
+                               # lrclib 走 Cloudflare，存在「握手成功但数据被
+                               # 黑洞/慢速滴流」的坏路径，好路径也要 3~14s 才
+                               # 回完；旧的 4s 总预算让欧美歌整首「无歌词」。
 _FETCH_FULLMATCH_GRACE = 0.3   # 拿到满配后再多宽限 0.3s：稍慢但更优的同级源还有机会翻盘
 
 
@@ -1951,18 +2011,22 @@ def _gather_sources(query, title_c, artist_c, duration, prefer_netease):
             if take(src, cand) and not grace_until:
                 grace_until = time.time() + _FETCH_FULLMATCH_GRACE
 
-        # 第二轮：没结果 / 缺逐字时，才等 LRCLIB 兜底（硬上限，绝不拖长）
+        # 第二轮：没结果 / 缺逐字时，才等 LRCLIB 兜底。循环收队列直到拿到
+        # lrclib 或窗口关闭——窗口放宽（_FETCH_LRCLIB_BUDGET）后，国内源
+        # 迟到的结果可能先插队，只 get 一次会把 lrclib 的结果永远丢掉。
         if (not lines or not words) and "lrclib" not in by_src:
-            left = (t0 + _FETCH_BUDGET) - time.time()
-            if left > 0:
+            while "lrclib" not in by_src:
+                left = (t0 + _FETCH_LRCLIB_BUDGET) - time.time()
+                if left <= 0:
+                    break
                 try:
                     src, cand = q.get(timeout=left)
-                    by_src[src] = cand
-                    # 已有正文时，只接受能补上逐字的 LRCLIB 候选
-                    if cand and cand.get("lines") and (not lines or cand.get("words")):
-                        take(src, cand)
                 except _queue.Empty:
-                    pass
+                    break
+                by_src[src] = cand
+                # 已有正文时，只接受能补上逐字的候选（含迟到的国内源结果）
+                if cand and cand.get("lines") and (not lines or cand.get("words")):
+                    take(src, cand)
     except Exception:
         log("parallel fetch failed: " + traceback.format_exc())
     # ---- 错配判定：宁可漏报也不误报 ----
@@ -3713,6 +3777,10 @@ class LyricOverlay(QWidget):
 
         self._drag_offset = None
         self._req_id = 0
+        self._retry_timer = QTimer(self)   # 歌词全部源失败后的延迟自动重试
+        self._retry_timer.setSingleShot(True)
+        self._retry_timer.timeout.connect(self._retry_fetch)
+        self._retry_count = 0
         self.panel = None           # SettingsPanel 惰性创建
         self._current_text = ""
         self._next_text = ""
@@ -4792,6 +4860,8 @@ class LyricOverlay(QWidget):
             # 错配气泡（此时 self.song 是 None，气泡文案还会退化成
             # 「没找到 当前歌手 的《空标题》版本」）。这里显式作废。
             self._req_id += 1
+            self._retry_timer.stop()      # 停止播放：待定的自动重试作废
+            self._retry_count = 0
             self.song = None
             self.cover_pix = None
             self.lines = []
@@ -4889,7 +4959,12 @@ class LyricOverlay(QWidget):
         if status != prev:
             self._apply_pause_opacity()
 
-    def _start_fetch(self, info, strict_artist=False):
+    def _start_fetch(self, info, strict_artist=False, is_retry=False):
+        # 新请求（切歌 / 手动重取）取消待定的自动重试并清零计数；
+        # 自动重试自身走 is_retry=True，保留计数避免无限循环打接口。
+        if not is_retry:
+            self._retry_count = 0
+        self._retry_timer.stop()
         self._req_id += 1
         req_id = self._req_id
         title, artist = info.get("title") or "", info.get("artist") or ""
@@ -4934,6 +5009,22 @@ class LyricOverlay(QWidget):
         singer_ok = payload[5] if len(payload) > 5 else True
         if req_id != self._req_id:
             return
+        if not lines:
+            # 全部歌词源都失败（常见于 lrclib 被墙 / 网络抖动）：不能整首歌
+            # 都停在「纯音乐或暂无歌词」——安排延迟自动重试，最多补试 3 次。
+            # 2026-11-11 实测：《Welcome to Wonderland》因 LRCLIB 读超时失败后，
+            # 界面一整首歌都停在占位文案，看起来像「卡住」。
+            self._retry_count += 1
+            if self._retry_count <= 3:
+                delay = min(30 * self._retry_count, 120)
+                self._retry_timer.start(delay * 1000)
+                log("歌词未找到，%d 秒后自动重试（第 %d/3 次）: %s - %s"
+                    % (delay, self._retry_count,
+                       (self.song or {}).get("title") or "",
+                       (self.song or {}).get("artist") or ""))
+        else:
+            self._retry_count = 0
+            self._retry_timer.stop()
         self.lines = lines
         self.words = words
         self.trans = trans or []
@@ -4954,6 +5045,13 @@ class LyricOverlay(QWidget):
         if self.cover_pix is None and fallback_cover:
             self._apply_cover_bytes(fallback_cover)
         self._relayout()
+
+    def _retry_fetch(self):
+        """歌词全部源失败后的延迟自动重试：同一首歌最多补试 3 次（30/60/90s）。"""
+        if self.song and not self.lines and not self.words:
+            log("自动重试获取歌词: %s - %s"
+                % (self.song.get("title") or "", self.song.get("artist") or ""))
+            self._start_fetch(self.song, is_retry=True)
 
     def _apply_cover_bytes(self, data: bytes) -> bool:
         """封面字节 -> cover_pix，联动失效缩放缓存并重算主色。"""
