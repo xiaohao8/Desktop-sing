@@ -1,2 +1,2 @@
-092af88f120388077e44878c91d76ccfe271cd37dab206bab5dc4ab6442c1f46  Desktop-sing-v2.0.2-setup.exe
-9953cb2b24ba734b5ed0ce7bdb01af58c75125c4532cf1edde1fc3e80b532c64  Desktop-sing-v2.0.2-portable.zip
+82e060ad6f573a2e7712b0bcfb65d4a3079d21684dcf57163e0f19ac143c9b27  Desktop-sing-v2.0.3-setup.exe
+8548ff461d688c9663acae56d323be330193604c423ce58e0c7952f9a2361242  Desktop-sing-v2.0.3-portable.zip

@@ -105,6 +105,37 @@ except Exception as e:
 
 panel._rt.stop()
 panel.close()
+
+# ---- 歌词同步：偏移范围 ±30s + 按住连续调整 ----
+print("== 歌词同步控件 ==")
+from PySide6.QtTest import QTest
+ov.set_offset.reset_mock()
+chk("滑条范围覆盖 ±30s（-60..60，0.5s/格）",
+    (panel.off_slider.minimum(), panel.off_slider.maximum()), (-60, 60))
+panel.off_slider.setValue(0)
+from PySide6.QtWidgets import QPushButton
+for b in panel.findChildren(QPushButton):
+    if b.text() == "提前 0.5s":
+        btn_early = b
+    if b.text() == "延后 0.5s":
+        btn_late = b
+chk("找到「提前/延后」按钮", bool(btn_early) and bool(btn_late), True)
+if btn_early:
+    btn_early.click()
+    app.processEvents()
+    chk("单击提前 → +0.5s", panel.off_slider.value(), 1)
+    # 按住：pressed 后连发多次（不依赖真实鼠标，直接驱动定时器）
+    panel.off_slider.setValue(0)
+    btn_early.pressed.emit()
+    QTest.qWait(460)
+    app.processEvents()
+    btn_early.released.emit()
+    held = panel.off_slider.value()
+    chk("按住提前 0.46s 连加多格（>1 格）held=%d" % held, held > 1, True)
+    panel.off_slider.setValue(60)
+    chk("到顶不越界", panel.off_slider.value(), 60)
+    panel.off_slider.setValue(0)
+
 print()
 if fails:
     print("FAILED:", fails)

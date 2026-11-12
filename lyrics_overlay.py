@@ -33,6 +33,7 @@ import time
 import traceback
 import urllib.parse
 import urllib.request
+import uuid
 import zlib
 
 from PySide6.QtCore import (
@@ -2339,9 +2340,253 @@ def _status_name(ps) -> str:
     return str(ps).split(".")[-1]
 
 
+# ======================================================================
+# WASAPI 音频会话探针（SMTC 之外的「真的在出声吗」真相源）
+# ======================================================================
+
+class _GUID(ctypes.Structure):
+    _fields_ = [("Data1", ctypes.c_ulong), ("Data2", ctypes.c_ushort),
+                ("Data3", ctypes.c_ushort), ("Data4", ctypes.c_ubyte * 8)]
+
+
+def _guid(text: str) -> "_GUID":
+    u = uuid.UUID(text)
+    g = _GUID()
+    g.Data1, g.Data2, g.Data3 = u.fields[0], u.fields[1], u.fields[2]
+    for i, b in enumerate(u.bytes[8:]):
+        g.Data4[i] = b
+    return g
+
+
+_CLSID_MMDEVICE_ENUM = _guid("{BCDE0395-E52F-467C-8E3D-C4579291692E}")
+_IID_MMDEVICE_ENUM = _guid("{A95664D2-9614-4F35-A746-DE8DB63617E6}")
+_IID_SESSION_MANAGER2 = _guid("{77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F}")
+_IID_SESSION_CONTROL2 = _guid("{BFB7FF88-7239-4FC9-8FA2-07C950BE9C6D}")
+
+_AUDIO_STATE_ACTIVE = 1        # AudioSessionStateActive
+
+
+class _AudioProbe:
+    """判断「某个播放器进程此刻是否真的在往默认输出设备送音频」。
+
+    为什么需要它：QQ 音乐等播放器会偶发 **SMTC 僵死**——音乐还在正常放，
+    但 SMTC 的 playback_status 变成 PAUSED、timeline.position 再也不更新
+    （实测 2026-11-12 22:46:42：位置冻在 104.7s，last_updated_time 陈旧度
+    一路涨到 134s，而 QQ 音乐界面显示仍在播放）。只信 SMTC 就会把歌词和
+    进度条一起冻在原地，用户看到的就是「完全不同步，重新获取也没用」——
+    重新抓词救不了停摆的时钟，所以必须在 SMTC 之外再找一个真相源。
+
+    WASAPI 的 IAudioSessionControl2::GetState 与 SMTC 完全独立：
+    AudioSessionStateActive 表示该进程正在向这个设备送音频（真在放），
+    Inactive/Expired 表示没在出声（真暂停 / 已释放）。
+
+    实现说明：ctypes 直调 COM，不引入 pycaw/comtypes（打包体积与依赖都要控）。
+    探针只在采集线程里用，COINIT_APARTMENTTHREADED 必须在该线程初始化一次。
+    """
+
+    def __init__(self, cache_ttl: float = 1.0):
+        self._com_ok = False
+        self._cache_ttl = cache_ttl
+        self._cache = {}           # 进程名小写 -> (时间戳, 是否在出声)
+        self._ole = None
+
+    # ---------- COM 基础设施 ----------
+    def _ensure_com(self) -> bool:
+        if self._com_ok:
+            return True
+        try:
+            self._ole = ctypes.OleDLL("ole32")
+            # 0x2 = COINIT_APARTMENTTHREADED；同一线程重复调用是安全的
+            self._ole.CoInitializeEx(None, 0x2)
+            self._com_ok = True
+        except Exception:
+            self._com_ok = False
+        return self._com_ok
+
+    @staticmethod
+    def _call(ptr, index, restype, *argtypes):
+        """取 COM 对象 vtable[index] 并绑定成可调用的函数对象。"""
+        vtbl = ctypes.cast(ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))[0]
+        proto = ctypes.WINFUNCTYPE(restype, ctypes.c_void_p, *argtypes)
+        return proto(vtbl[index])
+
+    def _release(self, ptr):
+        try:
+            self._call(ptr, 2, ctypes.c_ulong)(ptr)
+        except Exception:
+            pass
+
+    # ---------- 对外 ----------
+    def active_processes(self):
+        """返回 {进程名小写: 是否 ACTIVE}；失败返回空 dict（调用方按不可用处理）。"""
+        if not self._ensure_com():
+            return {}
+        out = {}
+        enum_dev = ctypes.c_void_p()
+        mgr = ctypes.c_void_p()
+        enum_sess = ctypes.c_void_p()
+        dev = ctypes.c_void_p()
+        try:
+            hr = self._ole.CoCreateInstance(
+                ctypes.byref(_CLSID_MMDEVICE_ENUM), None, 1,
+                ctypes.byref(_IID_MMDEVICE_ENUM), ctypes.byref(enum_dev))
+            if hr != 0:
+                return {}
+            # eRender=0, eConsole=0
+            if self._call(enum_dev, 4, ctypes.c_ulong, ctypes.c_int, ctypes.c_int,
+                          ctypes.POINTER(ctypes.c_void_p))(enum_dev, 0, 0,
+                                                           ctypes.byref(dev)) != 0:
+                return {}
+            if self._call(dev, 3, ctypes.c_ulong, ctypes.POINTER(_GUID), ctypes.c_ulong,
+                          ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p))(
+                    dev, ctypes.byref(_IID_SESSION_MANAGER2), 1, None,
+                    ctypes.byref(mgr)) != 0:
+                return {}
+            # IAudioSessionManager2::GetSessionEnumerator = vtable[5]
+            if self._call(mgr, 5, ctypes.c_ulong, ctypes.POINTER(ctypes.c_void_p))(
+                    mgr, ctypes.byref(enum_sess)) != 0:
+                return {}
+            count = ctypes.c_int()
+            self._call(enum_sess, 3, ctypes.c_ulong, ctypes.POINTER(ctypes.c_int))(
+                enum_sess, ctypes.byref(count))
+            for i in range(count.value):
+                ctl = ctypes.c_void_p()
+                if self._call(enum_sess, 4, ctypes.c_ulong, ctypes.c_int,
+                              ctypes.POINTER(ctypes.c_void_p))(enum_sess, i,
+                                                              ctypes.byref(ctl)) != 0:
+                    continue
+                try:
+                    ctl2 = ctypes.c_void_p()
+                    pid = ctypes.c_ulong(0)
+                    state = ctypes.c_int(0)
+                    hr2 = self._call(ctl, 0, ctypes.c_ulong, ctypes.POINTER(_GUID),
+                                     ctypes.POINTER(ctypes.c_void_p))(
+                        ctl, ctypes.byref(_IID_SESSION_CONTROL2), ctypes.byref(ctl2))
+                    if hr2 == 0:
+                        # IAudioSessionControl2: GetProcessId=14, GetState=3
+                        self._call(ctl2, 14, ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong))(
+                            ctl2, ctypes.byref(pid))
+                        self._call(ctl2, 3, ctypes.c_ulong, ctypes.POINTER(ctypes.c_int))(
+                            ctl2, ctypes.byref(state))
+                        self._release(ctl2)
+                    else:
+                        self._call(ctl, 3, ctypes.c_ulong, ctypes.POINTER(ctypes.c_int))(
+                            ctl, ctypes.byref(state))
+                    name = _pid_image_name(pid.value)
+                    if name:
+                        key = name.lower()
+                        # 同一进程可能有多个会话，任一 ACTIVE 即算在出声
+                        out[key] = out.get(key, False) or (state.value == _AUDIO_STATE_ACTIVE)
+                finally:
+                    self._release(ctl)
+        except Exception:
+            pass
+        finally:
+            for p in (enum_sess, mgr, dev, enum_dev):
+                if p:
+                    self._release(p)
+        return out
+
+    def is_active(self, aumid: str) -> bool:
+        """SMTC 的 AUMID（如 'QQMusic.exe' / 'SpotifyAB.SpotifyMusic_xxx!Spotify'）
+        对应的进程是否正在输出音频。拿不准时一律返回 False（保持旧行为）。"""
+        proc = _aumid_process(aumid)
+        if not proc:
+            return False
+        now = time.monotonic()
+        hit = self._cache.get(proc)
+        if hit and now - hit[0] < self._cache_ttl:
+            return hit[1]
+        table = self.active_processes()
+        if not table:
+            return False
+        active = table.get(proc)
+        if active is None:
+            # 名字对不齐时退一步做前缀匹配（'qqmusic' vs 'qqmusiclite' 之类）
+            for k, v in table.items():
+                if k.rsplit(".", 1)[0] == proc or k.startswith(proc):
+                    active = v
+                    break
+        self._cache[proc] = (now, bool(active))
+        return bool(active)
+
+
+_MUSIC_AUMID_KEYS = ("qq", "cloudmusic", "netease", "spotify", "wmplayer",
+                     "zune", "foobar", "kugou", "kuwo", "migu", "music")
+
+
+def _is_music_aumid(aumid: str) -> bool:
+    """AUMID 看起来像音乐播放器吗（用于评分排序 / 僵死桥接的白名单）。"""
+    s = (aumid or "").lower()
+    return any(k in s for k in _MUSIC_AUMID_KEYS)
+
+
+def _smtc_zombie_bridge(status: str, audio_alive: bool, tracked: bool,
+                        is_music: bool, streak: int) -> bool:
+    """判断这次轮询该不该把「SMTC 说没在放」改判成「其实在放」。
+
+    只在三个条件同时成立时才改判，宁可漏判也不误判（误判会让用户真暂停时
+    歌词继续走）：
+      · SMTC 此刻不是 PLAYING（僵死表现为 PAUSED/STOPPED 且位置停更）；
+      · WASAPI 看到该进程仍在向默认输出设备送音频（连续 streak 次，防抖）；
+      · 这个会话我们已经跟过（tracked）或它本来就是音乐播放器（is_music）。
+
+    streak 由调用方累计，>=2 表示连续两次（约 1 秒）都探测到在出声。
+    """
+    if status == "PLAYING" or not audio_alive or streak < 2:
+        return False
+    return bool(tracked or is_music)
+
+
+def _aumid_process(aumid: str) -> str:
+    """从 AUMID 里扒出可执行文件名（小写、无 .exe），用于和 WASAPI 会话比对。
+
+    两种形态：
+      · 桌面应用：'QQMusic.exe' / 'C:\\...\\QQMusic.exe'
+      · 打包应用：'SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify'
+        —— '!' 后面那截才是进程名，前面是包族名 + 包哈希，拿去比对永远对不上
+    """
+    if not aumid:
+        return ""
+    s = aumid
+    if "!" in s:
+        s = s.rsplit("!", 1)[-1]
+    else:
+        s = s.replace("\\", "/").rsplit("/", 1)[-1]
+    s = s.strip().lower()
+    if s.endswith(".exe"):
+        s = s[:-4]
+    return s
+
+
+def _pid_image_name(pid: int) -> str:
+    """PID → 可执行文件名（如 'QQMusic.exe'）；失败返回空串。"""
+    if not pid:
+        return ""
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        h = kernel32.OpenProcess(0x1000, False, int(pid))     # QUERY_LIMITED_INFORMATION
+        if not h:
+            return ""
+        try:
+            buf = ctypes.create_unicode_buffer(1024)
+            size = ctypes.c_ulong(1024)
+            if not kernel32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+                return ""
+            return os.path.basename(buf.value)
+        finally:
+            kernel32.CloseHandle(h)
+    except Exception:
+        return ""
+
+
 # 会话切换防抖 / 陈旧判定（修复抖音网页版 SMTC 会话每秒闪烁导致跳到陈旧 QQ 音乐会话）
 SESSION_HYSTERESIS = 8.0     # 秒：当前会话刚消失时，多久内拒绝切换到「非播放」候选
 STALE_SESSION_AGE = 90.0     # 秒：未播放且时间线超过此陈旧度的会话视为「无有效播放」
+
+# 歌词偏移上限（秒）。原来只有 ±5s：碰上播放器 SMTC 位置整体偏一截（如 QQ 音乐
+# 拖过进度条后系统进度不跟着走），偏 10s+ 时用户顶到上限也校不回来。
+OFFSET_LIMIT = 30.0
 
 
 class MediaWatcher(QObject):
@@ -2359,6 +2604,10 @@ class MediaWatcher(QObject):
         self._last_switch_ts = 0.0     # 上次真正切换会话的时间戳（供迟滞判定）
         self._sess_log_t = 0.0         # 会话健康日志节流
         self._last_status = ""
+        # WASAPI 真相源：SMTC 僵死（播放器还在放、状态却报 PAUSED 并停更位置）时兜底
+        self._audio = _AudioProbe()
+        self._zombie = False           # 当前是否处于「SMTC 僵死、按音频活跃桥接」状态
+        self._alive_streak = 0         # 连续探测到「音频仍在输出」的次数（防抖）
 
     def start(self):
         self._thread.start()
@@ -2386,7 +2635,7 @@ class MediaWatcher(QObject):
             return -1.0
 
     @staticmethod
-    def _pick_session(manager, last_source: str = ""):
+    def _pick_session(manager, last_source: str = "", probe=None):
         """选「活跃」会话，而非简单取第一个——规避幽灵会话（崩溃残留/重复启动）。
 
         优先级：正在播放 > 音乐类 App > 与上次同源（sticky）> 时间线更"新鲜"
@@ -2402,8 +2651,14 @@ class MediaWatcher(QObject):
                 st = _status_name(s.get_playback_info().playback_status)
                 playing = st == "PLAYING"
                 src = (s.source_app_user_model_id or "").lower()
-                music_app = any(k in src for k in ("qq", "cloudmusic", "spotify",
-                                                   "wmplayer", "zune", "foobar"))
+                # SMTC 僵死的会话在评分里也要算「在播」，否则它会被下面的陈旧惩罚
+                # 压到最低，转而挂到另一个真正暂停的会话上（等于放弃音频兜底）
+                if not playing and probe is not None:
+                    try:
+                        playing = probe.is_active(s.source_app_user_model_id or "")
+                    except Exception:
+                        playing = False
+                music_app = _is_music_aumid(src)
                 sticky = bool(last_source) and src == last_source
                 age = MediaWatcher._lut_age(s.get_timeline_properties())
                 # 陈旧且未播放的会话（如 QQ 音乐崩溃残留）直接压到最低优先级，
@@ -2445,7 +2700,7 @@ class MediaWatcher(QObject):
         while True:
             try:
                 now = time.time()
-                session = self._pick_session(manager, self._last_source)
+                session = self._pick_session(manager, self._last_source, self._audio)
                 if session is None:
                     if self._had_session:
                         self._had_session = False
@@ -2461,6 +2716,27 @@ class MediaWatcher(QObject):
                 playing = status == "PLAYING"
                 tl = session.get_timeline_properties()
                 age = self._lut_age(tl)
+                # ⓪ SMTC 僵死桥接（2026-11-12 实锤）：QQ 音乐在正常播放，SMTC 却把
+                #   playback_status 报成 PAUSED、timeline.position 停在 104.7s 不再更新
+                #   （last_updated_time 陈旧度一路涨到 134s）。只信 SMTC 的话歌词和进度条
+                #   会一起冻死，用户看到「完全不同步，重新获取也没用」——重新抓词救不了
+                #   停摆的时钟。这里用 WASAPI 音频会话状态做独立真相源：该进程仍在向
+                #   默认输出设备送音频，就按 PLAYING 处理，让下游锚点外推继续走字；
+                #   SMTC 一旦恢复上报，_apply_tick 的硬对齐会把这段时间的偏差吃掉。
+                alive = (not playing) and self._audio.is_active(sid)
+                self._alive_streak = (self._alive_streak + 1) if alive else 0
+                if _smtc_zombie_bridge(status, alive, self._had_session,
+                                       _is_music_aumid(sid), self._alive_streak):
+                    if not self._zombie:
+                        self._zombie = True
+                        log("SMTC 僵死：AUMID=%s status=%s raw_pos=%.1f，但该进程音频仍在输出 "
+                            "→ 改按 PLAYING 继续走字（WASAPI 兜底）"
+                            % (sid, status, _to_seconds(tl.position)))
+                    status = "PLAYING"
+                    playing = True
+                elif playing and self._zombie:
+                    self._zombie = False
+                    log("SMTC 恢复上报（僵死结束），重新按播放器进度对齐")
                 # ① 陈旧且未播放（如 QQ 音乐异常残留、用户已切走的暂停会话）视作
                 #   「无有效播放」。但我们正在跟踪一个真实播放源、且它刚消失不久时，
                 #   先冻结（迟滞），不急着切到就绪态——避免抖音网页版 SMTC 每秒闪烁时
@@ -2661,7 +2937,7 @@ FAN_R_FACTOR = 2.6      # 扇形半径 = 行宽 × 该系数（越大越平缓�
 FAN_R_MIN = 380.0       # 扇形半径下限（短句也保留弧度）
 WAVE_AMP = 0.11         # 波浪振幅，相对字号
 
-APP_VERSION = "2.0.2"
+APP_VERSION = "2.0.3"
 
 # LRCLIB 的 User-Agent：Desktop-sing/<版本>，随 APP_VERSION 走（隐私声明里
 # 描述为「自己的名称标识 + 版本号」，改版本不用再动声明）。
@@ -3794,7 +4070,8 @@ class LyricOverlay(QWidget):
         self.font_scale = float(self.cfg.get("font_scale", 1.0))     # 0.5 ~ 2.0
         self.font_family = str(self.cfg.get("font_family", "") or "")  # 空 = 默认 MiSans/雅黑
         self.opacity = min(1.0, max(0.3, float(self.cfg.get("opacity", 1.0))))
-        self.offset = min(5.0, max(-5.0, float(self.cfg.get("offset", 0.0))))  # 秒，正=歌词提前
+        self.offset = min(OFFSET_LIMIT, max(-OFFSET_LIMIT,
+                                          float(self.cfg.get("offset", 0.0))))  # 秒，正=歌词提前
         self.anim_style = self.cfg.get("anim_style", "slide")        # slide / zoom / fade / none
         self.edge_fade = bool(self.cfg.get("edge_fade", True))
         self.edge_fade_px = int(self.cfg.get("edge_fade_px", 26))
@@ -4644,7 +4921,7 @@ class LyricOverlay(QWidget):
         self._save_position()
 
     def set_offset(self, v: float):
-        self.offset = min(5.0, max(-5.0, v))
+        self.offset = min(OFFSET_LIMIT, max(-OFFSET_LIMIT, v))
         self._save_position()
 
     def set_anim_style(self, key: str):
@@ -7806,6 +8083,24 @@ class SettingsPanel(QWidget):
         s.valueChanged.connect(slot)
         return s
 
+    def _hold_button(self, text: str, step: float, slider: QSlider) -> QPushButton:
+        """点一下走 step 秒，按住连续走——偏移偏得多时不用狂点 30 下。"""
+        btn = QPushButton(text)
+        timer = QTimer(btn)
+        timer.setInterval(110)
+        timer.setSingleShot(False)
+        ticks = max(1, int(round(abs(step) / 0.5)))
+        sign = 1 if step >= 0 else -1
+
+        def _bump():
+            slider.setValue(slider.value() + sign * ticks)
+
+        timer.timeout.connect(_bump)
+        btn.pressed.connect(lambda: (_bump(), timer.start()))
+        btn.released.connect(timer.stop)
+        btn.setToolTip("单击 %+.1fs；按住连续调整" % step)
+        return btn
+
     def _val_label(self) -> QLabel:
         lb = QLabel()
         lb.setObjectName("value")
@@ -7911,7 +8206,8 @@ class SettingsPanel(QWidget):
         c1, l1 = make_card("歌词同步")
         row = QHBoxLayout()
         row.setSpacing(10)
-        self.off_slider = self._slider(-10, 10, int(round(ov.offset / 0.5)), self._on_offset, 200)
+        self.off_slider = self._slider(-int(OFFSET_LIMIT * 2), int(OFFSET_LIMIT * 2),
+                                       int(round(ov.offset / 0.5)), self._on_offset, 200)
         self.off_label = self._val_label()
         row.addWidget(self.off_slider)
         row.addStretch(1)
@@ -7919,14 +8215,11 @@ class SettingsPanel(QWidget):
         l1.addLayout(row)
         hb = QHBoxLayout()
         hb.setSpacing(8)
-        for text, delta in (("提前 0.5s", 5), ("延后 0.5s", -5), ("归零", None)):
-            btn = QPushButton(text)
-            if delta is None:
-                btn.clicked.connect(lambda: self.off_slider.setValue(0))
-            else:
-                btn.clicked.connect(
-                    lambda _=False, d=delta: self.off_slider.setValue(self.off_slider.value() + d))
-            hb.addWidget(btn)
+        hb.addWidget(self._hold_button("提前 0.5s", 0.5, self.off_slider))
+        hb.addWidget(self._hold_button("延后 0.5s", -0.5, self.off_slider))
+        btn_zero = QPushButton("归零")
+        btn_zero.clicked.connect(lambda: self.off_slider.setValue(0))
+        hb.addWidget(btn_zero)
         hb.addStretch(1)
         l1.addLayout(hb)
         hint = QLabel("歌词比歌声慢 → 点「提前」；比歌声快 → 点「延后」。正值为提前。")
