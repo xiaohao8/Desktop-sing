@@ -96,12 +96,28 @@ L.LyricOverlay._apply_tick(ov, 160.0, 229.7, "PLAYING")
 check("恢复上报后硬对齐到播放器值", abs(ov.anchor_pos - 160.0) < 1e-6,
       "anchor=%.2f" % ov.anchor_pos)
 
-print("== 4. 真实 WASAPI 探针（只验证可用性与类型） ==")
+print("== 4. 真实 WASAPI 探针（独立线程 + 快照，调用线程零 COM） ==")
 probe = L._AudioProbe()
-table_real = probe.active_processes()
+# 探针跑在后台线程：等它的第一份快照（最多 5s）
+table_real = {}
+for _ in range(50):
+    table_real = probe.active_processes()
+    if table_real:
+        break
+    time.sleep(0.1)
 check("能枚举到音频会话（>=1 个）", len(table_real) >= 1, "sessions=%d" % len(table_real))
 check("状态值都是 bool", all(isinstance(v, bool) for v in table_real.values()))
 check("不存在的进程返回 False", probe.is_active("NoSuchPlayer_zzz.exe") is False)
+check("快照时间新鲜（<5s）", time.monotonic() - probe._stamp < 5.0)
+# 调用线程没被 COM 初始化污染（2.0.3 的回归：STA 混进 SMTC 采集线程会挂死）
+try:
+    import ctypes
+    hr = ctypes.OleDLL("ole32").CoInitializeEx(None, 0x2)
+    check("调用线程 COM 状态未被探针污染（可再次初始化）", True, "hr=0x%x" % (hr & 0xFFFFFFFF))
+except OSError as e:
+    # RPC_E_CHANGED_MODE(0x80010106) = 本线程已被初始化成别的模型 = 被污染
+    check("调用线程 COM 状态未被探针污染", (e.winerror & 0xFFFFFFFF) != 0x80010106,
+          "hr=0x%x" % (e.winerror & 0xFFFFFFFF if e.winerror else 0))
 
 print("=" * 60)
 print("ALL PASS" if all(results) else "FAILED: %d / %d" % (results.count(False), len(results)))

@@ -2380,28 +2380,52 @@ class _AudioProbe:
     AudioSessionStateActive 表示该进程正在向这个设备送音频（真在放），
     Inactive/Expired 表示没在出声（真暂停 / 已释放）。
 
-    实现说明：ctypes 直调 COM，不引入 pycaw/comtypes（打包体积与依赖都要控）。
-    探针只在采集线程里用，COINIT_APARTMENTTHREADED 必须在该线程初始化一次。
+    ⚠️ 2026-11-13 事故教训：2.0.3 曾把 CoInitializeEx(APARTMENTTHREADED)
+    直接做在 SMTC 采集线程上——商店版（MSIX 沙箱）里该线程随后在
+    try_get_media_properties_async 上永久挂死（日志停在「SMTC 会话切换」，
+    连心跳都不再打，歌词彻底不获取）。普通进程复现不出（公寓模型行为不同），
+    但不能赌环境：**WASAPI 枚举必须放在自己的线程里**，采集线程只读快照，
+    两个 COM 世界互不相干。探针线程就算整个挂死/被沙箱拒绝，应用行为也只是
+    退回「只信 SMTC」（= 2.0.2 及更早），绝不会拖死歌词。
     """
 
-    def __init__(self, cache_ttl: float = 1.0):
-        self._com_ok = False
-        self._cache_ttl = cache_ttl
-        self._cache = {}           # 进程名小写 -> (时间戳, 是否在出声)
-        self._ole = None
+    def __init__(self, interval: float = 1.0):
+        self._interval = interval
+        self._lock = threading.Lock()
+        self._table = {}           # 进程名小写 -> 是否 ACTIVE（快照）
+        self._stamp = 0.0          # 快照时间（monotonic）
+        self._thread = threading.Thread(target=self._loop, daemon=True,
+                                        name="audio-probe")
+        self._thread.start()
 
-    # ---------- COM 基础设施 ----------
-    def _ensure_com(self) -> bool:
-        if self._com_ok:
-            return True
-        try:
-            self._ole = ctypes.OleDLL("ole32")
-            # 0x2 = COINIT_APARTMENTTHREADED；同一线程重复调用是安全的
-            self._ole.CoInitializeEx(None, 0x2)
-            self._com_ok = True
-        except Exception:
-            self._com_ok = False
-        return self._com_ok
+    # ---------- 后台线程：所有 COM 调用只发生在这里 ----------
+    def _loop(self):
+        ole = None
+        first = True
+        while True:
+            table = {}
+            try:
+                if ole is None:
+                    ole = ctypes.OleDLL("ole32")
+                    # 0x2 = COINIT_APARTMENTTHREADED（本线程私有，随便选）
+                    ole.CoInitializeEx(None, 0x2)
+                table = self._enumerate(ole)
+            except Exception:
+                table = {}
+            if first:
+                first = False
+                if table:
+                    log("WASAPI 音频会话枚举可用（%d 个会话），SMTC 僵死兜底已开启"
+                        % len(table))
+                else:
+                    log("WASAPI 音频会话枚举不可用（沙箱限制或无输出设备），"
+                        "SMTC 僵死兜底关闭（不影响其它功能）")
+            with self._lock:
+                self._table = table
+                self._stamp = time.monotonic()
+            time.sleep(self._interval)
+
+    # ---------- COM 基础设施（仅探针线程调用） ----------
 
     @staticmethod
     def _call(ptr, index, restype, *argtypes):
@@ -2416,18 +2440,15 @@ class _AudioProbe:
         except Exception:
             pass
 
-    # ---------- 对外 ----------
-    def active_processes(self):
-        """返回 {进程名小写: 是否 ACTIVE}；失败返回空 dict（调用方按不可用处理）。"""
-        if not self._ensure_com():
-            return {}
+    def _enumerate(self, ole):
+        """枚举默认输出设备上的音频会话；失败返回空 dict。"""
         out = {}
         enum_dev = ctypes.c_void_p()
         mgr = ctypes.c_void_p()
         enum_sess = ctypes.c_void_p()
         dev = ctypes.c_void_p()
         try:
-            hr = self._ole.CoCreateInstance(
+            hr = ole.CoCreateInstance(
                 ctypes.byref(_CLSID_MMDEVICE_ENUM), None, 1,
                 ctypes.byref(_IID_MMDEVICE_ENUM), ctypes.byref(enum_dev))
             if hr != 0:
@@ -2487,18 +2508,22 @@ class _AudioProbe:
                     self._release(p)
         return out
 
+    # ---------- 对外（快照读取，线程安全，绝不做 COM） ----------
+    def active_processes(self):
+        """返回 {进程名小写: 是否 ACTIVE} 的快照副本；探针不可用时为空 dict。"""
+        with self._lock:
+            return dict(self._table)
+
     def is_active(self, aumid: str) -> bool:
         """SMTC 的 AUMID（如 'QQMusic.exe' / 'SpotifyAB.SpotifyMusic_xxx!Spotify'）
         对应的进程是否正在输出音频。拿不准时一律返回 False（保持旧行为）。"""
         proc = _aumid_process(aumid)
         if not proc:
             return False
-        now = time.monotonic()
-        hit = self._cache.get(proc)
-        if hit and now - hit[0] < self._cache_ttl:
-            return hit[1]
-        table = self.active_processes()
-        if not table:
+        with self._lock:
+            table, stamp = dict(self._table), self._stamp
+        # 快照太陈旧 = 探针线程已挂/被沙箱拒绝 → 视为不可用，宁可不适配也不误判
+        if not table or time.monotonic() - stamp > max(5.0, self._interval * 5):
             return False
         active = table.get(proc)
         if active is None:
@@ -2507,7 +2532,6 @@ class _AudioProbe:
                 if k.rsplit(".", 1)[0] == proc or k.startswith(proc):
                     active = v
                     break
-        self._cache[proc] = (now, bool(active))
         return bool(active)
 
 
@@ -2679,10 +2703,10 @@ class MediaWatcher(QObject):
             thumb = props.thumbnail
             if thumb is None:
                 return None
-            stream = await thumb.open_read_async()
+            stream = await asyncio.wait_for(thumb.open_read_async(), 10.0)
             size = int(stream.size)
             reader = DataReader(stream)
-            await reader.load_async(size)
+            await asyncio.wait_for(reader.load_async(size), 10.0)
             buf = bytearray(size)
             reader.read_bytes(buf)  # winsdk: 传入数组就地填充
             return bytes(buf)
@@ -2696,7 +2720,9 @@ class MediaWatcher(QObject):
         # 延迟导入 SMTC 绑定：这 ~155ms 花在采集线程里，主线程不用等（启动更快）
         if not _load_smtc():
             return
-        manager = await MediaManager.request_async()
+        # 任何 WinRT 操作都可能永不返回（QQ 音乐偶发）——一律带超时，
+        # 卡死只损失一次轮询（走 poll error → 1.5s 后重试），绝不冻结采集线程
+        manager = await asyncio.wait_for(MediaManager.request_async(), 20.0)
         while True:
             try:
                 now = time.time()
@@ -2778,7 +2804,8 @@ class MediaWatcher(QObject):
                     self._key = None
                     self.mediaChanged.emit(None)
                 self._last_source = sid
-                props = await session.try_get_media_properties_async()
+                props = await asyncio.wait_for(
+                    session.try_get_media_properties_async(), 10.0)
                 title = props.title or ""
                 artist = props.artist or ""
                 key = (title, artist)
@@ -2937,7 +2964,7 @@ FAN_R_FACTOR = 2.6      # 扇形半径 = 行宽 × 该系数（越大越平缓�
 FAN_R_MIN = 380.0       # 扇形半径下限（短句也保留弧度）
 WAVE_AMP = 0.11         # 波浪振幅，相对字号
 
-APP_VERSION = "2.0.3"
+APP_VERSION = "2.0.4"
 
 # LRCLIB 的 User-Agent：Desktop-sing/<版本>，随 APP_VERSION 走（隐私声明里
 # 描述为「自己的名称标识 + 版本号」，改版本不用再动声明）。
