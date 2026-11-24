@@ -23,8 +23,16 @@
   - 歌曲内容用**自写的占位歌词**，不要用真实歌曲的歌名与歌词：这张图是要
     传给商店当商品页素材的（对外发布物），嵌真实歌词属不必要的版权暴露。
 
-用法：.buildenv\\Scripts\\python.exe store\\render_shots.py
-产物：store/out/shots/*.png（1600×900，超过商店要求的 1366×768）
+多语言（2026-11-14）：
+    `--lang en|ja|zh-TW` 会把界面切到该语言再渲染，产物名带语言后缀
+    （store-shot-*-en.png …）。商店提交四语言 listing 后，
+    Partner Center 每种语言的 listing 各传一组，审核员才能看到本地化确有其事。
+    zh-CN 仍出原文件名（自检按老名字查），四语言同为 1600×900。
+
+用法：
+    .buildenv\\Scripts\\python.exe store\\render_shots.py            # 中文
+    .buildenv\\Scripts\\python.exe store\\render_shots.py --lang en  # 英文
+产物：store/out/shots/*.png（≥1366×768，满足商店要求）
 """
 import os
 import sys
@@ -45,6 +53,42 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out", "shots")
 os.makedirs(OUT, exist_ok=True)
 
 W, H = 1600, 900          # 16:9，超过商店建议的 1366×768
+
+# 当前要渲染的界面语言（--lang）。四语言同尺寸 1600×900（≥1366×768 门槛），
+# 免得某个语言的浮层在更大画布上显得又小又空。
+LANG = "zh-CN"
+
+# 各语言的占位歌词（自写，不是真实歌曲）。
+# 为什么按语言分开：英文 listing 里贴一张满屏中文歌词的图，审核员看到的
+# 依旧是「没本地化」；但歌名/歌词属内容层、不属 UI，这里只是让截图更有说服力。
+DEMO = {
+    "zh-CN": {
+        "title": "示例歌曲", "artist": "演示歌手",
+        "lines": ["这一句会逐字高亮显示", "光标走过就换下一行",
+                  "拖动浮层可自由摆放", "托盘图标可打开设置"],
+    },
+    "zh-TW": {
+        "title": "範例歌曲", "artist": "示範歌手",
+        "lines": ["這一句會逐字高亮顯示", "游標走過就換下一行",
+                  "拖曳浮層可自由擺放", "托盤圖示可開啟設定"],
+    },
+    "en": {
+        "title": "Demo Song", "artist": "Demo Artist",
+        "lines": ["This line lights up word by word", "Each word is timed to the beat",
+                  "Drag the bar anywhere you like", "Open settings from the tray icon"],
+    },
+    "ja": {
+        "title": "デモソング", "artist": "デモアーティスト",
+        "lines": ["この行は一文字ずつハイライト", "拍に合わせて次の行へ",
+                  "バーはドラッグで自由に移動", "トレイアイコンから設定を開く"],
+    },
+}
+
+
+def _out_name(n: int, base: str) -> str:
+    """产物名：中文沿用老名字（自检按老名字查），其他语言加后缀。"""
+    return base if LANG == "zh-CN" else base.replace(".png", "-%s.png" % LANG)
+
 
 
 def wallpaper() -> QPixmap:
@@ -106,10 +150,21 @@ def composite(bg: QPixmap, widget, x: int, y: int, pixmap=None) -> QPixmap:
     return out
 
 
+def new_overlay():
+    """造一个浮层实例，并把界面语言压回 --lang 指定的值。
+
+    LyricOverlay.__init__ 会用配置里的 ui_lang（默认 auto → 跟随系统）覆盖
+    我们在 main() 里设的语言，本机系统是 zh-CN 时四种语言会全渲染成中文。
+    必须在构造完、建面板之前再压一次。
+    """
+    ov_ = ov.LyricOverlay(ov.MediaWatcher())
+    ov.set_ui_lang(LANG)
+    return ov_
+
+
 def shot_idle(app) -> str:
     """无歌占位 —— 审核员装完第一眼看到的画面"""
-    watcher = ov.MediaWatcher()
-    ov_ = ov.LyricOverlay(watcher)
+    ov_ = new_overlay()
     ov_.resize(900, 260)
     ov_._relayout()
     ov_.show()
@@ -117,7 +172,7 @@ def shot_idle(app) -> str:
     grab = ov_.grab()
     pm = composite(wallpaper(), ov_, (W - grab.width()) // 2,
                    H - grab.height() - 70, pixmap=grab)
-    path = os.path.join(OUT, "store-shot-1-idle.png")
+    path = os.path.join(OUT, _out_name(1, "store-shot-1-idle.png"))
     pm.save(path)
     return path
 
@@ -133,14 +188,13 @@ def shot_hero(app) -> str:
         等于「开机以来的秒数」，时间轴飞到天外，行号全乱；
       · `_line_t` —— 切行动画把整行 opacity 乘成 0，必须推到 1.0。
     """
-    watcher = ov.MediaWatcher()
-    ov_ = ov.LyricOverlay(watcher)
+    ov_ = new_overlay()
     # 自写占位内容（不用真实歌曲）：歌名/歌词都会进商品页截图，属对外发布物
-    ov_.song = {"title": "示例歌曲", "artist": "演示歌手", "source": "demo", "cover": None}
-    ov_.lines = [[0.0, "这一句会逐字高亮显示"],
-                 [3.0, "光标走过就换下一行"],
-                 [6.5, "拖动浮层可自由摆放"],
-                 [10.0, "托盘图标可打开设置"]]
+    demo = DEMO[LANG]
+    ov_.song = {"title": demo["title"], "artist": demo["artist"],
+                "source": "demo", "cover": None}
+    ov_.lines = [[0.0, demo["lines"][0]], [3.0, demo["lines"][1]],
+                 [6.5, demo["lines"][2]], [10.0, demo["lines"][3]]]
     _ch = list(ov_.lines[0][1])
     ov_.words = {0: [(i * 0.42, 0.42, c) for i, c in enumerate(_ch)]}
     ov_.status = "PLAYING"
@@ -167,7 +221,7 @@ def shot_hero(app) -> str:
     grab = ov_.grab()
     pm = composite(wallpaper(), ov_, (W - grab.width()) // 2,
                    H - grab.height() - 70, pixmap=grab)
-    path = os.path.join(OUT, "store-shot-2-hero.png")
+    path = os.path.join(OUT, _out_name(2, "store-shot-2-hero.png"))
     pm.save(path)
     return path
 
@@ -180,8 +234,7 @@ def shot_settings(app) -> str:
     这里把面板贴到 1600×900 的桌面底上（与另外两张同规格），
     既是真实观感，也一并满足尺寸门槛。
     """
-    watcher = ov.MediaWatcher()
-    ov_ = ov.LyricOverlay(watcher)
+    ov_ = new_overlay()
     panel = ov.SettingsPanel(ov_)
     panel.resize(620, 880)
     panel.show()
@@ -198,15 +251,29 @@ def shot_settings(app) -> str:
     pm = composite(wallpaper(), panel, (W - grab.width()) // 2,
                    max(0, (H - grab.height()) // 2),
                    pixmap=grab)
-    path = os.path.join(OUT, "store-shot-3-settings.png")
+    path = os.path.join(OUT, _out_name(3, "store-shot-3-settings.png"))
     pm.save(path)
     return path
 
 
 def main():
+    global LANG, W, H
+    LANG = "zh-CN"
+    for i, a in enumerate(sys.argv[1:]):
+        if a == "--lang" and i + 2 <= len(sys.argv[1:]):
+            LANG = sys.argv[2 + i]
+        elif a.startswith("--lang="):
+            LANG = a.split("=", 1)[1]
+    if LANG not in ("zh-CN", "zh-TW", "en", "ja"):
+        sys.exit("--lang 只支持 zh-CN / zh-TW / en / ja（收到 %r）" % LANG)
+
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("桌面歌词")
     ov._load_fonts()
+    # ★ 必须在**构造任何控件之前**切语言：面板/托盘/菜单的文案是在 __init__
+    #   里 _tr() 落到控件上的，建完再切只会得到中文界面（截图即失效）。
+    ov.set_ui_lang(LANG)
+    print("== 渲染语言：%s ｜ 画布 %dx%d ==" % (LANG, W, H))
 
     made = []
     failed = []

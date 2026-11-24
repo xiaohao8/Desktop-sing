@@ -85,6 +85,25 @@ Spotify 需要 `sp_dc` Cookie、Musixmatch 需要 User Token），不适合本�
 
 ---
 
-## 3. 本项目自身的依赖
+## 3. SPlayer
+
+- 仓库：https://github.com/SPlayer-Dev/SPlayer
+- 许可：**GNU Affero General Public License v3.0（AGPL-3.0）**
+- 语言：TypeScript / Vue
+
+### 参考的内容
+
+**仅参考播放器界面的信息层级与导航布局**，例如左侧固定导航、主内容区、
+底部常驻播放条以及页面之间的切换方式。
+
+### 重要声明
+
+**本项目没有使用 SPlayer 的任何源码、组件、资源文件或服务接口。**
+SPlayer 不参与本项目运行，本项目也不通过它登录第三方音乐服务、获取音乐库、
+推荐内容或主动分发歌词。所有功能均由本项目独立实现。
+
+---
+
+## 4. 本项目自身的依赖
 
 见 `requirements.txt`。第三方 Python 包（PySide6、winsdk 等）各自遵循其原始许可。

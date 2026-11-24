@@ -89,7 +89,27 @@ feature listed above was implemented independently in this project.
 
 ---
 
-## 3. This project's own dependencies
+## 3. SPlayer
+
+- Repository: https://github.com/SPlayer-Dev/SPlayer
+- Licence: **GNU Affero General Public License v3.0 (AGPL-3.0)**
+- Language: TypeScript / Vue
+
+### What was referenced
+
+**Only the player shell's information hierarchy and navigation layout**, such as a fixed left
+navigation rail, a main content area, a persistent bottom transport bar and page switching.
+
+### Important statement
+
+**This project uses no source code, components, resource files or service APIs from SPlayer.**
+SPlayer does not run as part of this product, and this product does not use it to sign in to
+third-party music services, obtain a music library or recommendations, or redistribute lyrics.
+Every feature was implemented independently in this project.
+
+---
+
+## 4. This project's own dependencies
 
 See `requirements.txt`. Third-party Python packages (PySide6, winsdk and others) each follow their
 own original licences.

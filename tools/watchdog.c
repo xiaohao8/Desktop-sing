@@ -14,13 +14,15 @@
 //   · 重启语义   子进程 exit 0 = 正常退出，随之收工；非 0 = 退避后重拉
 //                （3s 起步 ×2 递增，上限 60s，防崩溃风暴）
 //   · 被监护进程 = 传入的 --watch-pid；它退出后转入拉起循环
+//   · 登录启动：watchdog.exe --startup 拉起主程序时附带 --startup，
+//                只显示迷你歌词条，不自动打开主播放器窗口
 //
 // 全程 W 系 API：用户目录可能含非 ASCII（中文用户名）。
 // GUI 子系统（无控制台）：开机自启经注册表 Run 拉起时不许闪黑窗。
 //
 // 重新编译（MSVC x64 本机工具命令提示符）：
-//   cl /O1 /GS- /W4 /DUNICODE /D_UNICODE watchdog.c /Fe:watchdog.exe ^
-//      /link /subsystem:windows /entry:WinMainCRTStartup shell32.lib user32.lib
+//   cl /utf-8 /O1 /GS- /W4 /DUNICODE /D_UNICODE watchdog.c /Fe:watchdog.exe ^
+//      /link /subsystem:windows /entry:wWinMainCRTStartup shell32.lib user32.lib
 // 产物 watchdog.exe 放在主程序 Desktop-sing.exe 同目录，主程序会自动优先使用。
 // ============================================================================
 #ifndef UNICODE
@@ -45,6 +47,7 @@ static WCHAR g_cfg_dir[MAX_PATH];
 static WCHAR g_pid_path[MAX_PATH];
 static WCHAR g_sentinel_path[MAX_PATH];
 static WCHAR g_main_exe[MAX_PATH];
+static BOOL g_startup_mode = FALSE;
 
 static BOOL file_exists(LPCWSTR path)
 {
@@ -120,8 +123,9 @@ static BOOL spawn_main(HANDLE *out_proc)
     if (slash)
         *slash = L'\0';
 
-    WCHAR cmd[MAX_PATH + 4];
-    _snwprintf(cmd, MAX_PATH, L"\"%s\"", g_main_exe);
+    WCHAR cmd[MAX_PATH + 32];
+    _snwprintf(cmd, MAX_PATH + 32, L"\"%s\"%s", g_main_exe,
+               g_startup_mode ? L" --startup" : L"");
 
     STARTUPINFOW si;
     PROCESS_INFORMATION pi;
@@ -165,6 +169,8 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR pCmdLine, int nShow)
         for (int i = 1; i < argc; i++) {
             if (lstrcmpiW(argv[i], L"--watch-pid") == 0 && i + 1 < argc)
                 watch_pid = (DWORD)wcstoul(argv[i + 1], NULL, 10);
+            if (lstrcmpiW(argv[i], L"--startup") == 0)
+                g_startup_mode = TRUE;
         }
         LocalFree(argv);
     }

@@ -11,8 +11,9 @@ store/
 ├── 提审上线手册.md              ★ 按顺序照着做的操作手册（准备 + 步骤）
 ├── AppxManifest.template.xml   清单模板（占位符由构建时替换，不要直接改它发布）
 ├── make_store_assets.py        生成全部商店图标资产（91 个，已跑通）
-├── render_shots.py             离屏生成备用商店截图（3 张 1600×900）
-├── make_real_shots.py          真机截图合成主上传素材（5 张 1920×1080）
+├── render_player_shots.py      离屏生成播放器主截图（四语言各 5 张 1600×900）
+├── render_shots.py             旧版浮层备用截图（3 张 1600×900）
+├── make_real_shots.py          旧版真机浮层补充图（5 张 1920×1080）
 ├── build_store.py              一键打包 / 导出提审材料
 ├── make_localtest.py           ★ 自签一份已签名副本，本机装上看商店版真实效果（§3）
 ├── audit_round3.py             商店模式离线自检（政策合规 + 运行时行为 + 材料完整性）
@@ -230,7 +231,7 @@ WACK（Windows App Certification Kit，`appcert.exe`）就是商店审核用的�
 | 名称 | 桌面歌词 | 与清单 DisplayName 一致 |
 | 描述 | 见 `STORE_LISTING_DESCRIPTION` | **必须写清重要限制**（见 §7） |
 | 搜索词 | ≤ 7 个 | 不得含价格词、不得用他人品牌名 |
-| 截图 | **主素材：5 张 1920×1080 真机图** `store/shots/real-*.png`（进仓库） | 真机原图改后用 `store\make_real_shots.py` 重合成。备用：`store\render_shots.py` 离屏生成 3 张 1600×900（`store/out/` 不进仓库，需重跑脚本） |
+| 截图 | **主素材：播放器界面 5 张 1600×900** `store/out/shots/player-*.png`，四语言各一组 | 用 `store\render_player_shots.py --lang <en\|ja\|zh-TW>` 重生成。`store/shots/real-*.png` 仅作悬浮样式、屏保与设置面板的补充素材 |
 | 图标 | 商店 listing 图标 | 300×300 PNG，可复用 assets 里的方形图 |
 | 类别 | 音乐 / Music（次级：实用工具） | |
 | 年龄分级 | 完成 IARC 问卷 | 无用户内容、无社交 → 通常全年龄 |
@@ -269,13 +270,13 @@ WACK（Windows App Certification Kit，`appcert.exe`）就是商店审核用的�
 |---|---|---|
 | **10.1.1** | 元数据必须准确描述功能、特性、体验和**任何重要限制**（含输入设备） | 描述里明确写了：仅 Win10 1809+/Win11 x64、播放器必须接入 SMTC、需联网、界面仅简体中文。**界面里的「关于」窗口也按商店模式调整，不再宣称「进程保活」** |
 | **10.1.3** | 搜索词 ≤ 7 个唯一术语，不含价格词，不用他人产品标题 | 已给出 7 个词，全部是功能描述词 |
-| **10.1.4** | 首次运行体验须清晰体现价值主张 | 启动即显示歌词浮层，无向导、无登录 |
+| **10.1.4** | 首次运行体验须清晰体现价值主张 | 普通启动打开播放器主窗口，登录自启显示迷你歌词条；无账号、无登录 |
 | **10.2.5** | 通过 Store 分发的产品其安装与更新只能用 Store | 商店版 `check_update` 短路、设置面板不提供更新入口，**无任何自更新通道** |
 | **10.2.7** | 必须清楚告知并让用户能彻底卸载 | 商店应用经系统设置卸载，`%APPDATA%` 私有视图由系统一并清理；包内**不含**自定义卸载器（会被质疑） |
 | **10.2.8** | 改 Windows 设置须用受支持方法且获用户同意 | 自启用官方 `startupTask` 扩展（默认 `Enabled="false"`）；置顶/点击穿透用 Qt 官方窗口标志；**未使用任何无障碍 API** |
 | **10.3** | 必须可测试 | 无账号无登录；已备 `CERTIFICATION_NOTES` 说明测法 |
 | **10.5.1** | **Desktop Bridge 与 Win32 产品必须始终具备隐私政策** | `site/privacy.html` + `PRIVACY.md`，且 `PRIVACY.md` **随包分发** |
-| **11.2** | 不得侵犯第三方权利（含许可合规） | 随包 `LICENSE-THIRD-PARTY.txt`：Apache-2.0 归属（Lyricify-Lyrics-Helper）+ 内置 MiSans 许可说明 + FluentFlyout「未使用源码」声明。**三条分发渠道都要带**（MSIX / 便携 zip / NSIS 安装包） |
+| **11.2** | 不得侵犯第三方权利（含许可合规） | 随包 `LICENSE-THIRD-PARTY.txt`：Apache-2.0 归属（Lyricify-Lyrics-Helper）+ 内置 MiSans 许可说明 + FluentFlyout / SPlayer「未使用源码」声明。**三条分发渠道都要带**（MSIX / 便携 zip / NSIS 安装包） |
 | **10.6** | 声明的能力必须与实际功能相关，不得绕过系统检查 | 仅 `runFullTrust`，名副其实 |
 | **10.7** | 声明支持的语言必须本地化其描述文本；功能不全须说明 | 清单 `Resources` **只声明 `zh-CN`**（不虚报 en-US）；**商品页描述**（`STORE_LISTING_DESCRIPTION`）里写明「界面与歌词界面目前仅有简体中文」。注意：清单 `@Description` 因长度限制**没有**这句，别把两者混为一谈 |
 | **10.9** | 通知须标注来源、不夹带无关推广、尊重系统开关 | 仅用托盘气泡提示自身状态，无推广、无 WNS |

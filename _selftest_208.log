@@ -1,0 +1,7 @@
+selftest v2.0.8 2026-11-24 15:35:46
+[15:35:46] start
+[15:35:46] qt ok
+[15:35:46] SMTC ok (sessions=1: 繁花)
+[15:35:47] render ok (5 styles)
+[15:35:48] player-ui ok (now/report/history/immersive)
+[15:35:48] RESULT PASS

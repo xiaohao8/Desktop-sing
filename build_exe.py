@@ -103,6 +103,11 @@ QT_DROP_DLL = (
     "libcrypto-3-x64.dll", "libssl-3-x64.dll",
     # v2.0.1：QtNetwork 已不再被引用（见 QT_EXCLUDE 注释）
     "Qt6Network.dll", "QtNetwork.pyd",
+    # Qt 6.8+ 的 PySide6 wheel 会把 ICU 一起收进来。应用目录里的 icuuc.dll
+    # 会遮蔽 Windows 自带的 System32\icuuc.dll，而 Qt 的 ICU 数据文件版本
+    # 与系统 ICU 对不上时，QtCore 会在导入阶段直接报「找不到指定的程序」。
+    # 本程序只用 Qt 的基础排版，不依赖随包 ICU，统一交给 Windows 系统 ICU。
+    "icuuc.dll", "icudt*.dll", "icuin.dll",
 )
 # 平台插件只留 qwindows（Windows 原生）；图像格式留常用的 jpeg/png/gif/webp；
 # imageformats 里其余的、以及全部 Qt 自带翻译（我们不用 QTranslator）都不要。
@@ -163,6 +168,7 @@ def patch_spec(spec_path: str):
     inject = (
         "\n"
         "# ---- build_exe.py 注入：裁掉用不到的 Qt 二进制，减小体积 ----\n"
+        "import fnmatch\n"
         "_DROP_EXACT = %r\n"
         "_DROP_SUFFIX = %r\n"
         "_DROP_PREFIX = %r\n"
@@ -177,7 +183,8 @@ def patch_spec(spec_path: str):
         "            continue\n"
         "        if any(low.startswith(p) for p in _DROP_PREFIX):\n"
         "            continue\n"
-        "        if any(low.endswith(d.lower()) for d in _DROP_EXACT):\n"
+        "        if any((fnmatch.fnmatch(low, '*' + d.lower()) if '*' in d\n"
+        "                else low.endswith(d.lower())) for d in _DROP_EXACT):\n"
         "            continue\n"
         "        if any(d.lower() in low for d in _DROP_SUFFIX):\n"
         "            continue\n"
@@ -332,7 +339,24 @@ def _version_file(ver: str):
         return tpl_path if os.path.isfile(tpl_path) else None
 
 
+def run_com_audit():
+    """构建前先跑 COM/WinRT 隔离静态审计（2026-11-13 商店版挂死事故的门禁）。"""
+    import subprocess
+    audit_py = os.path.join(BASE, "tools", "audit_com_isolation.py")
+    r = subprocess.run([sys.executable, "-I", audit_py],
+                       capture_output=True, encoding="utf-8", errors="ignore")
+    for line in ((r.stdout or "") + (r.stderr or "")).strip().splitlines():
+        # GBK 控制台遇到审计输出里的特殊符号会抛 UnicodeEncodeError，构建
+        # 还没开始就被日志编码打断。替换不可编码字符，审计结果本身不受影响。
+        safe = line.encode(sys.stdout.encoding or "utf-8",
+                           errors="replace").decode(sys.stdout.encoding or "utf-8")
+        print("  [审计] " + safe)
+    if r.returncode != 0:
+        raise SystemExit("COM 隔离审计未通过：禁止打包（详见 tools/audit_com_isolation.py）")
+
+
 def main() -> int:
+    run_com_audit()
     full_fonts = "--full" in sys.argv
     no_font = "--no-font" in sys.argv
     onedir = "--dir" in sys.argv
@@ -371,6 +395,11 @@ def main() -> int:
     if os.path.isfile(icon_png):
         cmd += ["--add-data", icon_png + os.pathsep + "."]
         print("  + 内置应用图标 icon.png")
+
+    # 新应用层：lyrics_overlay 在 main() 内延迟导入 app.bootstrap，
+    # 显式收集整个 app 包，避免冻结包启动时报 ModuleNotFoundError。
+    cmd += ["--collect-submodules", "app"]
+    print("  + 收集应用框架 app/")
 
     # 内置字体目录（打包后作兜底，用户下载的字体在 %APPDATA% 下）
     fonts = os.path.join(BASE, "fonts")
@@ -422,6 +451,14 @@ def main() -> int:
     if has("Crypto"):
         cmd += ["--hidden-import", "Crypto"]   # pycryptodome，网易云歌词接口用
         print("  + 收集 Crypto")
+
+    # ctypes.wintypes 必须显式声明：源码里是 `ctypes.wintypes.MSG()` 这种**属性访问**，
+    # PyInstaller 静态分析只认 `import ctypes.wintypes`，扫不到就在冻结包里彻底缺失。
+    # 后果（2026-11-14 真机实测）：GlobalHotkeys 的线程建 MSG 时抛 AttributeError
+    # 立即退出，线程级热键被系统释放 → 打包版全局快捷键**全部失效**，且源码跑正常、
+    # 打包后才坏，极难定位。这里不用 has() 兜底：它属于标准库，缺了就是构建环境坏了。
+    cmd += ["--hidden-import", "ctypes.wintypes"]
+    print("  + 收集 ctypes.wintypes（全局快捷键必需）")
 
     cmd.append(SRC)
 

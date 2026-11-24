@@ -2,14 +2,19 @@
 
 > 简体中文: [README.md](README.md)
 
-An always-on-top lyrics overlay for the Windows desktop. It reads whatever is currently playing —
-any player that integrates with the Windows system media controls, such as QQ Music, NetEase Cloud
-Music or Kugou — and shows the album art together with karaoke-style line-by-line lyrics. The colour
-scheme is derived from the album art automatically.
+A player-style desktop lyrics app. Its main window combines recently played tracks, a full-screen
+lyric stage, playback history and an on-device listening report; the desktop lyric bar remains as
+mini mode. It reads whatever is currently playing through the Windows system media controls (SMTC) —
+any compatible player, such as QQ Music, NetEase Cloud Music or Kugou — and shows album art with
+karaoke-style lyrics. It controls the current system media session through SMTC; it does not play
+local audio files itself, and it has no music library, recommendation feed or third-party account
+login. It is a lyric surface for whatever the system is already playing.
 
-> **Note on language:** the application interface is currently **Simplified Chinese only**. The
-> English files in this repository (`README.en.md`, `USAGE.en.txt`, `PRIVACY.en.md`, `NOTICE.en.md`)
-> document the app for English-speaking users, but the UI strings themselves are not translated yet.
+> **Note on language:** the application interface ships with **Simplified Chinese, Traditional
+> Chinese, English and Japanese**, picked automatically from the system language and switchable in
+> Settings; unsupported system languages fall back to English. The English files in this repository
+> (`README.en.md`, `USAGE.en.txt`, `PRIVACY.en.md`, `NOTICE.en.md`) document the app for
+> English-speaking users.
 
 ## Download
 
@@ -23,10 +28,9 @@ scheme is derived from the album art automatically.
   artifact. Note that the file names on the Releases page are **ASCII**; the mapping to the
   Chinese names used on the mirror channel is written at the top of `SHA256SUMS.txt`.
   Check with `certutil -hashfile <file> SHA256` (see "Releases and security" below).
-- **No update URL to configure:** the app ships with a built-in update source (GitHub Releases
-  first, automatic fallback to a domestic mirror), so it works out of the box.
-- **1.0.3 has no Chinese file-hosting mirror yet:** the update dialog falls back to the GitHub
-  download link. Store installs are updated exclusively by Microsoft Store.
+- **Updates are handled by the release channel:** Microsoft Store installs update through the
+  Store; GitHub / portable users should get new versions from the original release page. The app
+  does not check for updates itself.
 
 ## Features
 
@@ -37,6 +41,12 @@ scheme is derived from the album art automatically.
   small player jitter, delayed reports, or even a frozen position report (audio keeps playing but the
   player stops reporting a position) will not stall the lyrics. Only seeking, dragging, or a large
   jump backwards triggers a re-align.
+- **Player window** — recently played tracks and navigation on the left, a full-screen lyric stage on
+  the right; play/pause, previous/next, seeking, immersive mode and a mini-bar switch. A normal launch
+  opens the player window, while logon startup opens only the mini lyric bar.
+- **On-device listening report and history** — aggregates real playback seconds by day and track,
+  with monthly/today totals, streaks, active days, peak hour, top artists and top tracks. Sessions
+  under 20 seconds are ignored. Data never leaves the PC and can be disabled or cleared in Settings.
 - **Lyrics matching across multiple sources** — prefers the source matching the current player,
   otherwise queries the available public lyrics sources in turn. Each source is first scored on
   **quality** (a word-level timeline is preferred, then a translation), and the search stops early
@@ -100,13 +110,8 @@ scheme is derived from the album art automatically.
   Fonts / Overlay / Ambient Saver / System, with colours following the album art's dominant colour
   or the selected theme live.
 - **Playback control** — previous / play-pause / next, a hover control strip, and double-click to
-  play/pause; lyric offset calibration (±5 s); "Re-fetch lyrics" to manually correct a bad match.
-- **Update check (built-in sources, works out of the box)** — no URL to fill in. The primary source is
-  GitHub Releases, falling back in order to Gitee Releases → Gitee raw manifest → jsDelivr manifest;
-  the highest version wins and any single source failing does not affect the others. Downloads are
-  offered through both a mirror and GitHub. You can also point the update URL at your own GitHub or
-  Gitee Releases, or a generic JSON manifest — leave it empty to restore the built-in sources.
-
+  play/pause; lyric offset calibration (±5 s); "Sync progress from QQ Music" sits next to
+  "Re-fetch lyrics" for a one-click alignment; "Re-fetch lyrics" corrects a bad match.
 ## Settings
 
 Everything lives in the settings panel and is saved automatically. All sliders are deliberately
@@ -127,7 +132,7 @@ Everything lives in the settings panel and is saved automatically. All sliders a
 | Fonts | 6 free-for-commercial-use fonts | One-click download (a few MB up to 26 MB); the button turns into "Use" once installed |
 | Overlay | Ambient glow / auto fade on pause / position lock / click-through | Toggles, plus "Reset position" and "Preview screensaver" buttons |
 | Ambient Saver | Style / start when idle / threshold / only when idle | 3D Particles / Minimal / Soundwave Bars / Orbits, plus a 3–60 minute threshold |
-| System | Run at startup / process supervision / global hotkeys / check for updates on launch | Toggles, an update-URL field (empty = built-in sources) and a "Check now" button |
+| System | Run at startup / process supervision / global hotkeys | Three toggles; the Store build opens Windows startup settings for autostart |
 
 ---
 
@@ -147,6 +152,12 @@ pip install -r requirements.txt
 pythonw lyrics_overlay.py             :: start without a console (or double-click 启动桌面歌词.bat)
 python lyrics_overlay.py --selftest   :: self-test: probe SMTC sessions + render all 5 styles
 ```
+
+Startup is orchestrated by `app/bootstrap.py`: it creates the Qt application, enforces the
+single-instance policy, loads fonts, warms up networking, then assembles media, lyrics and window
+services through `app/runtime.py`. The mature SMTC/rendering implementation in
+`lyrics_overlay.py` and the player pages in `lyrics_view.py` remain in use rather than being
+rewritten in one step.
 
 None of the offscreen scripts (tests, previews, diagnostics) need a display or a real media player.
 The only prerequisite is:
@@ -217,6 +228,13 @@ makensis.exe installer\installer.nsi              :: installer exe (NSIS 3.11)
 python smoke_test.py
 ```
 
+Framework and window-coordination regression:
+
+```bat
+python _test_app_framework.py
+python _test_player_ui.py
+```
+
 Runs 30+ offscreen cases: word-level timelines, translation mapping, rendering of all 5 styles,
 control-strip hit testing, the settings panel, frame-by-frame checks of all 9 word animations,
 screensaver rendering and layout gates, lyric format detection and parsing, multi-source fetching
@@ -231,7 +249,14 @@ rewrite the config and restore it afterwards.
 ### 6. Project layout
 
 ```
-lyrics_overlay.py          main program (single file)
+lyrics_overlay.py          main program plus mature media/rendering implementation
+app/                       application layer: startup context, media/lyrics services, window coordination
+app/bootstrap.py           unified GUI entry point (single instance, fonts, network preflight)
+app/context.py             paths, version, launch policy and configuration
+app/media_service.py       SMTC media-change and playback-progress signal adapter
+app/lyrics_service.py      lyric lookup and local-cache access
+app/shell.py               player / mini bar / settings window coordination
+app/runtime.py             service container and lifecycle
 smoke_test.py              offscreen regression tests
 preview_render.py          preview image generation (light and dark background per style)
 _cfg_sandbox.py            shared config sandbox for diagnostics (per-script backup + cross-process lock)
@@ -363,7 +388,9 @@ uninstalling goes through system settings. See `store/README-STORE.md` for the f
   user input.
 - Once packaged as an exe, the `fonts/` directory may not be writable, so the font library always
   downloads into `%APPDATA%\Desktop-sing\fonts`.
-- The interface is currently **Simplified Chinese only**; no English UI is available yet.
+- The interface supports **Simplified Chinese, Traditional Chinese, English and Japanese**. It
+  follows the system language by default and can be switched in Settings; other languages fall back
+  to English.
 
 ## Credits and licensing
 

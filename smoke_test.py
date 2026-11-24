@@ -68,7 +68,29 @@ class _FakeMgr:
     def get_sessions(self):
         return list(self._s)
 app = QApplication(sys.argv)
+
+# 界面语言钉成 zh-CN：本文件断言的是中文文案，而 __init__ 会跟随系统语言
+# （本机 en_US）切英文，导致 position presets / ui polish / popup skin 等
+# 4 项与实现无关地失败。只改语言全局量，不碰配置。
+_OV_INIT = L.LyricOverlay.__init__
+
+
+def _ov_init_zh(self, *a, **k):
+    _OV_INIT(self, *a, **k)
+    L.set_ui_lang("zh-CN")
+
+
+L.LyricOverlay.__init__ = _ov_init_zh
 ov = L.LyricOverlay(L.MediaWatcher())
+
+def _settings_panel(target):
+    """Settings now opens inside the player; tests only need the live panel."""
+    target._open_panel()
+    panel = getattr(target, "panel", None)
+    if panel is None:
+        player = getattr(target, "main_player", None)
+        panel = getattr(getattr(player, "settings_page", None), "panel", None)
+    return panel
 def _render():
     pm = QPixmap(max(2, ov.width()), max(2, ov.height()))
     pm.fill(Qt.transparent)
@@ -177,7 +199,7 @@ check("fmt_time", lambda: (_ for _ in ()).throw(AssertionError(ov._fmt_time(200)
 print("[9] 设置面板构建 / 换肤 / 刷新")
 def panel():
     ov._open_panel()
-    p = ov.panel
+    p = _settings_panel(ov)
     assert p is not None
     p.update_accent(QColor("#ff8800"))
     p.refresh()
@@ -198,6 +220,80 @@ def panel():
     assert p.color_seg.value() == ov.color_mode, p.color_seg.value()
     assert p.swatches._cur == ov.color_theme, p.swatches._cur
 check("settings panel", panel)
+
+print("[9b] 设置面板原生可见性兜底（SW_HIDE 启动时 Win32 补显示）")
+def panel_native_visibility_fallback():
+    import types
+
+    class _FakePanel:
+        def __init__(self):
+            self.win_id_calls = 0
+
+        def isVisible(self):
+            return True
+
+        def winId(self):
+            self.win_id_calls += 1
+            return 12345
+
+    class _FakeUser32:
+        def __init__(self, native_visible, iconic=False):
+            self.native_visible = native_visible
+            self.iconic = iconic
+            self.show_calls = []
+            self.pos_calls = []
+
+        def IsWindowVisible(self, _hwnd):
+            return self.native_visible
+
+        def IsIconic(self, _hwnd):
+            return self.iconic
+
+        def ShowWindow(self, hwnd, cmd):
+            self.show_calls.append((hwnd, cmd))
+            self.native_visible = True
+            self.iconic = False
+            return 1
+
+        def SetWindowPos(self, hwnd, insert_after, x, y, cx, cy, flags):
+            self.pos_calls.append((hwnd, insert_after, x, y, cx, cy, flags))
+            return 1
+
+    old_windll = L.ctypes.windll
+    old_panel = ov.panel
+    try:
+        # 原生窗口已可见：不应重复 ShowWindow
+        p = _FakePanel()
+        u = _FakeUser32(True)
+        L.ctypes.windll = types.SimpleNamespace(user32=u)
+        ov.panel = p
+        ov._ensure_panel_visible(p)
+        assert u.show_calls == [] and u.pos_calls == []
+
+        # 原生窗口隐藏：必须 ShowWindow(SW_SHOW) + SetWindowPos(SWP_SHOWWINDOW)
+        u = _FakeUser32(False)
+        L.ctypes.windll = types.SimpleNamespace(user32=u)
+        ov._ensure_panel_visible(p)
+        assert u.show_calls == [(12345, 5)], u.show_calls
+        assert u.pos_calls and u.pos_calls[0][0] == 12345
+        assert u.pos_calls[0][6] & 0x40, u.pos_calls
+
+        # 原生窗口最小化：必须 SW_RESTORE，且不要再叠一次 SW_SHOW
+        u = _FakeUser32(True, iconic=True)
+        L.ctypes.windll = types.SimpleNamespace(user32=u)
+        ov._ensure_panel_visible(p)
+        assert u.show_calls == [(12345, 9)], u.show_calls
+        assert u.pos_calls == []
+
+        # 面板已被替换 / 已销毁：定时器晚到时必须安静返回
+        calls_before = p.win_id_calls
+        ov.panel = None
+        ov._ensure_panel_visible(p)
+        assert p.win_id_calls == calls_before, p.win_id_calls
+    finally:
+        L.ctypes.windll = old_windll
+        ov.panel = old_panel
+check("panel native visibility fallback", panel_native_visibility_fallback)
 print("[10] 驱动主循环 _on_frame（黑胶 / 光晕 / 切行动画）")
 def drive_frames():
     ov.song = {"title": "测试歌曲", "artist": "测试歌手", "source": "qq", "cover": None}
@@ -262,6 +358,43 @@ def fontlib():
             assert all(u.startswith("http") for u in urls), (e["id"], urls)
     assert L.FONT_MATCH and len(L.FONT_MATCH) == len(L.FONT_LIBRARY)
 check("font library", fontlib)
+
+print("[13b] 字体回退链：韩文/日文缺字不再画成方块")
+def font_fallback():
+    from PySide6.QtGui import QFontDatabase, QTextLayout
+
+    # 首选族必须仍是用户选择，回退族只排在后面
+    f = L._font_with_fallback("DingTalk JinBuTi", 30)
+    assert f.families()[0] == "DingTalk JinBuTi", f.families()
+    assert f.families() == ["DingTalk JinBuTi"] + [
+        x for x in L.FONT_FALLBACKS if x != "DingTalk JinBuTi"], f.families()
+    assert f.pixelSize() == 30
+    # 空选择走默认字体，但同样带完整回退链
+    f0 = L._font_with_fallback("", 22)
+    assert f0.families() == list(L.FONT_FALLBACKS), f0.families()
+
+    # 字体签名必须包含回退链，否则换链后字形缓存还会复用旧的方块轮廓
+    f2 = L._font_with_fallback("DingTalk JinBuTi", 30)
+    f2.setFamilies(["DingTalk JinBuTi"])
+    assert L._font_sig(f) != L._font_sig(f2), "回退链变化没有让字形缓存失效"
+
+    # 真做一次文本整形：韩文必须落到含谚文字形的回退字体上
+    L._load_fonts()
+    if "Malgun Gothic" not in set(QFontDatabase.families()):
+        return                          # 系统没装韩文字体时只验证上面的链结构
+    text = "더는 망설이지 마 제발 偶尔还是会想起你"
+    layout = QTextLayout(text, f)
+    layout.beginLayout()
+    line = layout.createLine()
+    line.setLineWidth(2000)
+    layout.endLayout()
+    runs = [(r.rawFont().familyName(), len(r.glyphIndexes()))
+            for r in line.glyphRuns()]
+    assert any(name == "Malgun Gothic" for name, _n in runs), runs
+    assert any(name == "DingTalk JinBuTi" for name, _n in runs), runs
+    assert sum(n for _name, n in runs) == len(text), runs
+check("font fallback", font_fallback)
+
 print("[14] 氛围屏保：黑底渲染 / 漂移不越界 / 输入即退")
 def saver():
     ov.song = {"title": "测试歌曲", "artist": "测试歌手", "source": "qq", "cover": None}
@@ -390,29 +523,360 @@ def frozen_report():
     ov._apply_tick(74.0, 200.0, "PLAYING")
     assert abs(ov._current_pos() - 74.0) < 1.2, ov._current_pos()
 check("frozen report immunity", frozen_report)
-print("[17c] _live_pos 直传（v2.4.12 回退 v2.4.9 外推）：任何输入都原样返回播放器给的 position")
-def live_pos_passthrough():
+print("[17c] _live_pos 只补 SMTC 快照年龄：新鲜快照外推、陈旧/异常时间戳直传")
+def live_pos_snapshot_age():
     import datetime as _dt
     now = 1_700_000_000.0
     fresh = _dt.datetime.fromtimestamp(now - 0.3, tz=_dt.timezone.utc)
     stale = _dt.datetime.fromtimestamp(now - 12.0, tz=_dt.timezone.utc)
-    # 根因：v2.4.9 在 _live_pos 里按 (now - last_updated_time) 外推，但 QQ音乐/
-    # 网易云的 position 已经是最新值、last_updated 才陈旧，外推会重复计数 →
-    # 歌词整体跑快、连默认主题都不同步 → 锚点被拽回 8s → 「三秒一跳/卡住」。
-    # 现改为一律直传，由 _apply_tick 的锚点外推统一平滑，杜绝双重计数。
-    cases = [
-        (100.0, stale, "PLAYING"),
-        (100.0, fresh, "PLAYING"),
-        (100.0, stale, "PAUSED"),
-        (100.0, object(), "PLAYING"),   # last_updated 不可解析
-        (100.0, 0, "PLAYING"),          # FILETIME=0 脏数据
-        (100.0, (now + 30.0 + 11644473600.0) * 10_000_000.0, "PLAYING"),  # 未来时间
-        (100.0, (now - 5.0 + 11644473600.0) * 10_000_000.0, "PLAYING"),   # FILETIME 数值
+    # QQ 音乐每 ~100ms 才刷新 position，而 last_updated_time 在刷新间隙最多
+    # 陈旧 ~0.32s；补上这段，歌词才不会在每个刷新周期末尾慢半拍。
+    p = L._live_pos(100.0, fresh, "PLAYING", now=now)
+    assert abs(p - 100.3) < 1e-6, p
+    # 时间戳陈旧 12s 的播放器（旧版重复计数的根因）必须直传，不能整体带快。
+    assert L._live_pos(100.0, stale, "PLAYING", now=now) == 100.0
+    # 暂停 / 停止时 position 是锁死值，补年龄会凭空前进。
+    assert L._live_pos(100.0, fresh, "PAUSED", now=now) == 100.0
+    assert L._live_pos(100.0, fresh, "STOPPED", now=now) == 100.0
+    # 异常时间戳、FILETIME=0、未来时间都不能外推。
+    for lu in (
+        object(),
+        0,
+        (now + 30.0 + 11644473600.0) * 10_000_000.0,
+    ):
+        assert L._live_pos(100.0, lu, "PLAYING", now=now) == 100.0, lu
+    # FILETIME 数值的正常路径也要能解析。
+    filetime = (now - 0.2 + 11644473600.0) * 10_000_000.0
+    p = L._live_pos(100.0, filetime, "PLAYING", now=now)
+    assert abs(p - 100.2) < 1e-6, p
+check("live pos snapshot age", live_pos_snapshot_age)
+print("[17c2] 采集轮询粒度：播放中必须远快于换行间隔，暂停保持低频")
+def poll_cadence():
+    assert L.MediaWatcher._poll_interval("PLAYING") <= 0.15
+    assert L.MediaWatcher._poll_interval("PAUSED") >= 0.5
+    assert L.MediaWatcher._poll_interval("STOPPED") >= 0.5
+    assert L.MediaWatcher._poll_interval("CLOSED") >= 0.5
+    assert ov._line_anim.duration() <= 220
+check("poll cadence", poll_cadence)
+
+print("[17c3] SMTC 僵死桥接：本轮状态必须保留 PLAYING，不能被二次读取覆盖")
+def zombie_status_precedence():
+    assert L._smtc_zombie_bridge("PAUSED", True, True, True, 2)
+    assert L._smtc_zombie_bridge("STOPPED", True, False, True, 2)
+    assert not L._smtc_zombie_bridge("PAUSED", True, True, True, 1)
+    assert not L._smtc_zombie_bridge("PAUSED", False, True, True, 2)
+    assert L._effective_tick_status("PAUSED", True) == "PLAYING"
+    assert L._effective_tick_status("STOPPED", True) == "PLAYING"
+    assert L._effective_tick_status("PAUSED", False) == "PAUSED"
+    assert L._effective_tick_status("PLAYING", False) == "PLAYING"
+check("zombie status precedence", zombie_status_precedence)
+
+print("[17c4] QQ 音乐进度校准：解析 / 选值 / 保护期")
+def qq_calib_parsing():
+    # mm:ss 严格解析：小时制、空串、乱码一律不认
+    assert L._parse_mmss(" 03:59") == 239.0
+    assert L._parse_mmss("04:51") == 291.0
+    assert L._parse_mmss(" 00:00") == 0.0
+    assert L._parse_mmss("1:02:03") is None
+    assert L._parse_mmss("") is None
+    assert L._parse_mmss("abc") is None
+    assert L._parse_mmss(" 03:7") is None
+check("qq calib parse", qq_calib_parsing)
+
+def qq_calib_pick():
+    # 正常播放：唯一在动的是当前进度，静止的最大值是总时长
+    assert L._qq_progress_from_ticks([(239.0, 240.0), (291.0, 291.0)]) == (240.0, 291.0)
+    # 暂停：两次都不动，靠 SMTC 已确认的总时长区分
+    assert L._qq_progress_from_ticks([(59.0, 59.0), (260.0, 260.0)], 260.3) == (59.0, 260.0)
+    # 暂停且没有总时长参照：宁可放弃也不猜
+    assert L._qq_progress_from_ticks([(59.0, 59.0), (260.0, 260.0)], 0.0) is None
+    # 两个值同时在动（换歌 / 页面动画）：放弃
+    assert L._qq_progress_from_ticks([(59.0, 60.0), (60.0, 61.0)]) is None
+    # 当前进度大于总时长 = 读错
+    assert L._qq_progress_from_ticks([(300.0, 301.0), (260.0, 260.0)]) is None
+    # 0:00 不当作进度（还没开始放，校准没有意义）
+    assert L._qq_progress_from_ticks([(0.0, 0.0), (260.0, 260.0)], 260.0) == (0.0, 260.0)
+check("qq calib pick", qq_calib_pick)
+
+def qq_calib_flip_refine():
+    import time as _t
+    # 假播放器：每 0.25s 翻一次秒数，模拟 QQ 音乐 1 秒粒度的进度文本
+    state = {"v": 59.0, "t0": _t.monotonic()}
+
+    def reader():
+        v = 59.0 + (_t.monotonic() - state["t0"]) / 0.25
+        return float(int(v))
+
+    pos, anchor = L._qq_refine_flip(59.0, reader, _t.monotonic() + 1.0,
+                                    poll=0.02)
+    # 翻牌后位置必须 ≥60，且锚点时刻是「刚翻牌」而非一开始
+    assert pos >= 60.0, pos
+    assert anchor > state["t0"] + 0.15, anchor - state["t0"]
+    # 永远读不到翻牌 → 退回中点估计，不能卡死
+    pos2, _a2 = L._qq_refine_flip(10.0, lambda: 10.0, _t.monotonic() + 0.15,
+                                  poll=0.02)
+    assert pos2 == 10.5, pos2
+check("qq calib flip refine", qq_calib_flip_refine)
+
+def qq_calib_guard():
+    # SMTC 仍报校准时的旧快照 → 一律视为僵死，必须忽略
+    assert L._calib_is_stale_snapshot(100.0, 100.0)
+    assert L._calib_is_stale_snapshot(100.05, 100.0)
+    # 值变了（SMTC 恢复 / seek / 切歌）→ 立刻交回原链路
+    assert not L._calib_is_stale_snapshot(100.4, 100.0)
+    assert not L._calib_is_stale_snapshot(30.0, 100.0)
+    # 从未校准 → 永不拦截
+    assert not L._calib_is_stale_snapshot(100.0, None)
+check("qq calib guard", qq_calib_guard)
+
+def qq_calib_apply_and_guard():
+    import time as _t
+    ov.status = "PLAYING"
+    ov.duration = 260.0
+    ov._last_tick_pos = 100.0
+    ov.anchor_pos = 100.0
+    ov.anchor_ts = _t.monotonic()
+    # 模拟用户校准到 140s
+    ov._apply_calibration(140.0)
+    assert abs(ov._current_pos() - 140.0) < 0.2, ov._current_pos()
+    assert ov._calib_smtc_pos == 100.0
+    # 僵死的 SMTC 仍报 100（比校准值靠后 40s、且值没变）：
+    # 冻结分支会先命中并 return，锚点必须留在 140 附近
+    ov.anchor_ts = _t.monotonic() - 3.0
+    ov._apply_tick(100.0, 260.0, "PLAYING")
+    assert ov._current_pos() > 135.0, ov._current_pos()
+    # SMTC 报出比校准值更靠前的僵死值（180、值也没变）：保护期拦住硬对齐
+    ov._last_tick_pos = 100.0
+    ov.anchor_ts = _t.monotonic() - 1.0
+    ov._apply_tick(100.0, 260.0, "PLAYING")
+    assert ov._current_pos() < 150.0, ov._current_pos()
+    # 真实 seek（值在变）不受保护期影响
+    ov._apply_tick(30.0, 260.0, "PLAYING")
+    assert abs(ov._current_pos() - 30.0) < 1.0, ov._current_pos()
+    # 值变过一次后旧快照判定必须永久作废（哪怕以后又回到同一个数）
+    assert ov._calib_smtc_pos is None
+    # 暂停时校准，SMTC 仍停在旧值：锚点必须保留校准值
+    ov.status = "PAUSED"
+    ov._last_tick_pos = 30.0
+    ov._apply_calibration(90.0)
+    ov._apply_tick(30.0, 260.0, "PAUSED")
+    assert abs(ov._current_pos() - 90.0) < 1.0, ov._current_pos()
+    # 旧快照没有时限：10 分钟后 SMTC 仍卡在 30，也不能把校准值拽回去
+    ov.anchor_ts = _t.monotonic() - 600.0
+    ov._apply_tick(30.0, 260.0, "PAUSED")
+    assert abs(ov._current_pos() - 90.0) < 1.0, ov._current_pos()
+check("qq calib apply + guard", qq_calib_apply_and_guard)
+
+def qq_calib_rejects_mismatch():
+    import time as _t
+    ov.song = {"title": "A", "artist": "B", "cover": None}
+    ov.status = "PLAYING"
+    ov.duration = 260.0
+    ov.anchor_pos = 40.0
+    ov.anchor_ts = _t.monotonic()
+    ov._last_tick_pos = 40.0
+    # 探针读到另一首（总时长差很多）：必须拒绝，锚点不动
+    ov._on_probe_done({"ok": True, "pos": 12.0, "duration": 190.0,
+                       "at": _t.monotonic(), "expected": ("A", "B")})
+    assert abs(ov._current_pos() - 40.0) < 0.5, ov._current_pos()
+    # 采样期间切歌：同样拒绝
+    ov._on_probe_done({"ok": True, "pos": 200.0, "duration": 260.0,
+                       "at": _t.monotonic(), "expected": ("X", "Y")})
+    assert abs(ov._current_pos() - 40.0) < 0.5, ov._current_pos()
+check("qq calib rejects mismatch", qq_calib_rejects_mismatch)
+
+def qq_probe_gate():
+    import time as _t
+    p = L._QQMusicProbe()
+    L._QQMusicProbe.GATE_STALE = 60.0
+    L._QQMusicProbe._gate_owner = None
+    # 本机正开着 QQ 音乐：给合法时长，避免探针在几毫秒内直接以 no-duration
+    # 结束（那样测不到「超时后线程仍在跑」的令牌接管逻辑）。
+    _run = p._run
+    p._run = lambda *_a, **_k: (_t.sleep(1.2),
+                               {"ok": False, "reason": "timeout"})[1]
+    # 超时后线程仍在跑：第二次必须立刻返回 busy，不叠第二个 COM 公寓
+    first = p.read(timeout=0.02)
+    second = p.read(timeout=0.02)
+    assert first.get("reason") == "timeout", first
+    assert second.get("reason") == "busy", second
+    # 线程卡死超过阈值后允许接管，功能不会被永久废掉
+    L._QQMusicProbe._gate_ts = _t.monotonic() - 61.0
+    third = p.read(timeout=0.02)
+    assert third.get("reason") == "timeout", third
+    # 收尾
+    p._run = _run
+    _t.sleep(1.3)
+    L._QQMusicProbe._gate_owner = None
+    L._QQMusicProbe.GATE_STALE = 20.0
+check("qq probe gate", qq_probe_gate)
+
+def qq_bar_ratio():
+    """刷歌页没有时间文本：合成左黑右浅的进度条，比例必须准确。"""
+    w, h = 240, 20
+    buf = bytearray(w * h * 4)
+
+    def put(x, y, rgb):
+        i = (y * w + x) * 4
+        buf[i], buf[i + 1], buf[i + 2], buf[i + 3] = (
+            rgb[2], rgb[1], rgb[0], 255)
+
+    for y in range(h):
+        for x in range(w):
+            put(x, y, (20, 20, 20) if x < 120 else (240, 240, 240))
+    got = L._qq_bar_ratio(bytes(buf), w, h, (0, 0, w, h), 0, 0)
+    assert got and abs(got[0] - 0.5) < 0.02, got
+    # 低对比度：左右都是深灰，不能当进度条
+    for y in range(h):
+        for x in range(w):
+            put(x, y, (30, 30, 30) if x < 120 else (48, 48, 48))
+    assert L._qq_bar_ratio(bytes(buf), w, h, (0, 0, w, h), 0, 0) is None
+    # 纯水平渐变：有明暗差但没有锐利填充边界，必须拒绝
+    for y in range(h):
+        for x in range(w):
+            v = int(255 * x / (w - 1))
+            put(x, y, (v, v, v))
+    assert L._qq_bar_ratio(bytes(buf), w, h, (0, 0, w, h), 0, 0) is None
+check("qq bar ratio", qq_bar_ratio)
+
+def qq_bar_candidate():
+    """候选矩形：只认窗口下半部的宽矮条，外层容器与搜索框排除。"""
+    win = (100, 50, 1000, 800)
+    rects = [
+        (100, 50, 1000, 800),       # 整页容器
+        (200, 120, 700, 40),        # 顶部搜索框
+        (150, 800, 900, 40),        # 进度条外层
+        (160, 802, 880, 36),        # 进度条内层轨道
+        (120, 900, 900, 30),        # 超出窗口底部
     ]
-    for raw, lu, st in cases:
-        p = L._live_pos(raw, lu, st, now=now)
-        assert p == raw, (raw, lu, st, p)
-check("live pos passthrough", live_pos_passthrough)
+    got = L._qq_bar_candidate(rects, win)
+    assert got == (160, 802, 880, 36), got
+    assert L._qq_bar_candidate([], win) is None
+check("qq bar candidate", qq_bar_candidate)
+
+def qq_bar_position():
+    """两次比例换算进度：静止、无时长、越界都不许校准。"""
+    assert L._qq_bar_position(0.25, 0.30, 200.0) == 60.0
+    assert L._qq_bar_position(0.25, 0.25, 200.0) is None
+    assert L._qq_bar_position(0.25, None, 200.0) is None
+    assert L._qq_bar_position(0.25, 0.30, 0.0) is None
+    assert L._qq_bar_position(1.0, 1.0, 200.0) is None
+    assert abs(L._qq_bar_position(0.25, None, 200.0, False) - 50.0) < 0.01
+check("qq bar position", qq_bar_position)
+
+def qq_bar_rate():
+    """倍速只接受正常范围：0.65s 走 1.3s≈2x，走太快/倒退/零间隔都拒绝。"""
+    assert abs(L._qq_rate_from_ratios(0.25, 0.26, 0.65, 65.0) - 1.0) < 0.01
+    assert L._qq_rate_from_ratios(0.25, 0.30, 0.1, 65.0) is None
+    assert L._qq_rate_from_ratios(0.26, 0.25, 0.65, 65.0) is None
+    assert L._qq_rate_from_ratios(0.25, 0.30, 0.0, 65.0) is None
+check("qq bar rate", qq_bar_rate)
+
+def qq_calib_menu_entries():
+    """托盘菜单与右键菜单都必须有手动校准入口（否则功能等于不存在）。"""
+    def texts(menu, depth=0):
+        out = []
+        for a in menu.actions():
+            if a.menu() is not None and depth < 4:
+                out.extend(texts(a.menu(), depth + 1))
+            elif a.text():
+                out.append(a.text())
+        return out
+    tray = texts(ov.tray.contextMenu())
+    assert any("从 QQ 音乐校准进度" in t for t in tray), tray
+    ctx = texts(ov._build_context_menu())
+    assert any("从 QQ 音乐校准进度" in t for t in ctx), ctx
+    # 面板头部也要紧挨「重新获取歌词」给一个入口
+    p = _settings_panel(ov)
+    assert p is not None and hasattr(p, "b_calib"), "设置面板缺少校准按钮"
+    assert p.b_calib.text() == "校准进度", p.b_calib.text()
+
+    # 「紧挨着重新获取歌词」不是文案承诺，必须由布局顺序保证
+    def top_actions(menu):
+        return [a for a in menu.actions() if a.menu() is None and a.text()]
+
+    def assert_adjacent(menu, label):
+        acts = top_actions(menu)
+        ref = next(i for i, a in enumerate(acts) if a.text() == "重新获取歌词")
+        cal = next(i for i, a in enumerate(acts) if "从 QQ 音乐校准进度" in a.text())
+        assert cal == ref + 1, "%s 里校准项没有紧挨重新获取：%s" % (
+            label, [a.text() for a in acts])
+
+    assert_adjacent(ov.tray.contextMenu(), "托盘菜单")
+    assert_adjacent(ov._build_context_menu(), "右键菜单")
+    # 头部控制条：b_calib 与 b_refetch 必须在同一个水平布局里且相邻
+    from PySide6.QtWidgets import QHBoxLayout
+
+    def find_hbox(layout):
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            sub = item.layout()
+            if sub is None:
+                continue
+            if isinstance(sub, QHBoxLayout):
+                a, b = sub.indexOf(p.b_calib), sub.indexOf(p.b_refetch)
+                if a >= 0 and b >= 0:
+                    return a, b
+            found = find_hbox(sub)
+            if found:
+                return found
+        return None
+
+    pair = find_hbox(p.b_refetch.parentWidget().layout())
+    assert pair is not None, "设置面板头部没有同时容纳校准与重新获取的控制条"
+    assert pair[0] + 1 == pair[1], "设置面板头部校准按钮没有紧挨重新获取"
+check("qq calib menu entries", qq_calib_menu_entries)
+
+def qq_calib_action_wiring():
+    """菜单项必须真的能被触发。
+
+    回归点：QAction.triggered 会带一个 checked 参数，直接连无参方法会在 PySide
+    里抛 TypeError 并被吞掉 —— 表现就是「菜单点下去毫无反应」，但只断言菜单
+    文本的测试仍会全部通过。这里直接 emit 信号，验证回调真的跑起来。
+    """
+    hits = []
+    real = ov._calibrate_from_qq
+    ov._calibrate_from_qq = lambda: hits.append(1)
+    try:
+        def collect(menu, depth=0):
+            out = []
+            for a in menu.actions():
+                if a.menu() is not None and depth < 4:
+                    out.extend(collect(a.menu(), depth + 1))
+                elif "从 QQ 音乐校准进度" in a.text():
+                    out.append(a)
+            return out
+        ov._build_tray()
+        tray_actions = collect(ov.tray.contextMenu())
+        assert tray_actions, "托盘菜单缺少校准项"
+        tray_actions[0].trigger()                  # 与真实点击同一条路径
+        ctx_actions = collect(ov._build_context_menu())
+        assert ctx_actions, "右键菜单缺少校准项"
+        ctx_actions[0].trigger()
+        assert len(hits) == 2, hits
+    finally:
+        ov._calibrate_from_qq = real
+        ov._build_tray()
+check("qq calib action wiring", qq_calib_action_wiring)
+
+def qq_calib_dialog_content():
+    """确认框必须把「QQ 值 / 当前值 / 偏差方向 / 总长」都写清楚。"""
+    from PySide6.QtWidgets import QMessageBox
+    box = ov._build_calib_dialog(59.5, 260.0, 39.1, 20.4)
+    text = box.text() + " " + box.informativeText()
+    assert "0:59" in text, text
+    assert "0:39" in text, text
+    assert "偏慢" in text, text
+    assert "4:20" in text, text
+    assert box.button(QMessageBox.Ok).text() == "校准"
+    assert box.button(QMessageBox.Cancel).text() == "取消"
+    box.deleteLater()
+    # 方向相反时文案要反过来
+    box2 = ov._build_calib_dialog(10.0, 0.0, 30.0, -20.0)
+    assert "偏快" in box2.informativeText(), box2.informativeText()
+    box2.deleteLater()
+check("qq calib dialog content", qq_calib_dialog_content)
+
 print("[17d] 幽灵会话规避：_lut_age 与 _pick_session 新鲜度排序")
 def ghost_session_pick():
     import datetime as _dt
@@ -424,11 +888,20 @@ def ghost_session_pick():
     mgr = _FakeMgr([ghost, real, stale2])
     chosen = L.MediaWatcher._pick_session(mgr, "")
     assert chosen.src == "QQMusic.exe" and chosen.age == 0.2, (chosen.src, chosen.age)
-    # 只有一个幽灵 PAUSED，永远选它（不崩），但 age 标记脏
+    # 只有一个幽灵 PAUSED：没有任何可用会话，应返回 None 进入就绪态
     only = _FakeSess("QQMusic.exe", "PAUSED", 200.0, stale=1234.0)
     mgr2 = _FakeMgr([only])
     c2 = L.MediaWatcher._pick_session(mgr2, "")
-    assert c2 is not None
+    assert c2 is None
+    # 2026-11-22 实测：Edge 关闭播放页后留下自称 PLAYING、position=0、
+    # 时间轴陈旧 50 分钟的幽灵会话。它绝不能压过刚恢复的 QQ 音乐。
+    edge_ghost = _FakeSess("MSEdge", "PLAYING", 0.0, stale=3000.0)
+    qq_paused = _FakeSess("QQMusic.exe", "PAUSED", 158.0, stale=10.0)
+    mgr3 = _FakeMgr([edge_ghost, qq_paused])
+    c3 = L.MediaWatcher._pick_session(mgr3, "")
+    assert c3.src == "QQMusic.exe", c3.src
+    # 只剩 Edge 幽灵时同样必须返回 None，不能显示 0.0s 的占位卡
+    assert L.MediaWatcher._pick_session(_FakeMgr([edge_ghost]), "") is None
 check("ghost session pick", ghost_session_pick)
 print("[17e] 播放状态归一化：winrt 新投影 str() 是裸数字，必须认 .name")
 def status_name_both_projections():
@@ -556,7 +1029,7 @@ def saver_switch():
     checked = [k for k, a in ov._saver_style_actions.items() if a.isChecked()]
     assert checked == ["particle"], checked
     ov._open_panel()
-    p = ov.panel
+    p = _settings_panel(ov)
     assert hasattr(p, "saver_preview"), "面板缺少 saver_preview"
     ov.set_saver_style("bars"); p.refresh()
     pm = p.saver_preview.pixmap()
@@ -786,7 +1259,7 @@ def parallel_fetch():
         L._fetch_source = fake
         try:
             t0 = time.perf_counter()
-            lines, words, trans, cover, used, by_src, singer_ok = L._gather_sources(
+            lines, words, trans, cover, used, by_src, singer_ok, netdown, roma = L._gather_sources(
                 "q", "t", artist, 200.0, False)
             return (time.perf_counter() - t0, lines, words, trans, used, by_src,
                     singer_ok)
@@ -889,7 +1362,7 @@ def singer_mismatch_guard():
         return cand
     L._fetch_source = fake
     try:
-        _l, _w, _t, _c, used, _b, singer_ok = L._gather_sources(
+        _l, _w, _t, _c, used, _b, singer_ok, _nd, _rm = L._gather_sources(
             "无所谓 杨千嬅", "无所谓", "杨千嬅", 200.0, False)
     finally:
         L._fetch_source = real
@@ -911,7 +1384,7 @@ def singer_mismatch_guard():
         L._fetch_source = fake2
         try:
             return L._gather_sources(title + " " + artist, title, artist,
-                                     200.0, False)
+                                     200.0, False)[:7]
         finally:
             L._fetch_source = real
 
@@ -1147,21 +1620,21 @@ def mismatch_ui_flow():
     real_gather = L._gather_sources
     try:
         # 2a) 非严格：命中缓存，且 sk=False 原样透出（界面据此标注）
-        L._gather_sources = lambda *a, **k: ([], {}, [], None, "", {}, True)
-        cl, _cw, _cv, _ct, sk = L.fetch_lyrics("smoke-strict", "smoke-artist")
+        L._gather_sources = lambda *a, **k: ([], {}, [], None, "", {}, True, False, [])
+        cl, _cw, _cv, _ct, sk, _nd, _rm = L.fetch_lyrics("smoke-strict", "smoke-artist")
         assert cl == [[0.0, "缓存里的错配歌词"]], cl
         assert sk is False, "缓存里 sk=False 应透出为 singer_ok=False"
         # 2b) 严格：绕过缓存（否则读到的还是这份错的）+ 错配结果直接丢弃
         L._gather_sources = lambda *a, **k: (
-            [[0.0, "同名歌歌词"]], {}, [], None, "qq", {}, False)
-        dl, _dw, _dv, _dt, dsk = L.fetch_lyrics("smoke-strict", "smoke-artist",
+            [[0.0, "同名歌歌词"]], {}, [], None, "qq", {}, False, False, [])
+        dl, _dw, _dv, _dt, dsk, _nd, _rm = L.fetch_lyrics("smoke-strict", "smoke-artist",
                                                 strict_artist=True)
         assert dl == [], "严格模式应丢弃错配结果: %r" % (dl,)
         assert dsk is False, dsk
         # 2c) 严格 + 歌手对版：正常放行
         L._gather_sources = lambda *a, **k: (
-            [[0.0, "正确歌手的歌词"]], {}, [], None, "qq", {}, True)
-        gl, _gw, _gv, _gt, gsk = L.fetch_lyrics("smoke-strict", "smoke-artist",
+            [[0.0, "正确歌手的歌词"]], {}, [], None, "qq", {}, True, False, [])
+        gl, _gw, _gv, _gt, gsk, _nd, _rm = L.fetch_lyrics("smoke-strict", "smoke-artist",
                                                 strict_artist=True)
         assert gl == [[0.0, "正确歌手的歌词"]] and gsk is True, (gl, gsk)
     finally:
@@ -1200,7 +1673,7 @@ def mismatch_ui_flow():
     # ---- 4) 设置面板提示条随 refresh() 显隐 ----
     ov3 = _mk_overlay()
     ov3._open_panel()
-    p = ov3.panel
+    p = _settings_panel(ov3)
     assert p is not None and hasattr(p, "mismatch_bar")
     p.show()
     try:
@@ -1244,8 +1717,9 @@ def async_fetch_ordering():
 
     def fake_fetch(title, artist, prefer_netease=False, duration=0.0,
                    strict_artist=False):
+        # 2026-11-14 起返回 7 元组（新增 network_down / roma）
         return ([[1.0, "第一条"]], {0: [[1.0, 0.5, "第一条"]]},
-                "https://example.invalid/cover.jpg", [], True)
+                "https://example.invalid/cover.jpg", [], True, False, [])
 
     def run():
         calls[:] = []
@@ -1503,6 +1977,8 @@ def font_download_security():
        "github release 应放行")
     ck(L._font_url_allowed("https://ghproxy.net/https://github.com/x/y.ttf"),
        "代理透传 github 应放行")
+    ck(L._font_url_allowed("https://registry.npmmirror.com/@fontpkg/x/-/x.tgz"),
+       "阿里 npm 镜像应放行（字体 npm 包备用源）")
     ck(not L._font_url_allowed("http://cdn.jsdelivr.net/gh/x/y.ttf"),
        "裸 http 应拒绝")
     ck(not L._font_url_allowed("https://evil.example.com/x.ttf"),
@@ -1538,8 +2014,12 @@ def font_download_security():
     buf = _io.BytesIO()
     with _zip.ZipFile(buf, "w") as z:
         z.writestr("../evil.ttf", b"X" * 1024)
-        z.writestr("good.ttf", b"G" * 2048)        # 无 magic，非字体
+        # Valid TrueType magic so the extraction path is exercised. The bytes
+        # after the header are not a real font, so Qt loading is stubbed below.
+        z.writestr("good.ttf", b"\x00\x01\x00\x00" + b"G" * 2044)
     buf.seek(0)
+    real_load = L.load_font_file
+    L.load_font_file = lambda _p: []
     try:
         entry = {"id": "z", "name": "z", "zip": True, "files": [
             ("bundle.zip", ["https://github.com/x/bundle.zip"])]}
@@ -1551,6 +2031,7 @@ def font_download_security():
         ck(isinstance(fams, list) and not fams,
            "非字体被 magic 校验拦截，返回空而非崩溃")
     finally:
+        L.load_font_file = real_load
         import shutil as _sh
         _sh.rmtree(parent, ignore_errors=True)
 
@@ -1723,7 +2204,7 @@ def ui_polish():
 
     # ---- 面板：屏保按钮已从「通栏高饱和主色」降级为描边式，箭头也不再是方块 ----
     ov._open_panel()
-    p = ov.panel
+    p = _settings_panel(ov)
     sv = [b for b in p.findChildren(L.QPushButton) if b.objectName() == "saver"]
     assert len(sv) == 1, "屏保按钮应恰好一个，实际 %d 个（%s）" \
         % (len(sv), [b.objectName() for b in p.findChildren(L.QPushButton)])
@@ -1778,7 +2259,7 @@ def popup_skin():
     # QComboBox 的下拉是个 Qt 私有 QFrame 子类 QComboBoxPrivateContainer，
     # 深色 view 外面包着一圈白边；只有类名选择器能命中它（.QFrame 匹配不到）。
     ov._open_panel()
-    combos = ov.panel.findChildren(QComboBox)
+    combos = _settings_panel(ov).findChildren(QComboBox)
     assert combos, "设置面板里应当有下拉框"
     for cb in combos:
         L.fix_combo_popup(cb)
@@ -1890,7 +2371,7 @@ def ui_texture():
 
     # ---- 质感令牌：面板 QSS 必须真的引用了令牌，且不能有占位符残留 ----
     ov._open_panel()
-    qss = ov.panel.styleSheet()
+    qss = _settings_panel(ov).styleSheet()
     assert ("border-radius: %dpx" % L.UI_R_CARD) in qss, "卡片圆角没走 UI_R_CARD 令牌"
     assert L.UI_GROOVE in qss, "凹槽底色没走 UI_GROOVE 令牌"
     for ph in ("__A__", "__AL__", "__R_CARD__", "__R_CTRL__", "__R_ICON__",

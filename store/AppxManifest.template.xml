@@ -29,9 +29,14 @@
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
-  <!-- 界面目前只有简体中文，如实声明；别虚报 en-US，商店会按语言给用户预期 -->
+  <!-- 2026-11-14 起界面支持四语言（设置面板可切、默认跟随系统），如实声明；
+       与 build_store.py 的 SUPPORTED_LANGS 一致，Partner Center 需为每种语言
+       配套商店列表文案（见 store/out/listing-v*.md 的四语言块） -->
   <Resources>
     <Resource Language="zh-CN" />
+    <Resource Language="zh-TW" />
+    <Resource Language="en-US" />
+    <Resource Language="ja-JP" />
   </Resources>
 
   <Dependencies>

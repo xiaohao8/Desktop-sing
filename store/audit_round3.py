@@ -72,15 +72,16 @@ print("  QApplication OK")
 head("P2 「关于」文案如实性")
 about_src = open(os.path.join(ROOT, "lyrics_overlay.py"), encoding="utf-8").read()
 i = about_src.index("    def _about(self):")
-j = about_src.index("    # ---------------- 检查更新 ----------------")
+j = about_src.index("    # ---------------- 氛围屏保 ----------------")
 ab = about_src[i:j]
 check("P2.1 _about 内按 STORE_MODE 分支", ab.count("STORE_MODE") >= 1)
 check("P2.2 商店分支文案不含「进程保活」",
       "开机自启（系统「启动」设置里开关）· 全局快捷键" in ab
       and "开机自启 · 进程保活" in ab,
       "非商店分支保留保活字样")
-# 商店分支那一行的字面量
-m = re.search(r'if STORE_MODE:\s*\n\s*abilities = \((.*?)\)\n', ab, re.S)
+# 商店分支那一行的字面量（v2.0.5 起为 _tr("...") 单调用形态，兼容旧元组形态）
+m = re.search(r'if STORE_MODE:\s*\n\s*abilities = _tr\("(.*?)"\)\n', ab, re.S) \
+    or re.search(r'if STORE_MODE:\s*\n\s*abilities = \((.*?)\)\n', ab, re.S)
 if m:
     seg = m.group(1)
     check("P2.3 商店分支 abilities 字符串不含「保活」", "保活" not in seg, seg.replace("\n", " ")[:70])
@@ -124,33 +125,17 @@ if overlay is not None:
                   traceback.format_exc().splitlines()[-1])
 
         # 商店模式下不该存在的控件
-        check("P1.5 商店版未创建 update_url_edit",
-              not hasattr(panel, "update_url_edit"))
-        check("P1.6 商店版未创建 update_check_btn",
-              not hasattr(panel, "update_check_btn"))
-        check("P1.7 商店版未创建 update_auto_check",
-              not hasattr(panel, "update_auto_check"))
-        check("P1.8 商店版未创建 _on_update_url 所依赖的控件（_on_update_url 仍可解析属性）",
-              not hasattr(panel, "update_url_edit"))
+        check("P1.5 设置面板没有任何应用内更新控件",
+              not any(hasattr(panel, name) for name in
+                      ("update_url_edit", "update_check_btn", "update_auto_check")))
         # 保活/自启开关：存在但隐藏
         check("P1.9 keep_check 存在且已隐藏",
               hasattr(panel, "keep_check") and panel.keep_check.isHidden())
         check("P1.10 auto_check 存在且已隐藏",
               hasattr(panel, "auto_check") and panel.auto_check.isHidden())
 
-        # 排查：_on_update_url 若被误触发会 AttributeError 吗？（商店版没有那个控件，
-        # 但只要没人连它的 editingFinished 就永远不会被调用；这里确认没连错）
-        check("P1.11 商店版 _on_update_url 未被任何控件连线触发",
-              "update_url_edit.editingFinished.connect" not in
-              open(os.path.join(ROOT, "lyrics_overlay.py"), encoding="utf-8").read().split(
-                  "if STORE_MODE:\n            # 商店版：更新走商店")[1][:400])
-
-    # 商店版 check_update 静默/提示
-    try:
-        overlay.check_update(manual=False)
-        check("P1.12 check_update(manual=False) 商店版静默返回", True)
-    except Exception as e:
-        check("P1.12 check_update(manual=False) 商店版静默返回", False, str(e))
+        check("P1.6 主程序不再提供 check_update 入口",
+              not hasattr(overlay, "check_update"))
 
     try:
         ov.spawn_supervisor()
@@ -261,16 +246,10 @@ for src, label in (("QQ音乐", "QQ音乐"), ("网易云", "网易云音乐"),
 check("P4.1 隐私政策覆盖 QQ音乐/网易云/酷狗/LRCLIB 四源",
       all(k in priv_txt for k in ("QQ音乐", "网易云音乐", "酷狗音乐", "LRCLIB")))
 
-# 真实更新源
-upd_sources = []
-for k in ("github.com", "gitee.com", "jsdelivr.net", "lanzou"):
-    if k in code.lower():
-        upd_sources.append(k)
-print("  代码里出现的更新/分发渠道: %s" % ", ".join(upd_sources))
-check("P4.2 隐私政策披露了更新检查渠道（GitHub/Gitee/jsDelivr）",
-      all(k in priv_txt for k in ("GitHub", "Gitee", "jsDelivr")))
-check("P4.3 隐私政策声明了商店版无应用内更新",
-      "Microsoft Store 版本没有" in priv_txt or "商店版本没有" in priv_txt)
+check("P4.2 隐私政策声明程序内不检查更新",
+      "程序内没有「检查更新」行为" in priv_txt and "后台请求版本清单" in priv_txt)
+check("P4.3 隐私政策仍披露字体分发渠道",
+      "GitHub" in priv_txt and "jsDelivr" in priv_txt)
 
 # 本地写入目录
 dirs = set(re.findall(r'APPDATA[^"\']*', code)) | set(re.findall(r'APP_NAME[^"\']*', code))
@@ -368,13 +347,10 @@ desc_brands = [b for b in PLAYER_BRANDS if b in desc_txt]
 check("P5.1c 清单 Description 不点名播放器品牌", not desc_brands,
       "命中: %s" % desc_brands if desc_brands else "")
 
-# P5.1d 商店版「更新」菜单项的文案必须如实（不能还写「检查更新…」，
-#       否则用户以为应用内有更新通道，点了却拿不到版本信息 → 像功能坏了）
-check("P5.1d 商店版更新菜单文案如实反映商店分发",
-      "在商店中获取更新" in ui_src and
-      re.search(r'QAction\("在商店中获取更新…" if STORE_MODE else "检查更新…"', ui_src)
-      is not None,
-      "旧版两种模式都写「检查更新…」")
+# P5.1d 应用内不得残留任何更新入口或自动检查定时器。
+check("P5.1d 主程序无应用内更新入口 / 自动检查",
+      not re.search(r'act_check|check_update\s*\(|update_url_edit|'
+                    r'update_auto_check|QTimer\.singleShot\(4000', ui_src))
 
 # P5.2 不得暗示与音乐平台存在关联
 check("P5.2 「关于」窗口声明与音乐平台无从属关系",
@@ -397,10 +373,9 @@ check("P5.5 设置面板提供「歌词缓存」清理入口",
 check("P5.6 prune_cache(force=True) 会删除 .json", 
       re.search(r'if force:.*?os\.remove', ui_src, re.S) is not None)
 
-# P5.7 缓存清理按钮要在商店版也存在（不随更新项一起被裁掉）
-check("P5.7 清理入口未挂在商店版被裁的更新区块里",
-      "cache_btn" in ui_src and "update_url_edit" not in
-      ui_src.split("cache_btn")[0][-400:])
+# P5.7 歌词缓存清理入口必须保留在设置面板。
+check("P5.7 设置面板保留歌词缓存清理入口",
+      "cache_btn" in ui_src and "_on_clear_cache" in ui_src)
 
 # P5.8 站点商品页也不得出现注册商标
 site_txt = open(os.path.join(ROOT, "site", "index.html"), encoding="utf-8").read()
@@ -433,10 +408,13 @@ n_anim = len(re.findall(r'^\s*"[a-z]+":', re.search(
 n_preset = len(re.findall(r'\(\"', re.search(
     r'POSITION_PRESETS = \((.*?)\n\)', ui_src, re.S).group(1)))
 # 屏保风格：只在「菜单构建」那一处按 (key, name) 成对列举，数那个元组。
-# 注意正则要把第一个 `("` 一起吃进 group（否则首项不被计入，永远少 1）。
+# 2026-11-14：菜单项被 _tr() 包装后行内 `("` 出现次数翻倍，改为数**去重后的 key**
+# （particle / minimal / bars / orbits）。正则的 \(\( 会吃掉首项的 `(`，
+# 统计前补回一个，保证首项 key 也被计入。
 m_saver = re.search(r'for key, name in \(\(("particle.*?)\)\):\s*\n\s*a = m_saver_style',
                     ui_src, re.S)
-n_saver = len(re.findall(r'\("', m_saver.group(1))) + 1 if m_saver else -1
+n_saver = len(set(re.findall(r'\("([a-z]+)"',
+                             "(" + m_saver.group(1)))) if m_saver else -1
 print("  代码真源: 样式 %d / 动画 %d / 锚点 %d / 屏保 %d"
       % (n_style, n_anim, n_preset, n_saver))
 
@@ -578,8 +556,8 @@ check("P5.14d 卸载时删快捷方式与开始菜单项",
 head("P5.15 中英文档")
 # 英文版不是「顺手加一份」——它有两个硬约束：
 #   ① **英文版必须存在且与中文版口径一致**（商店是全球分发的，英文用户要能读懂声明）；
-#   ② **英文版必须如实说明界面当前只有简体中文**，否则等于暗示有英文界面，
-#      按政策 10.1.1（准确描述功能与重要限制）是会被判的。
+#   ② **英文版必须如实说明界面实际支持的语言清单**（当前四语言，未覆盖的回退英文），
+#      否则等于夸大或低报语言能力，按政策 10.1.1（准确描述功能与重要限制）是会被判的。
 _zh_en = [("README.md", "README.en.md"), ("PRIVACY.md", "PRIVACY.en.md"),
           ("NOTICE.md", "NOTICE.en.md"), ("使用说明.txt", "USAGE.en.txt")]
 for _zh, _en in _zh_en:
@@ -589,9 +567,10 @@ for _zh, _en in _zh_en:
 _en_readme = os.path.join(ROOT, "README.en.md")
 if os.path.exists(_en_readme):
     _ert = open(_en_readme, encoding="utf-8").read()
-    check("P5.15a 英文 README 如实说明界面只有简体中文",
-          "Simplified Chinese only" in _ert,
-          "不写这句＝暗示有英文界面，商店会按 10.1.1 判「描述不准确」")
+    check("P5.15a 英文 README 如实说明界面支持的语言",
+          "Simplified Chinese" in _ert and "Traditional Chinese" in _ert
+          and "Japanese" in _ert and "fall back to English" in _ert,
+          "必须列全四语言并说明未覆盖语言回退英文，否则商店按 10.1.1 判「描述不准确」")
     check("P5.15b 英文 README 保留已知限制章节",
           "Known limitations" in _ert)
     check("P5.15c 英文 README 保留许可与致谢章节",
@@ -683,19 +662,23 @@ if os.path.exists(_en_readme):
               else "")
 
 # P5.16c 界面语言必须如实声明（政策 10.7）
-# 应用界面目前只有简体中文。两处都要对：
-#   ① 清单 Resources **只**声明 zh-CN（不虚报 en-US，否则等于声明了一个不存在的本地化）；
-#   ② 商品页描述里要写明「界面仅有简体中文」，否则英文页区的用户会按描述预期一个英文界面。
-# 注意 ① 的 `Resources` 在**清单模板**里，不在 build_store.py 里 —— 第一版查错了文件。
+# v2.0.5 起界面四语言（简体中文 / 繁體中文 / English / 日本語）。两处都要对：
+#   ① 清单 Resources 声明与 build_store.py 的 SUPPORTED_LANGS **完全一致**
+#     （声明了就要有对应语言 UI；多声明/少声明都会误导商店与用户）；
+#   ② 商品页描述写明「界面语言：…（设置内可切换，默认跟随系统）」。
 _src_bs = open(os.path.join(ROOT, "store", "build_store.py"), encoding="utf-8").read()
 _tpl = open(os.path.join(ROOT, "store", "AppxManifest.template.xml"),
             encoding="utf-8").read()
 _langs = re.findall(r'<Resource\s+Language="([^"]+)"', _tpl)
-check("P5.16c 清单只声明 zh-CN（不虚报 en-US）",
-      _langs == ["zh-CN"], "实际声明: %s" % (_langs or "无"))
-check("P5.16c 商品页描述写明界面仅有简体中文",
-      "仅有简体中文" in _src_bs,
-      "不写＝英文页区用户按描述预期一个不存在的英文界面")
+_m_sup = re.search(r'SUPPORTED_LANGS\s*=\s*\(([^)]*)\)', _src_bs)
+_sup_langs = [x.strip().strip('"\'') for x in _m_sup.group(1).split(",") if x.strip()] \
+    if _m_sup else []
+check("P5.16c 清单 Resources 与 SUPPORTED_LANGS 一致（v2.0.5 四语言）",
+      sorted(_langs) == sorted(_sup_langs) and bool(_langs),
+      "清单: %s / 常量: %s" % (_langs or "无", _sup_langs or "无"))
+check("P5.16c 商品页描述写明界面语言与切换入口",
+      ("界面语言" in _src_bs and "默认跟随系统" in _src_bs),
+      "不写＝用户按描述预期一个不存在的界面语言")
 
 # ---------------------------------------------------------------- P5.17 商店截图素材
 head("P5.17 商店截图素材（生成器 + 产物）")
@@ -724,10 +707,12 @@ def _img_detail_hits(img, step=3, gap=4, thresh=25):
 _BLANK_HITS_MIN = 120
 
 
-_shots_py = os.path.join(ROOT, "store", "render_shots.py")
+_shots_py = os.path.join(ROOT, "store", "render_player_shots.py")
 _shots_dir = os.path.join(ROOT, "store", "out", "shots")
-_SHOT_NAMES = ("store-shot-1-idle.png", "store-shot-2-hero.png",
-               "store-shot-3-settings.png")
+_SHOT_NAMES = ("player-1-main.png", "player-2-report.png",
+               "player-3-history.png", "player-4-immersive.png",
+               "player-5-mini.png")
+_SHOT_LANGS = ("zh-TW", "en", "ja")
 
 check("P5.17a 截图生成脚本存在", os.path.isfile(_shots_py))
 _src_shots = open(_shots_py, encoding="utf-8").read() if os.path.isfile(_shots_py) else ""
@@ -739,17 +724,25 @@ _hit_words = [w for w in _REAL_SONG_WORDS if w in _src_shots]
 check("P5.17b 截图用自写占位歌词（无真实歌曲歌名/歌词）", not _hit_words,
       "命中: %s" % _hit_words if _hit_words else "")
 
+# 产品边界：这是歌词载体，不是音乐服务。商店素材生成器不能悄悄引入音乐库、
+# 推荐流、第三方账号登录或第三方播放器截图。
+_BOUNDARY_WORDS = ("QQ音乐登录", "网易云登录", "音乐库接口",
+                   "推荐流接口", "account_login", "music_library")
+_boundary_hits = [w for w in _BOUNDARY_WORDS if w in _src_shots]
+check("P5.17b2 截图生成器不提供音乐库/推荐/账号服务", not _boundary_hits,
+      "命中: %s" % _boundary_hits if _boundary_hits else "")
+
 # offscreen 回填守卫：下面四处漏掉任何一处，都会「静默」抓到空白或缺行的图
 # （不抛异常、文件也在，只有肉眼看才发现 —— 曾经的 hero / settings 就是这样）。
 for _tag, _needle, _why in (
-        ("P5.17c 切行动画推到终态（_line_anim.stop + _line_t）", "_line_anim.stop()",
-         "否则 _line_t 停在 0 → 整行歌词透明，只剩歌名"),
-        ("P5.17d 面板淡入推到终态（_fx.setOpacity(1.0)）", "_fx.setOpacity(1.0)",
-         "否则 opacity 停在 0 → 设置面板抓成纯背景图"),
-        ("P5.17e 手动喂当前行文本（_current_text）", "_current_text =",
-         "绘制读缓存文本而非 lines[cur_idx]，不喂则当前行是空的"),
-        ("P5.17f 设置播放锚点时间（anchor_ts）", "anchor_ts = time.monotonic()",
-         "初值 0.0 + status=PLAYING → 时间轴飞到天外，行号全乱")):
+        ("P5.17c 抓图前设置播放锚点（anchor_ts）", "anchor_ts = time.monotonic()",
+         "初值 0.0 + status=PLAYING → 时间轴飞到天外，行号全乱"),
+        ("P5.17d 刷新后重新设置演示进度（update_progress）",
+         "player.now.update_progress(", "refresh_all() 会把播放条重置成 0:00"),
+        ("P5.17e 刷新后重新高亮当前歌词（set_playback）",
+         "player.now.canvas.set_playback(", "否则截图只有静态歌词、没有当前行"),
+        ("P5.17f 迷你截图合成商店尺寸（_save_mini）", "_save_mini(",
+         "原始迷你条不足 1366×768，不能直接上传")):
     check(_tag, _needle in _src_shots, "" if _needle in _src_shots else _why)
 
 check("P5.17g 抓图后有「全透明图」自证", "_has_content(" in _src_shots,
@@ -758,7 +751,10 @@ check("P5.17g 抓图后有「全透明图」自证", "_has_content(" in _src_sho
 if os.path.isdir(_shots_dir):
     from PySide6.QtGui import QImage  # noqa: E402
     _bad, _hits = [], []
-    for _n in _SHOT_NAMES:
+    _names = list(_SHOT_NAMES)
+    for _lang in _SHOT_LANGS:
+        _names.extend(n[:-4] + "-%s.png" % _lang for n in _SHOT_NAMES)
+    for _n in _names:
         _p = os.path.join(_shots_dir, _n)
         if not os.path.isfile(_p):
             _bad.append("%s 缺失" % _n)
@@ -771,11 +767,11 @@ if os.path.isdir(_shots_dir):
         _hits.append("%s=%d" % (_n.split("-")[-1].replace(".png", ""), _h))
         if _h < _BLANK_HITS_MIN:
             _bad.append("%s 疑似空白图（细节像素仅 %d，空白基线约 46）" % (_n, _h))
-    check("P5.17h 已生成的 3 张截图尺寸达标且非空白", not _bad,
+    check("P5.17h 四语言各 5 张截图尺寸达标且非空白", not _bad,
           "; ".join(_bad) if _bad else "细节像素 " + ", ".join(_hits))
 else:
     warn("P5.17h 截图还没生成（store/out/ 按 .gitignore 不进仓库）",
-         "跑 .buildenv\\Scripts\\python.exe store\\render_shots.py")
+         "跑 .buildenv312\\Scripts\\python.exe store\\render_player_shots.py（四语言各一次）")
 
 # 提审材料不能再声称「没有现成截图 / 需人工截图」——那是旧状态，会让人白跑一趟
 _stale = []
@@ -925,8 +921,8 @@ check("P5.18f5 官网不再把便携包描述成单文件 exe",
       "单文件" not in _site_html,
       "把「单文件 exe / 双击即用」改成「完整解压文件夹后运行 Desktop-sing.exe」")
 
-# 没有当前版本蓝奏云镜像时，清单必须明确说明，避免官网/弹窗承诺一个不存在的入口。
-_lz_has_current = _rel_ver in ov.LANZOU_MIRRORS
+# update.json 仍作为发布元数据保留，但应用内已不读取；只检查版本口径一致。
+_lz_has_current = bool(ov.LANZOU_MIRRORS.get(_rel_ver))
 _lz_status = str(_upd.get("lanzou_status") or "").strip().lower() if _upd else ""
 _lz_note = str(_upd.get("lanzou_note") or "").strip() if _upd else ""
 _lz_explicit_absent = _lz_status in (
@@ -1291,21 +1287,22 @@ check("P5.21c og:image / og:url 为绝对地址（社交分享卡片可渲染）
       "；".join(_og_rel) if _og_rel
       else "index.html 的 og:image 与 og:url 均为 https 绝对地址")
 
-# ---------------------------------------------------------------- P5.22 真机商店截图
-# 商店 listing 的主上传素材 = 真机截屏（store/shots/real-*.png，1920×1080），
-# 离屏合成图（P5.17）降级为备用。Partner Center 现行硬性要求：
+# ---------------------------------------------------------------- P5.22 补充商店截图
+# 商店 listing 的主上传素材 = 播放器窗口截图（P5.17，四语言 1600×900）。
+# 旧版真机浮层图（store/shots/real-*.png）只补充悬浮样式 / 屏保 / 设置面板。
+# Partner Center 现行硬性要求：
 # PNG、桌面图 ≥1366×768、单文件 <50MB、最多 10 张（建议 4 张）。
-head("P5.22 真机商店截图（store/shots/real-*.png，主上传素材）")
+head("P5.22 旧版真机截图（store/shots/real-*.png，补充素材）")
 
 _real_py = os.path.join(ROOT, "store", "make_real_shots.py")
 _real_dir = os.path.join(ROOT, "store", "shots")
 
-check("P5.22a 真机截图合成脚本存在（make_real_shots.py）", os.path.isfile(_real_py))
+check("P5.22a 旧版真机截图合成脚本存在（make_real_shots.py）", os.path.isfile(_real_py))
 
 _real_src = os.path.join(_real_dir, "src")
 _src_n = (len([_f for _f in os.listdir(_real_src) if _f.lower().endswith(".png")])
           if os.path.isdir(_real_src) else 0)
-check("P5.22b 真机原图已留档（store/shots/src/）", _src_n >= 1,
+check("P5.22b 旧版真机原图已留档（store/shots/src/）", _src_n >= 1,
       ("原图 %d 张 —— 换机器后无法从成品反推，合成脚本会空转" % _src_n)
       if _src_n < 1 else "原图 %d 张留档，real-*.png 可随时重合成" % _src_n)
 
@@ -1328,23 +1325,25 @@ if os.path.isdir(_real_dir):
                              % (_rn, os.path.getsize(_rp) // (1024 * 1024)))
         else:
             _real_ok += 1
-    check("P5.22c 真机成品达标（PNG、≥1366x768、<50MB、1~10 张）",
+    check("P5.22c 旧版真机成品达标（PNG、≥1366x768、<50MB、1~10 张）",
           not _real_bad and 1 <= _real_ok <= 10,
           "；".join(_real_bad) if _real_bad
-          else "%d 张 1920x1080，可直接上传 Partner Center" % _real_ok)
+          else "%d 张 1920x1080，可作功能补充素材" % _real_ok)
 else:
-    check("P5.22c 真机成品达标", False, "缺 store/shots/ 目录")
+    check("P5.22c 旧版真机成品达标", False, "缺 store/shots/ 目录")
 
-# 口径守卫：文档必须把真机图写成主素材，且不再出现「建议补真机图」这类旧待办
+# 口径守卫：文档必须把播放器图写成主素材，同时保留真机图作为补充素材
 # （改口径时最容易漏文档 —— P5.17i 同款思路，盯的是另一处旧话）。
 _stale_real = []
 for _f in ("store/README-STORE.md", "store/提审上线手册.md"):
     _t = open(os.path.join(ROOT, _f), encoding="utf-8").read()
+    if "render_player_shots.py" not in _t or "player-" not in _t:
+        _stale_real.append("%s 没把播放器截图写成主素材" % _f)
     if "store/shots/real-" not in _t and "store\\shots\\real-" not in _t:
-        _stale_real.append("%s 没把 store/shots/real-* 写成主素材" % _f)
+        _stale_real.append("%s 没保留旧版真机补充素材说明" % _f)
     if "补 1 张真机" in _t:
         _stale_real.append("%s 还留着「补 1 张真机」旧待办" % _f)
-check("P5.22d 文档口径已切换（真机图为主上传素材）", not _stale_real, "；".join(_stale_real))
+check("P5.22d 文档口径已切换（播放器图为主、真机图为补充）", not _stale_real, "；".join(_stale_real))
 
 # ---------------------------------------------------------------- 汇总
 head("汇总")

@@ -9,9 +9,9 @@
 <meta property="og:title" content="Privacy Policy · 桌面歌词|Desktop-sing">
 <meta property="og:description" content="Runs locally. No account, no ads, no tracking. Network requests are limited to fetching lyrics and artwork on demand.">
 <meta property="og:type" content="website">
-<link rel="icon" href="assets/favicon-32.png?v=394512fa34" sizes="32x32">
-<link rel="icon" href="assets/icon-256.png?v=394512fa34" sizes="256x256">
-<link rel="stylesheet" href="assets/style.css?v=394512fa34">
+<link rel="icon" href="assets/favicon-32.png?v=a84f6c4a6b" sizes="32x32">
+<link rel="icon" href="assets/icon-256.png?v=a84f6c4a6b" sizes="256x256">
+<link rel="stylesheet" href="assets/style.css?v=a84f6c4a6b">
 <style>
 /* 隐私政策页专用排版（不动共享的 style.css） */
 .policy { max-width: 820px; }
@@ -39,7 +39,7 @@
 <header class="nav">
   <div class="wrap">
     <a class="brand" href="index.html">
-      <img src="assets/icon-180.png?v=394512fa34" alt="">
+      <img src="assets/icon-180.png?v=a84f6c4a6b" alt="">
       <span>桌面歌词|Desktop-sing</span>
     </a>
     <nav class="nav-links">
@@ -62,7 +62,7 @@
         Desktop-sing is a desktop lyric overlay that runs locally. There is no account system,
         no advertising and no analytics. We do not collect any personally identifiable information.
       </p>
-      <p class="meta-line">Effective date: 18 September 2026 · Applies to Desktop-sing v1.0.0 and later</p>
+      <p class="meta-line">Effective date: 24 November 2026 · Applies to Desktop-sing v2.0.8 and later</p>
     </div>
   </section>
 
@@ -79,11 +79,16 @@
           <tr><td><code>config.json</code></td><td>Your preferences</td><td>Style, font size, hotkeys, toggles</td></tr>
           <tr><td><code>cache\</code></td><td>Lyric cache</td><td>Caches fetched lyrics per song to avoid repeat requests</td></tr>
           <tr><td><code>fonts\</code></td><td>Downloaded fonts</td><td>Downloaded from the built-in font library; all free for commercial use</td></tr>
+          <tr><td><code>listening.json</code></td><td>On-device listening statistics</td><td>Track title, artist, date, hour, played seconds, play count and last-played time only; no album, player source, file paths, account, device ID or IP address</td></tr>
           <tr><td><code>t2s.tsv</code></td><td>Traditional→Simplified mapping</td><td>Optional user-supplied file</td></tr>
           <tr><td><code>desktop-lyrics.log</code></td><td>Runtime log</td><td>For troubleshooting; records only the program's own behaviour</td></tr>
         </table>
         <p>To delete it: close the program and remove that folder. When the Microsoft Store version is
           uninstalled, the system clears the package's data along with it.</p>
+        <p><b>Listening statistics</b> are on by default and count real playback seconds on this PC
+          only. Sessions under 20 seconds are ignored, at most 365 days / 5,000 aggregated rows are
+          retained, and nothing is uploaded. You can disable the feature in Settings or clear it at
+          any time from the Listening report page or the Settings panel.</p>
       </section>
 
       <section id="local-read">
@@ -128,20 +133,15 @@
             <td>The font distribution channel built into the program</td>
             <td>Downloads only the font file you selected</td>
           </tr>
-          <tr>
-            <td>Update check<br>(non-Store builds only)</td>
-            <td>The version manifest endpoints on GitHub / Gitee / jsDelivr</td>
-            <td>Compares version numbers only; sends no local data</td>
-          </tr>
         </table>
-        <p>The Microsoft Store version has no update-check behaviour — updates are always delivered
-          by the Store.</p>
+        <p>The app has no update-check behaviour and does not request a version manifest in the
+          background. The Microsoft Store version is updated by the Store.</p>
 
         <p><b>About request headers (disclosed in full)</b>: some music platforms' public endpoints
           only return results for common client types, so when requesting those endpoints the program
           sends a generic browser-type identifier along with a compatibility field marked
-          "PC client, client version 2.9.7". For LRCLIB and the update manifest endpoints the program
-          identifies itself by its own name, <code>Desktop-sing/&lt;version&gt;</code> (e.g.
+          "PC client, client version 2.9.7". For the LRCLIB endpoint the program identifies itself
+          by its own name, <code>Desktop-sing/&lt;version&gt;</code> (e.g.
           Desktop-sing/2.0). These identifiers exist
           only so the endpoints return lyric data normally. They
           <b>do not and cannot contain any of your personal information</b>, are not linked to your
@@ -166,8 +166,8 @@
       <section id="third-party">
         <h3>5. Third-party services</h3>
         <p>Lyrics and artwork come from the public endpoints of the music platforms named above, and
-          fonts and update files come from distribution channels such as GitHub, Gitee, jsDelivr and
-          Lanzou Cloud. Those services are controlled by their own operators and may have their own
+          font files come from distribution channels such as GitHub and jsDelivr. Those services
+          are controlled by their own operators and may have their own
           privacy policies. The only interaction between this program and them is a one-off functional
           request; no account or device information of yours is ever provided to them.</p>
       </section>

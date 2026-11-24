@@ -41,7 +41,7 @@ for k, v in dict(offset=0.0, font_scale=1.0, opacity=1.0, edge_fade_px=20,
     setattr(ov, k, v)
 for k in ("show_cover", "show_time", "show_trans", "glow", "edge_fade",
           "click_through", "locked", "keepalive", "hotkeys_on", "pause_fade",
-          "idle_saver", "saver_idle_only", "update_auto"):
+          "idle_saver", "saver_idle_only"):
     setattr(ov, k, False)
 
 panel = L.SettingsPanel(ov)

@@ -9,9 +9,9 @@
 <meta property="og:title" content="隐私政策 · 桌面歌词|Desktop-sing">
 <meta property="og:description" content="本地运行，无账户、无广告、无追踪；仅按需请求歌词与封面。">
 <meta property="og:type" content="website">
-<link rel="icon" href="assets/favicon-32.png?v=394512fa34" sizes="32x32">
-<link rel="icon" href="assets/icon-256.png?v=394512fa34" sizes="256x256">
-<link rel="stylesheet" href="assets/style.css?v=394512fa34">
+<link rel="icon" href="assets/favicon-32.png?v=a84f6c4a6b" sizes="32x32">
+<link rel="icon" href="assets/icon-256.png?v=a84f6c4a6b" sizes="256x256">
+<link rel="stylesheet" href="assets/style.css?v=a84f6c4a6b">
 <style>
 /* 隐私政策页专用排版（不动共享的 style.css） */
 .policy { max-width: 820px; }
@@ -39,7 +39,7 @@
 <header class="nav">
   <div class="wrap">
     <a class="brand" href="index.html">
-      <img src="assets/icon-180.png?v=394512fa34" alt="">
+      <img src="assets/icon-180.png?v=a84f6c4a6b" alt="">
       <span>桌面歌词|Desktop-sing</span>
     </a>
     <nav class="nav-links">
@@ -62,7 +62,7 @@
         桌面歌词（Desktop-sing）是一款本地运行的桌面歌词工具。我们没有账户系统、
         没有广告、没有统计埋点，也不收集能识别你身份的个人信息。
       </p>
-      <p class="meta-line">生效日期：2026 年 9 月 18 日 · 适用于桌面歌词 v1.0.0 及更高版本</p>
+      <p class="meta-line">生效日期：2026 年 11 月 24 日 · 适用于桌面歌词 v2.0.8 及更高版本</p>
     </div>
   </section>
 
@@ -78,11 +78,15 @@
           <tr><td><code>config.json</code></td><td>个人偏好设置</td><td>样式、字号、快捷键、开关等</td></tr>
           <tr><td><code>cache\</code></td><td>歌词缓存</td><td>按歌曲缓存已获取的歌词，避免重复请求</td></tr>
           <tr><td><code>fonts\</code></td><td>下载的字体文件</td><td>从程序内置的字体库下载，免费商用字体</td></tr>
+          <tr><td><code>listening.json</code></td><td>本机听歌统计</td><td>仅含歌名、歌手、日期、小时、播放秒数、播放次数、最近播放时间；不含专辑、播放器来源、文件路径、账号、设备 ID 或 IP</td></tr>
           <tr><td><code>t2s.tsv</code></td><td>繁简转换映射</td><td>可选的用户自定义文件</td></tr>
           <tr><td><code>desktop-lyrics.log</code></td><td>运行日志</td><td>排障用，只记录程序自身行为</td></tr>
         </table>
         <p>删除方式：关闭程序后直接删除该目录即可。Microsoft Store 版本卸载应用时，
           系统会一并清除包内数据。</p>
+        <p><b>听歌统计</b>默认开启，只在本机累计真实播放秒数；单次不足 20 秒不记录，
+          最多保留 365 天 / 5000 条聚合记录，不上传。可在设置中关闭，也可在「听歌报告」
+          页或设置面板随时一键清空。</p>
       </section>
 
       <section id="local-read">
@@ -122,18 +126,14 @@
             <td>程序内置的字体发布渠道</td>
             <td>仅下载所点的字体文件</td>
           </tr>
-          <tr>
-            <td>检查更新<br>（仅非商店版）</td>
-            <td>GitHub / Gitee / jsDelivr 的版本清单接口</td>
-            <td>仅比对版本号，不发送任何本地数据</td>
-          </tr>
         </table>
-        <p>Microsoft Store 版本没有「检查更新」行为——更新一律由商店分发。</p>
+        <p>程序内没有「检查更新」行为，也不会在后台请求版本清单。
+          Microsoft Store 版本由商店分发更新。</p>
 
         <p><b>关于请求头（如实说明）</b>：部分音乐平台的公开接口只对常见客户端类型
           返回结果，因此程序在请求这些接口时会带上通用的浏览器类型标识，
           以及标注为「PC 端、客户端版本 2.9.7」的兼容性字段；
-          对 LRCLIB 与更新清单接口，程序使用自己的名称标识
+          对 LRCLIB 接口，程序使用自己的名称标识
           <code>Desktop-sing/&lt;版本号&gt;</code>（如 Desktop-sing/2.0）。这些标识仅用于让接口正常返回歌词数据，
           <b>不包含也无法包含你的任何个人信息</b>，它们不与你的设备或账号绑定，
           也不用于任何形式的身份识别或追踪。</p>
@@ -155,8 +155,8 @@
 
       <section id="third-party">
         <h3>5. 第三方服务</h3>
-        <p>歌词与封面来自上述音乐平台的公开接口，字体与更新文件来自
-          GitHub / Gitee / jsDelivr / 蓝奏云等发布渠道。这些服务由各自的运营方控制，
+        <p>歌词与封面来自上述音乐平台的公开接口，字体文件来自
+          GitHub / jsDelivr 等发布渠道。这些服务由各自的运营方控制，
           可能有自己的隐私政策；本程序与它们之间只存在一次性的功能请求，
           不向它们提供你的任何账户或设备信息。</p>
       </section>

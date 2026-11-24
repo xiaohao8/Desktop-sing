@@ -18,6 +18,7 @@ TOP = "Desktop-sing-v%s" % _ver
 
 if not os.path.isdir(SRC):
     raise SystemExit("源目录不存在: %s" % SRC)
+os.makedirs(os.path.dirname(OUT), exist_ok=True)
 if os.path.isfile(OUT):
     os.remove(OUT)
 

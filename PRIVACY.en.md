@@ -1,5 +1,5 @@
-Desktop-sing 2.0 Privacy Statement
-(Last updated: 2026-10-02)
+Desktop-sing 2.0.8 Privacy Statement
+(Last updated: 2026-11-24)
 
 We understand how important your personal information is to you. Desktop-sing is a local
 utility. This statement explains what information it accesses, how that information is used,
@@ -15,7 +15,12 @@ this statement.
       %APPDATA%\Desktop-sing\config.json;
    2. Lyric cache and font library: lyrics retrieved by the app and fonts you download from the
       settings panel, stored under %APPDATA%\Desktop-sing\;
-   3. System media information: the title, artist and playback position of the current track,
+   3. Listening statistics: stored in %APPDATA%\Desktop-sing\listening.json and limited to track
+      title, artist, date, hour, played seconds, play count and last-played time. Album, player
+      source, file paths, accounts, device IDs and IP addresses are not stored. Sessions under
+      20 seconds are ignored; at most 365 days / 5,000 aggregated rows are retained. This feature is
+      on by default, can be disabled in Settings and can be cleared at any time;
+   4. System media information: the title, artist and playback position of the current track,
       read through the Windows System Media Transport Controls (SMTC). This is a local system
       capability provided by Windows. The software only reads information about media that is
       currently playing; it does not read your music files.
@@ -27,13 +32,13 @@ this statement.
    2. Font downloads: when you choose to download a font from the font library, the font file is
       fetched from that font's official distribution address or a mirror;
    3. There is no other network activity of any kind: no device information is collected, no usage
-      habits are uploaded, and no data is sent back during update checks.
+      habits are uploaded, and the app does not check for updates.
 
 3a. About request headers (disclosed in full)
    Some music platforms' public endpoints only return results for common client types, so when
    requesting those endpoints the software sends a generic browser-type identifier together with a
-   compatibility field marked as "PC client, client version 2.9.7". For LRCLIB and the update
-   manifest endpoints the software identifies itself by its own name, Desktop-sing/<version> (it follows the
+   compatibility field marked as "PC client, client version 2.9.7". For the LRCLIB endpoint the
+   software identifies itself by its own name, Desktop-sing/<version> (it follows the
    application version, e.g. Desktop-sing/2.0). These
    identifiers exist only to let the endpoints return lyric data normally. They **do not and cannot
    contain any of your personal information**, are not linked to your device or account, and are not
@@ -50,7 +55,8 @@ this statement.
 5. Deleting your data
    Uninstalling the software removes its installation directory. To erase all local data, delete the
    %APPDATA%\Desktop-sing\ folder: everything is deleted with that folder, it cannot be recovered,
-   and we hold no copy of it.
+   and we hold no copy of it. Listening statistics can also be cleared directly from the Listening
+   report page or the Settings panel.
 
 6. Protection of minors
    This software does not collect any information from minors and contains no social or payment

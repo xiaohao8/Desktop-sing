@@ -72,12 +72,14 @@ PUBLISHER_DISPLAY_NAME = "Desktop-sing Project"
 # ⚠️ 这一串会被写进用户可见的清单，**同样受 10.1.1 / 11.2 约束**：
 #    不点名任何第三方品牌（旧版写了「如 QQ音乐 / 网易云音乐 / 酷狗音乐」，
 #    等于把商标写进包元数据）。要说明兼容性就描述「接入 SMTC」这一客观事实。
-DESCRIPTION = ("常驻桌面的卡拉OK歌词悬浮条：自动跟随接入 Windows 系统媒体控制（SMTC）"
-               "的播放器显示逐字歌词。"
+DESCRIPTION = ("播放器式桌面歌词应用：主窗口提供最近播放、全屏歌词舞台、播放历史与本机听歌报告，"
+               "桌面歌词条作为迷你模式保留；通过 Windows 系统媒体控制（SMTC）遥控当前媒体会话"
+               "并显示逐字歌词，不直接播放本地音频文件。"
                "支持 5 种悬浮样式、9 种逐字动画、4 种氛围屏保、14 款配色主题（可固定主题"
                "或跟随封面主色自动换肤）、翻译与音译显示、进度时间、全局快捷键（默认关闭）"
                "与开机自启（默认关闭）。"
-               "所有数据仅保存在本机，无账号、无广告、无追踪。")
+               "听歌统计仅保存在本机，单次不足 20 秒不记录，可关闭或清空；"
+               "无账号、无广告、无追踪。")
 
 # 商店商品页「描述」字段（比清单 Description 长，可分段）。
 # 受 10.1.1（准确描述重要限制）与 10.7（本地化：界面只有中文需如实说明）约束。
@@ -85,10 +87,12 @@ DESCRIPTION = ("常驻桌面的卡拉OK歌词悬浮条：自动跟随接入 Wind
 # ⚠️ 功能数量必须与代码一致，且与主程序「关于」窗口、官网口径统一。
 #    真源：STYLE_NAMES(5) / ANIM_STYLES(9) / saver_style(4) / POSITION_PRESETS(7)。
 #    写数字前先数一遍，别凭印象——数字对不上审核员会当成虚假描述。
-STORE_LISTING_DESCRIPTION = """桌面歌词是一款常驻桌面的歌词悬浮条：你在播放器里播放歌曲，它就把逐字卡拉OK歌词显示在桌面上，不挡视线、不用切窗口。
+STORE_LISTING_DESCRIPTION = """桌面歌词是一款播放器式桌面歌词应用：左侧是最近播放与功能导航，右侧是全屏歌词舞台，并附带播放历史与本机听歌报告；桌面歌词条保留为迷你模式。
 
 【主要功能】
-· 逐字卡拉OK歌词：多源并行获取（QQ音乐 / 网易云音乐 / 酷狗音乐 / LRCLIB），择优显示
+· 播放器主界面：最近播放、全屏歌词舞台、沉浸模式、播放 / 暂停、上下首与进度跳转
+· 本机听歌报告与播放历史：本月 / 今日时长、连续听歌、活跃天数、最爱时段、常听歌手与热门歌曲
+· 逐字卡拉OK歌词：匹配系统正在播放的歌曲，并从多个公开歌词来源择优显示
 · 5 种悬浮样式 · 9 种逐字动画 · 柔和描边（浅色深色壁纸都清晰）
 · 14 款配色主题（v2.0 新增）：固定主题或跟随封面主色自动换肤，悬浮条 / 光晕 / 屏保 / 面板配色同步
 · 4 种氛围屏保（3D 粒子 / 极简时钟 / 音浪 / 星轨）：长时间空闲自动进入黑底防烧屏画面
@@ -99,16 +103,218 @@ STORE_LISTING_DESCRIPTION = """桌面歌词是一款常驻桌面的歌词悬浮�
 
 【使用前提（重要限制）】
 · 仅支持 Windows 10（1809 及以上）/ Windows 11，仅 x64
+· 播放器界面通过 SMTC 遥控当前系统媒体会话，不直接播放本地音频文件
 · 歌词信息来自 Windows 系统媒体控制（SMTC）：播放器必须接入 SMTC 才能读取当前歌曲，VR 类或老式播放器可能读不到
 · 同时打开多个播放器时，跟随正在播放的那一个
 · 需要联网才能获取歌词；已获取的歌词会缓存在本机，断网时可继续显示
-· 界面与歌词界面目前仅有简体中文
+· 界面语言：简体中文 / 繁體中文 / English / 日本語（设置内可切换，默认跟随系统）
 
 【隐私】
-程序没有账号系统、没有广告、没有统计埋点，不收集任何个人身份信息。设置、歌词缓存与日志全部保存在本机 %APPDATA%\\Desktop-sing\\ 目录，不上传任何服务器。仅在获取歌词时按需向上述音乐平台的公开接口发送歌曲名 / 歌手名 / 时长。
+程序没有账号系统、没有广告、没有统计埋点，不收集任何个人身份信息。设置、歌词缓存、日志与听歌统计全部保存在本机 %APPDATA%\\Desktop-sing\\ 目录，不上传任何服务器。听歌统计仅含歌名、歌手、日期、小时、播放秒数、播放次数与最近播放时间，不保存专辑、播放器来源、文件路径、账号、设备 ID 或 IP；单次不足 20 秒不记录，默认开启，可关闭或一键清空。程序不提供音乐库、推荐流或第三方账号登录；仅在匹配当前歌曲歌词时，按需向上述歌词来源发送歌曲名 / 歌手名 / 时长。
 
 【关于更新】
 Microsoft Store 版本由商店统一分发更新，程序内不含任何自更新通道。"""
+
+# 清单 Resources 声明的界面语言（2026-11-14 起四语言）。
+# ⚠️ 必须与 store/AppxManifest.template.xml 的 <Resource Language> 一致，
+#    write_manifest 会自检；Partner Center 的 Store listing 也要为每种语言
+#    配套填写描述（见 LISTING_DESCRIPTIONS / listing-v*.md 的四语言块）。
+SUPPORTED_LANGS = ("zh-CN", "zh-TW", "en-US", "ja-JP")
+
+# 各语言商店商品页「描述」。zh-CN 与 STORE_LISTING_DESCRIPTION 同源；
+# 其余语言为人工翻译版（语义一致，数字/限制口径不变）。
+LISTING_DESCRIPTIONS = {
+    "zh-CN": STORE_LISTING_DESCRIPTION,
+    "zh-TW": """桌面歌詞是一款播放器式桌面歌詞應用：左側是最近播放與功能導覽，右側是全螢幕歌詞舞台，並附帶播放歷史與本機聽歌報告；桌面歌詞條保留為迷你模式。
+
+【主要功能】
+· 播放器主介面：最近播放、全螢幕歌詞舞台、沉浸模式、播放 / 暫停、上下首與進度跳轉
+· 本機聽歌報告與播放歷史：本月 / 今日時長、連續聽歌、活躍天數、最愛時段、常聽歌手與熱門歌曲
+· 逐字卡拉OK歌詞：匹配系統目前播放的歌曲，並從多個公開歌詞來源擇優顯示
+· 5 種懸浮樣式 · 9 種逐字動畫 · 柔和描邊（淺色深色桌布都清晰）
+· 14 款配色主題（v2.0 新增）：固定主題或跟隨封面主色自動換膚，懸浮條 / 光暈 / 螢保 / 面板配色同步
+· 4 種氛圍螢保（3D 粒子 / 極簡時鐘 / 音浪 / 星軌）：長時間閒置自動進入黑底防燒屏畫面
+· 翻譯與羅馬音歌詞 · 歌詞繁簡轉換 · 進度時間
+· 擺放位置預設（7 個錨點，換解析度也貼邊）· 可鎖定位置防誤拖
+· 全域快捷鍵（預設關閉，可在設定裡開啟）
+· 開機自啟（預設關閉，可在系統「設定 → 應用程式 → 啟動」裡開啟）
+
+【使用前提（重要限制）】
+· 僅支援 Windows 10（1809 及以上）/ Windows 11，僅 x64
+· 播放器介面透過 SMTC 遙控目前系統媒體工作階段，不直接播放本機音訊檔案
+· 歌詞資訊來自 Windows 系統媒體控制（SMTC）：播放器必須接入 SMTC 才能讀取當前歌曲，VR 類或老式播放器可能讀不到
+· 同時開啟多個播放器時，跟隨正在播放的那一個
+· 需要連網才能取得歌詞；已取得的歌詞會快取在本機，斷網時可繼續顯示
+· 介面語言：繁體中文 / 簡體中文 / English / 日本語（設定內可切換，預設跟隨系統）
+
+【隱私】
+程式沒有帳號系統、沒有廣告、沒有統計埋點，不收集任何個人身份資訊。設定、歌詞快取、日誌與聽歌統計全部保存在本機 %APPDATA%\\Desktop-sing\\ 目錄，不上傳任何伺服器。聽歌統計僅含歌名、歌手、日期、小時、播放秒數、播放次數與最近播放時間，不保存專輯、播放器來源、檔案路徑、帳號、裝置 ID 或 IP；單次不足 20 秒不記錄，預設開啟，可關閉或一鍵清空。程式不提供音樂庫、推薦流或第三方帳號登入；僅在匹配目前歌曲歌詞時，按需向歌詞來源發送歌曲名 / 歌手名 / 時長。
+
+【關於更新】
+Microsoft Store 版本由商店統一分發更新，程式內不含任何自更新通道。""",
+    "en-US": """Desktop-sing is a player-style desktop lyrics app: recently played tracks and
+navigation on the left, a full-screen lyric stage on the right, plus playback history and an
+on-device listening report. The desktop lyric bar remains as mini mode.
+
+[Features]
+- Player window: recently played tracks, full-screen lyric stage, immersive mode,
+  play/pause, previous/next and seek
+- On-device listening report and history: monthly/today totals, streaks, active days,
+  peak hour, top artists and top tracks
+- Word-by-word karaoke lyrics matched to the song the system is already playing, with
+  several public lyric sources and the best version winning
+- 5 overlay styles, 9 word-by-word animations, soft outline (clear on light and dark walls)
+- 14 color themes (new in v2.0): fixed palette or auto-tinted from the album cover;
+  bar / glow / screensaver / settings all follow
+- 4 ambient screensavers (3D particles / minimal clock / sound bars / star trails),
+  auto-entered when idle, black background, burn-in safe
+- Translation and romanization lines, traditional-simplified conversion, progress time
+- Position presets (7 anchors, multi-monitor safe) and lockable placement
+- Global hotkeys (off by default) and run-at-startup (off by default)
+
+[Before you use (important limits)]
+- Windows 10 (1809+) / Windows 11 only, x64 only
+- The player window controls the current system media session through SMTC; it does not
+  play local audio files directly
+- Song info comes from Windows system media controls (SMTC): a player must integrate
+  SMTC for the app to see it; VR-type or legacy players may not work
+- With several players open, the app follows the one that is playing
+- Internet is required to fetch lyrics; fetched lyrics are cached locally and remain
+  available offline
+- UI languages: Traditional Chinese / Simplified Chinese / English / Japanese
+  (auto-detected from system locale, switchable in Settings)
+
+[Privacy]
+No account, no ads, no analytics, no personal data collected. Settings, lyric cache,
+logs and listening statistics stay in %APPDATA%\\Desktop-sing\\ on your machine.
+No music library, recommendation feed or third-party account login is included. Listening statistics contain only track title, artist, date, hour, played seconds,
+play count and last-played time - no album, player source, file paths, account, device
+ID or IP address. Sessions under 20 seconds are ignored. The feature is on by default
+and can be disabled or cleared. Matching lyrics only sends the song title / artist /
+duration to public lyric sources.
+
+[Updates]
+The Store build is updated by Microsoft Store; the app contains no self-update channel.""",
+    "ja-JP": """Desktop-sing はプレーヤー形式のデスクトップ歌詞アプリです。左側に最近再生した曲と
+ナビゲーション、右側に全画面の歌詞ステージを配置し、再生履歴とローカル視聴レポートも備えます。
+デスクトップ歌詞バーはミニモードとして残ります。
+
+【主な機能】
+· プレーヤー画面：最近再生、全画面歌詞ステージ、没入モード、再生 / 一時停止、前後の曲、シーク
+· ローカル視聴レポートと再生履歴：今月 / 今日の時間、連続視聴、利用日数、よく聴く時間帯、
+  よく聴くアーティストと曲
+· ワード単位カラオケ歌詞：システムで再生中の曲に一致する歌詞を複数の公開ソースから取得し、
+  最良の版を自動選択
+· オーバーレイスタイル 5 種 · ワードアニメーション 9 種 · ソフトアウトライン（明暗どちらも鮮明）
+· カラーテーマ 14 種（v2.0 で追加）：固定パレット or アルバムカバーからの自動配色
+  （バー / グロー / スクリーンセーバー / 設定画面が連動）
+· スクリーンセーバー 4 種（3D パーティクル / ミニマル時計 / サウンドバー / 星の軌跡）：
+  アイドル時に自動開始、黒背景で焼き付き防止
+· 翻訳・ローマ字表示、繁体字⇔簡体字変換、再生時間表示
+· 位置プリセット（7 アンカー、マルチモニター対応）と配置ロック
+· グローバルホットキー（既定オフ）、起動時に実行（既定オフ）
+
+【使用条件（重要な制限）】
+· Windows 10（1809 以降）/ Windows 11 専用、x64 のみ
+· プレーヤー画面は SMTC 経由で現在のシステムメディアセッションを操作します。
+  ローカル音声ファイルを直接再生する機能はありません
+· 曲情報は Windows のシステムメディアコントロール（SMTC）から取得：SMTC 対応の
+  プレーヤーのみ読み取れます（VR 系や古いプレーヤーは不可の場合あり）
+· 複数のプレーヤーを開いている場合は再生中のものに追従
+· 歌詞の取得にはインターネットが必要。取得済みの歌詞はローカルにキャッシュされ、
+  オフラインでも表示できます
+· 表示言語：繁体字中国語 / 簡体字中国語 / English / 日本語（システム設定に追従、設定で切替可）
+
+【プライバシー】
+アカウントなし、広告なし、トラッキングなし。個人情報は収集しません。設定・歌詞キャッシュ・
+ログ・視聴統計はすべて %APPDATA%\\Desktop-sing\\ に保存され、サーバーへ送信されません。
+視聴統計に含まれるのは曲名、アーティスト、日付、時刻、再生秒数、再生回数、最終再生時刻のみで、
+アルバム、再生元、ファイルパス、アカウント、端末 ID、IP は保存しません。20 秒未満は記録せず、
+既定で有効、設定で無効化または消去できます。音楽ライブラリ、推薦フィード、第三者アカウント
+ログインは提供しません。歌詞照合時には曲名 / 歌手名 / 長さのみを歌詞ソースに送信します。
+
+【更新について】
+ストア版の更新は Microsoft Store が配信します。アプリ内に自己更新経路はありません。""",
+}
+
+
+
+# ---------------- 四语言搜索词（Partner Center 每个 listing 语言各有一组） ----------------
+# 规则：≤7 个；不得写价格/折扣词；**不得使用他人品牌名**（写「QQ音乐」「网易云」
+# 会被 11.2「不得侵犯第三方权利」打回，也会让人觉得有官方关联）。
+# 中文用的是自家产品名与品类词，安全。
+LISTING_SEARCH_TERMS = {
+    "zh-CN": ("桌面歌词", "歌词", "悬浮歌词", "卡拉OK", "逐字歌词", "桌面工具", "音乐"),
+    "zh-TW": ("桌面歌詞", "歌詞", "懸浮歌詞", "卡拉OK", "逐字歌詞", "桌面工具", "音樂"),
+    "en-US": ("lyrics", "desktop lyrics", "karaoke", "synced lyrics",
+              "lyric overlay", "now playing", "music"),
+    "ja-JP": ("歌詞", "デスクトップ歌詞", "カラオケ", "同期歌詞", "オーバーレイ",
+              "再生中", "音楽"),
+}
+
+# ---------------- 四语言「此版本中的更改」 ----------------
+# 同样是**逐语言**字段。zh-CN 优先取 update.json（与程序内更新弹窗同一份口径），
+# update.json 没跟上版本时回落到这里；其余语言没有对应渠道，恒用本表。
+# ⚠️ 改版时必须同步改：数字/功能名要与代码一致，别写未做的功能（10.1.1）。
+LISTING_WHATS_NEW = {
+    "zh-CN": (
+        "【新增】播放器主界面：最近播放、全屏歌词舞台、沉浸模式、播放 / 暂停、上下首与进度跳转",
+        "【新增】播放历史与本机听歌报告：本月 / 今日时长、连续听歌、活跃天数、最爱时段、常听歌手与热门歌曲；不足 20 秒不记录，可关闭或清空",
+        "【优化】桌面歌词条保留为迷你模式；普通启动打开播放器，登录自启只显示迷你歌词条",
+        "【修复】主播放器进度条不可见、20 秒级听歌记录显示为 0 分钟、清空统计后旧数据可能回写",
+    ),
+    "zh-TW": (
+        "【新增】播放器主介面：最近播放、全螢幕歌詞舞台、沉浸模式、播放 / 暫停、上下首與進度跳轉",
+        "【新增】播放歷史與本機聽歌報告：本月 / 今日時長、連續聽歌、活躍天數、最愛時段、常聽歌手與熱門歌曲；不足 20 秒不記錄，可關閉或清空",
+        "【優化】桌面歌詞條保留為迷你模式；一般啟動開啟播放器，登入自啟只顯示迷你歌詞條",
+        "【修復】主播放器進度條不可見、20 秒級聽歌記錄顯示為 0 分鐘、清空統計後舊資料可能回寫",
+    ),
+    "en-US": (
+        "New: player window with recently played tracks, a full-screen lyric stage, immersive mode, "
+        "play/pause, previous/next and seeking.",
+        "New: playback history and an on-device listening report with monthly/today totals, streaks, "
+        "active days, peak hour, top artists and top tracks. Sessions under 20 seconds are ignored; "
+        "the feature can be disabled or cleared.",
+        "Improved: the desktop lyric bar remains as mini mode. A normal launch opens the player; "
+        "logon startup shows only the mini bar.",
+        "Fixed: the player progress bar was invisible, 20-second sessions showed as 0 minutes, and "
+        "cleared listening data could be written back.",
+    ),
+    "ja-JP": (
+        "新機能：プレーヤー画面（最近再生、全画面歌詞ステージ、没入モード、再生 / 一時停止、"
+        "前後の曲、シーク）。",
+        "新機能：再生履歴とローカル視聴レポート（今月 / 今日の時間、連続視聴、利用日数、"
+        "よく聴く時間帯、アーティスト、曲）。20 秒未満は記録せず、無効化・消去も可能です。",
+        "改善：デスクトップ歌詞バーはミニモードとして維持。通常起動ではプレーヤーを開き、"
+        "ログオン時の自動起動ではミニバーのみ表示します。",
+        "修正：プレーヤーの進行バーが非表示、20 秒の視聴が 0 分表示、消去した視聴データが"
+        "書き戻される可能性があった問題。",
+    ),
+}
+
+
+def listing_selfcheck():
+    """提审前自检：四语言三张表必须齐全，搜索词不超限。
+
+    Partner Center 的 listing 是逐语言表单，少一种语言的描述/搜索词/更新说明
+    就是那份表单只能空着交（信息不全），而脚本不会自己报错 —— 所以在出口
+    处硬性拦一道，别指望临场记得。
+    """
+    bad = []
+    for lg in SUPPORTED_LANGS:
+        if lg not in LISTING_DESCRIPTIONS or not LISTING_DESCRIPTIONS[lg].strip():
+            bad.append("%s 缺商品页描述" % lg)
+        terms = LISTING_SEARCH_TERMS.get(lg) or ()
+        if not terms:
+            bad.append("%s 缺搜索词" % lg)
+        elif len(terms) > 7:
+            bad.append("%s 搜索词 %d 个（上限 7）" % (lg, len(terms)))
+        notes = LISTING_WHATS_NEW.get(lg) or ()
+        if not notes:
+            bad.append("%s 缺「此版本中的更改」" % lg)
+    if bad:
+        raise SystemExit("提审材料不完整：" + "；".join(bad))
+    print("[自检] 四语言描述 / 搜索词 / 更新说明齐全")
 
 # 提审时填「受限功能说明」用（runFullTrust）。Partner Center 该字段长度有限，
 # 长文案会被静默截断，所以这里只给两句。
@@ -121,38 +327,56 @@ RUNFULLTRUST_STATEMENT = (
 # 提审时填「认证说明」（Notes for certification）。帮审核员知道怎么测。
 # ⚠️ 必须英文在前：上次提审（v1.0.0）因纯中文说明 + 静态待机卡被误判为
 #    「The product loads indefinitely at launch」（10.1.2.10）拒审。
-#    英文第一句就要点破「没有主窗口，桌面上的歌词条就是主界面，不是加载画面」。
+#    英文第一句必须点破「普通启动会打开真实主播放器窗口，不是加载画面」。
 CERTIFICATION_NOTES = """[English]
 Test guide for Desktop-sing v{version}:
-1. NO MAIN WINDOW BY DESIGN: after launch, the app shows a small lyric bar
-   at the bottom of the desktop saying "Ready / 已就绪", plus a system tray
-   icon. That bar IS the app's main UI — it is NOT a loading screen. On first
-   run, a welcome dialog also appears confirming the app is ready.
+1. NORMAL LAUNCH OPENS A MAIN PLAYER WINDOW. It contains a sidebar with
+   recently played tracks, a full-screen lyric stage, playback history and an
+   on-device listening report. The small desktop lyric bar remains available
+   as "mini mode" (title-bar button or tray menu). This is a real window, not
+   a loading screen. On a logon/startupTask launch the app intentionally opens
+   only the mini bar.
 2. No account, no sign-in required. Internet access is needed to fetch lyrics.
 3. To see lyrics (the core feature): play any song in a player that supports
    Windows system media controls (SMTC) — e.g. the built-in Windows "Media
    Player" app with any local audio file. Lyrics then appear automatically
-   on the desktop bar. If no player is playing, the bar stays in the "Ready"
-   state by design; this is expected behavior, not a hang.
+   in the player window and on the mini bar. The player window controls the
+   current SMTC session; it does not play local audio files itself. If no
+   player is playing, the UI stays in the "Ready" state by design.
 4. Right-click the tray icon to open Settings. Global hotkeys are OFF by
    default (to avoid conflicts), so Ctrl+Alt+S does nothing until enabled in
    Settings — this is intentional, not a malfunction.
 5. Updates are distributed by Microsoft Store; the app contains no self-update.
+6. UI language: Simplified Chinese / Traditional Chinese / English / Japanese
+   (auto-detected from system locale; switchable in Settings > Language).
+   All four are fully translated - no leftover Chinese in the English,
+   Japanese or Traditional Chinese UI.
+7. Per-language screenshots are attached to each listing language. If a
+   screenshot does not match the language you are reviewing, switch the
+   language in Settings > Language to reproduce it.
+8. Listening statistics are local-only and on by default. They contain only
+   title, artist, date, hour, played seconds, play count and last-played time;
+   no album, player source, path, account, device ID or IP. Sessions under
+   20 seconds are ignored. The user can disable or clear them in Settings.
 
 [中文]
 桌面歌词 v{version} 测试指引：
-1. 本应用无传统主窗口：启动后桌面底部会出现一条显示「已就绪 / Ready」的
-   歌词条，托盘区有图标——歌词条就是主界面，不是加载画面。首次运行还会
-   弹出欢迎窗口确认应用已就绪。
+1. 普通启动会打开播放器主窗口：左侧为最近播放与导航，右侧为全屏歌词舞台，
+   并包含播放历史与本机听歌报告。桌面歌词条保留为「迷你模式」（标题栏按钮
+   或托盘菜单切换）。这是真实窗口，不是加载画面；登录自启时只显示迷你条。
 2. 无账号、无需登录；获取歌词需要联网。
 3. 查看歌词（核心功能）：用任意接入 Windows 系统媒体控制（SMTC）的播放器
    播放歌曲，例如用系统自带「媒体播放器」打开任意本地音频文件，歌词会自动
-   显示在桌面歌词条上。没有播放器在播歌时歌词条保持「已就绪」待机态，
+   显示在播放器窗口和迷你歌词条上。播放器窗口通过 SMTC 遥控当前媒体会话，
+   本身不直接播放本地音频文件。没有播放器在播歌时保持「已就绪」待机态，
    属预期行为，不是卡死。
 4. 右键点击系统托盘图标 → 菜单选「设置…」即可打开设置面板。
    全局快捷键默认关闭（避免与其他软件抢键），
    Ctrl+Alt+S 初始状态下无效属预期，可在设置面板开启。
-5. 更新由 Microsoft Store 统一分发，程序内没有自更新通道。"""
+5. 更新由 Microsoft Store 统一分发，程序内没有自更新通道。
+6. 听歌统计仅保存在本机，默认开启，仅含歌名、歌手、日期、小时、播放秒数、
+   播放次数与最近播放时间；不含专辑、播放器来源、文件路径、账号、设备 ID 或 IP。
+   单次不足 20 秒不记录，可在设置中关闭或清空。"""
 
 # 商店版不要带的文件（卸载器没有意义：商店应用从系统设置里卸载）
 #
@@ -191,6 +415,20 @@ def app_version() -> str:
         if line.startswith("APP_VERSION"):
             return line.split("=", 1)[1].strip().strip('"').strip("'")
     raise SystemExit("lyrics_overlay.py 里没找到 APP_VERSION")
+
+
+def run_com_audit():
+    """构建前先跑 COM/WinRT 隔离静态审计（2026-11-13 商店版挂死事故的门禁）。"""
+    import subprocess
+    audit_py = os.path.join(ROOT, "tools", "audit_com_isolation.py")
+    r = subprocess.run([sys.executable, "-I", audit_py],
+                       capture_output=True, encoding="utf-8", errors="ignore")
+    for line in ((r.stdout or "") + (r.stderr or "")).strip().splitlines():
+        safe = line.encode(sys.stdout.encoding or "utf-8",
+                           errors="replace").decode(sys.stdout.encoding or "utf-8")
+        print("  [审计] " + safe)
+    if r.returncode != 0:
+        raise SystemExit("COM 隔离审计未通过：禁止打包（详见 tools/audit_com_isolation.py）")
 
 
 def package_version(v: str) -> str:
@@ -339,6 +577,12 @@ def write_manifest(name: str, publisher: str, version: str,
     # 剥掉全部 XML 注释，顺带把多出来的空行收干净
     out = re.sub(r"<!--.*?-->", "", out, flags=re.S)
     out = re.sub(r"\n\s*\n+", "\n\n", out).strip() + "\n"
+    # 多语言自检（2026-11-14）：清单 Resources 必须与 SUPPORTED_LANGS 一致——
+    # 多声明了用户会预期该语言 UI，少声明了商店不给对应语言露出。
+    declared = re.findall(r'<Resource\s+Language="([^"]+)"\s*/>', out)
+    if sorted(declared) != sorted(SUPPORTED_LANGS):
+        raise SystemExit("清单 Resources 语言声明 %s 与 SUPPORTED_LANGS %s 不一致"
+                         % (declared, list(SUPPORTED_LANGS)))
     path = os.path.join(LAYOUT, "AppxManifest.xml")
     with open(path, "w", encoding="utf-8") as fp:
         fp.write(out)
@@ -434,24 +678,54 @@ def run_wack(msix_path: str):
     print(out[-1500:] if out.strip() else "[WACK] 无输出，退出码 %d" % r.returncode)
 
 
-def _update_notes_block(version: str) -> str:
-    """「此版本中的更改」填什么：更新提交必填，直接取 update.json 的 notes；
-    清单没跟上（版本不一致/文件缺失）时给出保守回落，避免误提交空更新说明。"""
+def _update_notes_zh(version: str):
+    """中文「此版本中的更改」：优先 update.json（与程序内更新弹窗同源）。
+
+    只在版本号对得上时采用，避免把上一版的日志贴到新版本（更新提交必填，
+    贴错版本是常见的低级拒审理由）。
+    """
     uj = os.path.join(ROOT, "update.json")
     try:
         with io.open(uj, encoding="utf-8") as f:
             data = json.load(f)
         if str(data.get("version", "")).strip() == version and data.get("notes"):
-            notes = str(data["notes"])
+            notes = data["notes"]
+            if isinstance(notes, str):
+                notes = [notes]
+            notes = [str(n).strip() for n in notes if str(n).strip()]
             # 「更新源说明：…」是 update.json 面向镜像机制的元信息，
-            # 对商店审核员无意义，别让它混进「此版本中的更改」表单。
-            notes = notes.split("更新源说明：")[0].rstrip()
-            return ("更新提交必填。直接粘贴（已按 update.json 自动同步）：\n"
-                    "```\n%s\n```" % notes)
+            # 对商店审核员无意义，别让它混进表单。
+            notes = [n for n in notes if not n.startswith("更新源说明")]
+            if notes:
+                return notes, "已按 update.json 同步"
     except Exception:
         pass
-    return "首次提交可留空；**更新提交必填**（update.json 版本与 APP_VERSION 不一致，未能自动读取，请手填本版更新日志）。"
+    return list(LISTING_WHATS_NEW["zh-CN"]), "update.json 版本未跟上，取自脚本常量"
 
+
+def _terms_block() -> str:
+    """四语言搜索词清单（Markdown 表格行）。"""
+    rows = []
+    for lg in SUPPORTED_LANGS:
+        sep = "、" if lg.startswith("zh") else ", "
+        rows.append("- **%s**：`%s`" % (lg, sep.join(LISTING_SEARCH_TERMS[lg])))
+    return "\n".join(rows)
+
+def _whats_new_block(version: str) -> str:
+    """四语言「此版本中的更改」四块。
+
+    注意：旧版把 update.json 的 list 直接 str() 拼进来，生成的是 Python
+    列表字面量（['…', '…']），贴进表单里全是引号和方括号；这里改成
+    每条一行、前缀「- 」，直接整块粘贴。
+    """
+    zh_notes, how = _update_notes_zh(version)
+    head = ("更新提交必填，**逐语言各贴一块**（Partner Center 的语言切换在"
+            " listing 编辑页左上角）。中文块（%s）：" % how)
+    out = [head, "```", "\n".join("- " + n for n in zh_notes), "```"]
+    for lg in SUPPORTED_LANGS[1:]:
+        out += ["", "### %s" % lg, "```",
+                "\n".join("- " + n for n in LISTING_WHATS_NEW[lg]), "```"]
+    return "\n".join(out)
 
 def export_listing(version: str, site_url: str = "", display_name: str = "") -> str:
     """把提审要往上贴的文案导出成一个 Markdown，免得到时手忙脚乱。
@@ -497,18 +771,40 @@ def export_listing(version: str, site_url: str = "", display_name: str = "") -> 
   清单 `<Properties><DisplayName>` 已是同值（包名对不上预留名＝上传即拒）。注意半角 `|` 与全角 `｜` 不是同一个字符。
 - 产品类别：**音乐（Music）**；次级建议：实用工具（Utilities）
 - 支持设备：PC（Windows 10 1809+ / Windows 11，x64）
-- 语言：**简体中文**（声明几种就要本地化几种描述的文本）
+- 语言：**简体中文 / 繁體中文 / English / 日本語**（清单 Resources 已声明四语言；
+  Partner Center「Store listing → 管理语言」添加后，各语言贴 §3 对应块）
 
-## 3. 商品页「描述」
+## 3. 商品页「描述」（四语言：Store listing 添加语言后各贴一块）
+### zh-CN（默认 listing）
 ```
-{STORE_LISTING_DESCRIPTION}
+{LISTING_DESCRIPTIONS["zh-CN"]}
 ```
 
-## 4. 搜索词（≤ 7 个，不得含价格词、不得用他人品牌名）
-`桌面歌词、歌词、悬浮歌词、卡拉OK、逐字歌词、桌面工具、音乐`
+### zh-TW（繁體中文 listing）
+```
+{LISTING_DESCRIPTIONS["zh-TW"]}
+```
+
+### en-US（English listing）
+```
+{LISTING_DESCRIPTIONS["en-US"]}
+```
+
+### ja-JP（日本語 listing）
+```
+{LISTING_DESCRIPTIONS["ja-JP"]}
+```
+
+> 每种语言的 listing 至少要填：描述 + 1 张截图（可复用同一组截图）+ 「此版本中的更改」。
+> 隐私政策 URL 各语言通用同一地址。
+
+## 4. 搜索词（每语言 ≤ 7 个；不得含价格词、不得用他人品牌名）
+**同样是逐语言字段**，四个语言各贴自己那一行：
+
+{_terms_block()}
 
 ## 5. 版本说明（「此版本中的更改」字段）
-{_update_notes_block(version)}
+{_whats_new_block(version)}
 
 ## 6. 受限功能说明（runFullTrust）★ 必填，别贴长的
 Partner Center 提示「需要请求批准才能使用受限功能 runFullTrust」，这是正常预警。
@@ -526,19 +822,37 @@ Partner Center 提示「需要请求批准才能使用受限功能 runFullTrust�
 {privacy_block}
 
 ## 9. 截图（至少 1 张；Partner Center 要求 PNG、≥1366×768、<50MB、≤10 张）
-**主素材 = 真机截屏**：`store/shots/real-*.png` —— 5 张 **1920×1080**（进仓库）：
-1. `real-1-overlay-card.png` 卡片浮层（核心形态）
-2. `real-2-native-float.png` 原生浮字（无边框歌词铺在桌面）
-3. `real-3-screensaver.png` 全屏屏保（时间 + 歌词）
-4. `real-4-settings.png`    设置面板 ×2 并排
-5. `real-5-idle.png`        已就绪待机态（双语「桌面歌词已就绪 · Ready」）
+**主素材 = 播放器窗口截图**：`store/out/shots/player-*.png`，至少上传：
+1. `player-1-main.png`       主播放器：最近播放、封面、歌词舞台与底部控制条
+2. `player-2-report.png`     本机听歌报告
+3. `player-3-history.png`    播放历史与缓存歌词
+4. `player-4-immersive.png`  沉浸歌词：隐藏导航，全屏歌词舞台
+5. `player-5-mini.png`       桌面歌词条（迷你模式，已合成 1600×900 展示底）
 
-重合成（原图留档在 `store/shots/src/`）：
-`.buildenv\\Scripts\\python.exe store\\make_real_shots.py`
+生成命令：
+`.buildenv312\\Scripts\\python.exe store\\render_player_shots.py`
 
-备用素材：`store/out/shots/` —— 3 张 **1600×900** 离屏合成图
-（`store\\render_shots.py` 生成，`store/out/` 不进仓库，换机器要重跑）；
-只用自写占位歌词。真机图被审核质疑时用它顶上，listing 其余不动。
+**补充素材**：`store/shots/real-*.png`（旧版真机浮层图，5 张 1920×1080）。
+它们只能补充悬浮样式、屏保和设置面板等功能展示，**不能替代**主播放器截图；
+旧图里的待机文案和浮层形态已经不能代表 2.0.8 的首屏体验。
+
+**四语言各传一组**（Partner Center 的每个 listing 语言都有自己的截图槽位；
+英文界面里配一张满屏中文的图，等于自证「没本地化」，10.7 会直接被问）：
+
+| listing 语言 | 传哪一组 | 数量 / 尺寸 |
+| --- | --- | --- |
+| zh-CN | `store/out/shots/player-1…5-*.png` | 5 张 1600×900 |
+| zh-TW | `store/out/shots/player-1…5-*-zh-TW.png` | 5 张 1600×900 |
+| en-US | `store/out/shots/player-1…5-*-en.png` | 5 张 1600×900 |
+| ja-JP | `store/out/shots/player-1…5-*-ja.png` | 5 张 1600×900 |
+
+四组都是**离屏真实渲染**（同一套绘制代码，界面语言切过去再抓），生成命令：
+`.buildenv312\\Scripts\\python.exe store\\render_player_shots.py --lang en`（换成 `ja` / `zh-TW`；不带参数即简体中文）。
+`store/out/` 按 .gitignore 不进仓库，换机器要重跑；产物在提审前先看一眼，
+确认界面语言确实切过去了（抓成中文说明没切成功）。
+
+截图里只使用自写示例歌名、示例歌手和示例歌词，不嵌入真实歌曲、第三方播放器
+界面或账号信息。主播放器只遥控系统 SMTC 媒体会话，不提供音乐库、推荐流或登录。
 
 ## 10. 年龄分级（IARC 问卷）
 按实填写：无用户生成内容、无社交、无付费、无暴力色情内容 →
@@ -576,10 +890,13 @@ def main():
     args = ap.parse_args()
 
     if args.listing:
+        listing_selfcheck()
         ver = args.version or app_version()
         p = export_listing(ver, load_site_url(args), load_display_name(args))
         print("[提审材料] %s" % p)
         return
+
+    run_com_audit()
 
     sys.path.insert(0, BASE)
 

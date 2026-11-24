@@ -81,6 +81,12 @@ Select-String -Path $exe -Pattern 'UPX0|UPX!' -SimpleMatch
 - [ ] GitHub Release 的 `releases/latest` 指向本次稳定版，不带旧 prerelease。
 - [ ] `update.json` 已同步到所有更新镜像源。
 
+## 5.5 v2.0.5 新增门禁（构建前必跑）
+- [ ] `python tools/audit_com_isolation.py` → AUDIT PASS（COM/WinRT 隔离防回归，2.0.3 商店版挂死事故门禁）
+- [ ] `python smoke_test.py`（.buildenv312）→ 全部通过
+- [ ] `python _test_i18n.py`（.buildenv312）→ 全部通过（四语言切换 / 托盘菜单 / 占位文案）
+- [ ] 清单 Resources = zh-CN, zh-TW, en-US, ja-JP（build_store 会自检，不一致直接拒包）
+
 ## 6. 发布后观察
 
 - [ ] 从商店安装后，首次启动的待机文案是「已就绪」，不是加载中状态。

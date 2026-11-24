@@ -11,6 +11,9 @@
 用法：.buildenv312\\Scripts\\python.exe _diag_watchdog.py
 """
 import os
+import ctypes
+import ctypes.wintypes as wintypes
+import glob
 import shutil
 import subprocess
 import sys
@@ -60,6 +63,34 @@ def wd_pids():
 
 def proc_alive(pid):
     return L._pid_alive(int(pid))
+
+
+class _PMC_EX(ctypes.Structure):
+    _fields_ = [
+        ("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+        ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
+        ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
+        ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+        ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t),
+        ("PrivateUsage", ctypes.c_size_t),
+    ]
+
+
+def mem_private_kb(pid):
+    """进程**私有内存**（KB）。⚠️ 别用 tasklist 的「内存使用」——那是工作集，
+    含共享 DLL 页（原生 watchdog 实测工作集 ~9.2MB、私有仅 ~2.0MB），拿它卡
+    8MB 阈值会把正常程序判成 FAIL（2026-11-11 自测踩到）。"""
+    h = ctypes.windll.kernel32.OpenProcess(0x0400 | 0x0010, False, int(pid))
+    if not h:
+        return None
+    try:
+        c = _PMC_EX()
+        c.cb = ctypes.sizeof(_PMC_EX)
+        if not ctypes.windll.psapi.GetProcessMemoryInfo(h, ctypes.byref(c), c.cb):
+            return None
+        return c.PrivateUsage / 1024
+    finally:
+        ctypes.windll.kernel32.CloseHandle(h)
 
 
 def wait_no_wd(timeout=8.0):
@@ -143,20 +174,43 @@ finally:
 
 # ---------------------------------------------------------------- 3) 真机集成
 print("[3] 真机集成（冻结主程序 + 原生守护进程）")
-exe = os.path.join(BASE, "dist", "Desktop-sing-v2.0.1", "Desktop-sing.exe")
+# ⚠️ 别写死版本目录：写死 v2.0.1 时换到 2.0.2 后本项会**静默跳过**（2026-11-11 自测
+# 踩到），看起来像通过其实没测。按修改时间取最新的 dist/Desktop-sing-v*/。
+_cands = sorted(
+    (d for d in glob.glob(os.path.join(BASE, "dist", "Desktop-sing-v*"))
+     if os.path.isfile(os.path.join(d, "Desktop-sing.exe"))),
+    key=lambda d: os.path.getmtime(d), reverse=True)
+exe = os.path.join(_cands[0], "Desktop-sing.exe") if _cands else ""
+if _cands:
+    print("    使用产物：%s" % os.path.basename(_cands[0]))
 if os.path.isfile(exe):
-    app = subprocess.Popen([exe], creationflags=DETACHED, cwd=os.path.dirname(exe))
+    # ⚠️ 必须用**隔离的数据目录**跑：真机集成依赖「进程保活」设置，而用户
+    # 可能在设置里关掉了它（本机 config.json 就是 keepalive=False），直接拿真实
+    # CFG_DIR 跑会必然 FAIL，还会往用户配置目录写 keepalive.off 哨兵（2026-11-11
+    # 自测踩到）。CFG_DIR 取自 %APPDATA%，给子进程换一个空 APPDATA 就是全新
+    # 默认配置（keepalive 默认 True），测完删掉，零污染。
+    _tmp_appdata = tempfile.mkdtemp(prefix="wdtest_appdata_")
+    _tmp_cfg = os.path.join(_tmp_appdata, L.APP_NAME)
+    _env = dict(os.environ)
+    _env["APPDATA"] = _tmp_appdata
+    _env.pop(L.SUPERVISED_ENV, None)
+    app = subprocess.Popen([exe], creationflags=DETACHED,
+                           cwd=os.path.dirname(exe), env=_env)
     try:
         time.sleep(9.0)
         pids = wd_pids()
         check("守护进程为主程序常驻", len(pids) >= 1, str(pids))
         if pids:
-            mem_kb = pids[0][1]
-            mem = float(mem_kb.replace(",", "").replace(" ", "") or 0)
-            check("守护进程内存 < 8MB（Python 版 ~55MB）", 0 < mem < 8192,
-                  "%s K" % mem_kb)
+            mem = mem_private_kb(pids[0][0])
+            ws_kb = pids[0][1]
+            check("守护进程私有内存 < 8MB（Python 版 ~55MB）",
+                  mem is not None and 0 < mem < 8192,
+                  "私有 %s K ｜ 工作集 %s K" % (
+                      ("%.0f" % mem) if mem is not None else "?", ws_kb))
         # 哨兵 + 结束主程序：守护进程不得重拉，应随主程序退出收工
-        with open(SENTINEL, "w") as f:
+        # （哨兵写在隔离目录里，别碰用户的 keepalive.off）
+        _tmp_sentinel = os.path.join(_tmp_cfg, "keepalive.off")
+        with open(_tmp_sentinel, "w") as f:
             f.write(str(int(time.time())))
         subprocess.run(["taskkill", "/F", "/IM", "Desktop-sing.exe"],
                        capture_output=True)
@@ -164,10 +218,7 @@ if os.path.isfile(exe):
     finally:
         subprocess.run(["taskkill", "/F", "/IM", "Desktop-sing.exe"],
                        capture_output=True)
-        try:
-            os.remove(SENTINEL)
-        except OSError:
-            pass
+        shutil.rmtree(_tmp_appdata, ignore_errors=True)
 else:
     print("  跳过：未找到 %s" % exe)
 
