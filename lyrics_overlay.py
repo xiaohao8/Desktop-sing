@@ -11474,7 +11474,7 @@ class SettingsPanel(QWidget):
             rowl.addLayout(col, 1)
             btn = QPushButton(_tr("下载"))
             btn.setObjectName("dl")
-            btn.setFixedWidth(92)
+            self._set_font_button_text(btn, _tr("下载"))
             btn.setCursor(Qt.PointingHandCursor)
             btn.clicked.connect(lambda _=False, e=ent: self._on_font_action(e))
             rowl.addWidget(btn)
@@ -11697,7 +11697,7 @@ class SettingsPanel(QWidget):
         self._dl_ids.add(eid)
         btn = self._fontrows[eid][0]
         btn.setEnabled(False)
-        btn.setText("0%")
+        self._set_font_button_text(btn, "0%")
         self._refresh_dl_status()
 
         def prog(done, total, _name=None):
@@ -11733,7 +11733,8 @@ class SettingsPanel(QWidget):
         if total > 0:
             btn.setText("%d%%" % int(done * 100 / total))
         else:
-            btn.setText("%.1fM" % (done / 1048576.0))
+                self._set_font_button_text(
+                    btn, "%.1fM" % (done / 1048576.0))
 
     def _on_font_done(self, eid: str, result):
         self._dl_ids.discard(eid)
@@ -11745,7 +11746,7 @@ class SettingsPanel(QWidget):
                 name = _tr(e["name"])
                 break
         if isinstance(result, Exception) or not result:
-            btn.setText(_tr("重试"))
+            self._set_font_button_text(btn, _tr("重试"))
             # 失败：若还有其它字体在下载，状态栏继续提示；否则提示失败
             if self._dl_ids:
                 self._refresh_dl_status()
@@ -11781,21 +11782,27 @@ class SettingsPanel(QWidget):
         for ent in FONT_LIBRARY:
             btn, _nm = self._fontrows[ent["id"]]
             if not state.get(ent["id"]):
-                btn.setText(_tr("下载 %.0fM") % ent["mb"])
+                self._set_font_button_text(
+                    btn, _tr("下载 %.0fM") % ent["mb"])
                 obj = "dl"
             else:
                 fam = _pick_family([f for f in LOADED_FAMILIES
                                     if _font_family_match(f, ent["id"])])
                 if fam and fam == cur:
-                    btn.setText(_tr("使用中"))
+                    self._set_font_button_text(btn, _tr("使用中"))
                     obj = "dlon"
                 else:
-                    btn.setText(_tr("使用"))
+                    self._set_font_button_text(btn, _tr("使用"))
                     obj = "dluse"
             if btn.objectName() != obj:
                 btn.setObjectName(obj)
                 btn.style().unpolish(btn)
                 btn.style().polish(btn)
+
+    def _set_font_button_text(self, btn, text):
+        btn.setText(text)
+        minimum = max(92, btn.fontMetrics().horizontalAdvance(text) + 18)
+        btn.setMinimumWidth(minimum)
 
     # ---------- 槽 ----------
 
