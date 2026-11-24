@@ -1103,6 +1103,11 @@ _I18N_TABLES["zh-TW"].update({
     "● 本地统计 · 不上传": "● 本機統計 · 不上傳",
     "仅本机记录": "僅本機記錄",
     "查看缓存歌词": "查看快取歌詞",
+    "去对应播放器打开": "請到對應播放器開啟",
+    "在对应播放器中继续": "在對應播放器中繼續",
+    "还没有播放记录": "還沒有播放記錄",
+    "去播放": "去播放",
+    "从头播放": "從頭播放",
     "已切换到迷你歌词": "已切換到迷你歌詞",
     "歌词已同步": "歌詞已同步",
     "已暂停": "已暫停",
@@ -1169,6 +1174,11 @@ _I18N_TABLES["en"].update({
     "● 本地统计 · 不上传": "● Local statistics · never uploaded",
     "仅本机记录": "Local history only",
     "查看缓存歌词": "View cached lyrics",
+    "去对应播放器打开": "Open it in the source player",
+    "在对应播放器中继续": "Continue in the source player",
+    "还没有播放记录": "No playback history yet",
+    "去播放": "Go to Now Playing",
+    "从头播放": "Play from start",
     "已切换到迷你歌词": "Switched to mini lyrics",
     "歌词已同步": "Lyrics synced",
     "已暂停": "Paused",
@@ -1235,6 +1245,11 @@ _I18N_TABLES["ja"].update({
     "● 本地统计 · 不上传": "● ローカル統計 · アップロードなし",
     "仅本机记录": "ローカル記録のみ",
     "查看缓存歌词": "キャッシュ歌詞を表示",
+    "去对应播放器打开": "対応するプレーヤーで開いてください",
+    "在对应播放器中继续": "対応するプレーヤーで続きを再生",
+    "还没有播放记录": "再生履歴はまだありません",
+    "去播放": "再生画面へ",
+    "从头播放": "最初から再生",
     "已切换到迷你歌词": "ミニ歌詞に切り替えました",
     "歌词已同步": "歌詞同期済み",
     "已暂停": "一時停止",
@@ -7512,6 +7527,19 @@ class LyricOverlay(QWidget):
             except Exception:
                 pass
             self.panel = None
+        main_player = getattr(self, "main_player", None)
+        if main_player is not None:
+            try:
+                main_player.retranslate_ui()
+            except Exception:
+                log("player retranslate failed:\n" + traceback.format_exc())
+        shell = getattr(self, "window_shell", None)
+        shell_player = getattr(shell, "player", None) if shell else None
+        if shell_player is not None:
+            try:
+                shell_player.retranslate_ui()
+            except Exception:
+                log("shell player retranslate failed:\n" + traceback.format_exc())
 
     def set_lyric_conv(self, kind: str, on: bool):
         """繁简显示转换开关（t2s / s2t），两者互斥——开一个必关另一个。
@@ -7614,6 +7642,67 @@ class LyricOverlay(QWidget):
 
     def media_command(self, cmd: str):
         send_media_command(cmd)
+
+    def play(self):
+        """Ask the current SMTC session to resume playback."""
+        def work():
+            if not _load_smtc():
+                return
+
+            async def run():
+                manager = await asyncio.wait_for(MediaManager.request_async(), 20.0)
+                session = manager.get_current_session()
+                if session is None:
+                    return
+                await asyncio.wait_for(session.try_play_async(), 8.0)
+
+            try:
+                asyncio.run(run())
+            except Exception:
+                log("play failed:\n" + traceback.format_exc())
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def pause(self):
+        """Ask the current SMTC session to pause playback."""
+        def work():
+            if not _load_smtc():
+                return
+
+            async def run():
+                manager = await asyncio.wait_for(MediaManager.request_async(), 20.0)
+                session = manager.get_current_session()
+                if session is None:
+                    return
+                await asyncio.wait_for(session.try_pause_async(), 8.0)
+
+            try:
+                asyncio.run(run())
+            except Exception:
+                log("pause failed:\n" + traceback.format_exc())
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def current_resume_id(self) -> str:
+        """Stable id of the current source session; empty means no session."""
+        try:
+            return listening_store.resume_id(self.song or {})
+        except Exception:
+            return ""
+
+    def resume_history(self, track: dict) -> bool:
+        """Resume a history entry only when it belongs to the same source."""
+        track = track or {}
+        wanted = str(track.get("resume_id") or "")
+        if not wanted or wanted != self.current_resume_id():
+            return False
+        try:
+            position = max(0.0, float(track.get("position") or 0.0))
+        except (TypeError, ValueError):
+            position = 0.0
+        self.seek(position)
+        self.play()
+        return True
 
     def _refresh_lyrics(self, strict_artist=False):
         """清掉当前歌曲缓存后重新抓取（歌词匹配错误时手动纠正）
@@ -8097,10 +8186,17 @@ class LyricOverlay(QWidget):
             # _on_cover_ready 又会因 cover_pix is not None 丢弃 —— 纯浪费。
             # req_id 也一并校验：切歌后旧封面没必要再下。
             if cover_url and self._req_id == req_id and self.cover_pix is None:
-                try:
-                    self.cover_ready.emit((req_id, http_get(cover_url, timeout=5)))
-                except Exception:
-                    log("cover download failed: " + traceback.format_exc())
+                def cover_worker():
+                    try:
+                        time.sleep(0.01)
+                        cover_data = listening_store.load_cover_url(cover_url)
+                        if not cover_data:
+                            cover_data = http_get(cover_url, timeout=5)
+                            listening_store.save_cover_url(cover_url, cover_data)
+                        self.cover_ready.emit((req_id, cover_data))
+                    except Exception:
+                        log("cover download failed: " + traceback.format_exc())
+                threading.Thread(target=cover_worker, daemon=True).start()
 
         threading.Thread(target=worker, daemon=True).start()
 

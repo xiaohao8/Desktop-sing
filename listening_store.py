@@ -13,6 +13,7 @@ That keeps the report useful while limiting the footprint to a few hundred KB.
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import json
 import os
 import threading
@@ -22,6 +23,8 @@ APP_NAME = "Desktop-sing"
 MIN_PLAY_SECONDS = 20.0
 MAX_ENTRIES = 5000
 RETENTION_DAYS = 365
+COVER_LIMIT_BYTES = 50 * 1024 * 1024
+_COVER_LOCK = threading.Lock()
 
 
 def default_path() -> str:
@@ -49,6 +52,109 @@ def _fmt_minutes(seconds: float) -> int:
     return max(0, int(round(float(seconds or 0.0) / 60.0)))
 
 
+def _migrate_session(session: dict) -> dict:
+    session.setdefault("src", "")
+    session.setdefault("dur", 0.0)
+    session.setdefault("pos", 0.0)
+    session.setdefault("cov", "")
+    return session
+
+
+def covers_dir() -> str:
+    override = (os.environ.get("DESKTOP_SING_COVERS_PATH") or "").strip()
+    if override:
+        return override
+    base = os.environ.get("APPDATA", os.path.expanduser("~"))
+    return os.path.join(base, APP_NAME, "covers")
+
+
+def _cover_path(digest: str) -> str:
+    return os.path.join(covers_dir(), "%s.png" % digest)
+
+
+def save_cover(data: bytes) -> str:
+    """Store SMTC cover bytes and return their SHA-256 key."""
+    if not data:
+        return ""
+    return _save_cover(data, hashlib.sha256(data).hexdigest())
+
+
+def save_cover_url(url: str, data: bytes) -> str:
+    """Store a downloaded cover URL and return its URL-hash key."""
+    if not url or not data:
+        return ""
+    return _save_cover(data, hashlib.sha256(url.encode("utf-8")).hexdigest())
+
+
+def _save_cover(data: bytes, digest: str) -> str:
+    path = _cover_path(digest)
+    with _COVER_LOCK:
+        try:
+            if not os.path.isfile(path):
+                os.makedirs(covers_dir(), exist_ok=True)
+                tmp = path + ".tmp"
+                with open(tmp, "wb") as handle:
+                    handle.write(data)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(tmp, path)
+            _prune_covers()
+        except OSError:
+            return ""
+    return digest
+
+
+def load_cover(cover_hash: str) -> bytes:
+    """Read a cover previously stored by ``save_cover``."""
+    digest = (cover_hash or "").strip().lower()
+    if len(digest) != 64:
+        return b""
+    try:
+        with open(_cover_path(digest), "rb") as handle:
+            return handle.read()
+    except OSError:
+        return b""
+
+
+def load_cover_url(url: str) -> bytes:
+    digest = hashlib.sha256((url or "").encode("utf-8")).hexdigest()
+    return load_cover(digest)
+
+
+def _prune_covers():
+    try:
+        files = []
+        total = 0
+        for name in os.listdir(covers_dir()):
+            path = os.path.join(covers_dir(), name)
+            if not os.path.isfile(path):
+                continue
+            stat = os.stat(path)
+            files.append((stat.st_mtime, stat.st_size, path))
+            total += stat.st_size
+        files.sort()
+        for _mtime, size, path in files:
+            if total <= COVER_LIMIT_BYTES:
+                break
+            try:
+                os.remove(path)
+                total -= size
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
+def resume_id(track: dict) -> str:
+    """Stable id for the current source session; empty means non-resumable."""
+    track = track or {}
+    source = str(track.get("source", track.get("src", "")) or "")
+    if not source:
+        return ""
+    key = _track_key(str(track.get("title") or ""), str(track.get("artist") or ""))
+    return "%s\x1f%s" % (key, source)
+
+
 class ListeningStore:
     """Small atomic JSON store for listening sessions."""
 
@@ -62,11 +168,11 @@ class ListeningStore:
             with open(self.path, encoding="utf-8") as f:
                 raw = json.load(f)
             if isinstance(raw, dict) and isinstance(raw.get("sessions"), list):
-                return {"v": 1, "sessions": [s for s in raw["sessions"]
+                return {"v": 2, "sessions": [_migrate_session(s) for s in raw["sessions"]
                                              if isinstance(s, dict)]}
         except (OSError, ValueError, TypeError):
             pass
-        return {"v": 1, "sessions": []}
+        return {"v": 2, "sessions": []}
 
     def save(self):
         with self._lock:
@@ -89,7 +195,10 @@ class ListeningStore:
                     source: str = "", seconds: float = 0.0,
                     started_at: float | None = None,
                     plays: int = 0,
-                    total_seconds: float | None = None) -> bool:
+                    total_seconds: float | None = None,
+                    duration: float = 0.0,
+                    position: float = 0.0,
+                    cover_hash: str = "") -> bool:
         title = (title or "").strip()
         artist = (artist or "").strip()
         seconds = max(0.0, float(seconds or 0.0))
@@ -118,14 +227,24 @@ class ListeningStore:
             if max(total, persisted + seconds) < MIN_PLAY_SECONDS:
                 return False
             if found is None:
-                # Album/source are intentionally not persisted: they are not
-                # needed for the report and would collect more than necessary.
                 found = {"d": day, "k": key, "t": title, "a": artist,
-                         "s": 0.0, "n": 0, "h": hour, "last": ts}
+                         "s": 0.0, "n": 0, "h": hour, "last": ts,
+                         "src": source, "dur": duration, "pos": position,
+                         "cov": cover_hash}
                 self.data["sessions"].append(found)
+            else:
+                _migrate_session(found)
             found["s"] = float(found.get("s") or 0.0) + seconds
             found["n"] = int(found.get("n") or 0) + plays
             found["last"] = max(float(found.get("last") or 0.0), ts)
+            if source:
+                found["src"] = source
+            if duration > 0:
+                found["dur"] = duration
+            if position > 0:
+                found["pos"] = position
+            if cover_hash:
+                found["cov"] = cover_hash
             self._prune()
             self.save()
         return True
@@ -148,7 +267,7 @@ class ListeningStore:
 
     def clear(self):
         with self._lock:
-            self.data = {"v": 1, "sessions": []}
+            self.data = {"v": 2, "sessions": []}
             self.save()
 
     def recent_tracks(self, limit: int = 20) -> list[dict]:
@@ -161,14 +280,21 @@ class ListeningStore:
                     item = {"title": s.get("t", ""), "artist": s.get("a", ""),
                             "seconds": 0.0, "plays": 0, "last": 0.0, "days": set()}
                     grouped[key] = item
+                last = float(s.get("last") or 0.0)
                 item["seconds"] += float(s.get("s") or 0.0)
                 item["plays"] += int(s.get("n") or 0)
-                item["last"] = max(item["last"], float(s.get("last") or 0.0))
+                item["last"] = max(item["last"], last)
                 item["days"].add(s.get("d", ""))
+                if last >= item["last"]:
+                    item["source"] = str(s.get("src") or "")
+                    item["duration"] = max(0.0, float(s.get("dur") or 0.0))
+                    item["position"] = max(0.0, float(s.get("pos") or 0.0))
+                    item["cover"] = str(s.get("cov") or "")
             rows = sorted(grouped.values(), key=lambda x: x["last"], reverse=True)
             for r in rows:
                 r["days"] = len(r["days"])
                 r["minutes"] = _fmt_minutes(r["seconds"])
+                r["resume_id"] = resume_id(r)
             return rows[:max(1, int(limit))]
 
     def stats(self, now: float | None = None) -> dict:
@@ -283,6 +409,10 @@ class ListeningTracker:
         self._persisted_seconds = 0.0
         self._play_counted = False
         self._started_at = None
+        self._source = ""
+        self._duration = 0.0
+        self._position = 0.0
+        self._cover_hash = ""
 
     def on_media(self, info):
         incoming_key = None
@@ -303,6 +433,10 @@ class ListeningTracker:
             self._seconds = 0.0
             self._persisted_seconds = 0.0
             self._play_counted = False
+            self._source = str(info.get("source") or "")
+            self._duration = max(0.0, float(info.get("duration") or 0.0))
+            self._position = 0.0
+            self._cover_hash = save_cover(info.get("cover") or b"")
         else:
             self._song = None
             self._song_key = None
@@ -310,6 +444,10 @@ class ListeningTracker:
             self._seconds = 0.0
             self._persisted_seconds = 0.0
             self._play_counted = False
+            self._source = ""
+            self._duration = 0.0
+            self._position = 0.0
+            self._cover_hash = ""
         self._status = ""
         self._last_mono = time.monotonic()
 
@@ -323,6 +461,9 @@ class ListeningTracker:
                 self._seconds += dt
         self._last_mono = now
         self._status = status
+        self._position = max(0.0, float(pos or 0.0))
+        if duration > 0:
+            self._duration = max(0.0, float(duration or 0.0))
 
     def flush(self, final: bool = False, force: bool = False):
         """Persist the current session without duplicating play counts.
@@ -346,7 +487,10 @@ class ListeningTracker:
                     self._song.get("title", ""), self._song.get("artist", ""),
                     self._song.get("album", ""), self._song.get("source", ""),
                     delta, self._started_at, plays=want_play,
-                    total_seconds=self._seconds)
+                    total_seconds=self._seconds,
+                    duration=self._duration,
+                    position=self._position,
+                    cover_hash=self._cover_hash)
                 if accepted:
                     self._persisted_seconds = self._seconds
                     if want_play:
@@ -358,6 +502,10 @@ class ListeningTracker:
             self._persisted_seconds = 0.0
             self._play_counted = False
             self._started_at = None
+            self._source = ""
+            self._duration = 0.0
+            self._position = 0.0
+            self._cover_hash = ""
 
     def _tracking_on(self) -> bool:
         try:

@@ -20,6 +20,7 @@ _cfg_sandbox.begin(hotkeys=False, keepalive=False, idle_saver=False)
 
 _tmp = tempfile.TemporaryDirectory(prefix="desktop-sing-player-test-")
 os.environ["DESKTOP_SING_LISTEN_PATH"] = os.path.join(_tmp.name, "listening.json")
+os.environ["DESKTOP_SING_COVERS_PATH"] = os.path.join(_tmp.name, "covers")
 
 import lyrics_overlay as L  # noqa: E402
 import lyrics_view as V  # noqa: E402
@@ -74,6 +75,43 @@ check("最终结算不重复累计秒数", stats["total_seconds"] == 25.0, stats
 tracker.flush(final=True)
 check("重复最终结算无副作用", store.stats()["month_plays"] == 1,
       store.stats())
+
+contract_store = L.listening_store.ListeningStore(
+    os.path.join(_tmp.name, "contract.json"))
+contract_cover = L.listening_store.save_cover(b"contract-cover")
+contract_store.add_session("Contract Song", "Test Artist", seconds=40.0,
+                           source="smtc-contract", duration=180.0,
+                           position=32.0, cover_hash=contract_cover)
+contract_track = contract_store.recent_tracks(1)[0]
+check("历史 v2 输出会话来源与进度",
+      contract_track["source"] == "smtc-contract"
+      and contract_track["duration"] == 180.0
+      and contract_track["position"] == 32.0,
+      contract_track)
+check("历史 v2 输出封面与续播 ID",
+      contract_track["cover"] == contract_cover
+      and contract_track["resume_id"]
+      and "smtc-contract" in contract_track["resume_id"],
+      contract_track)
+
+legacy_path = os.path.join(_tmp.name, "legacy.json")
+with open(legacy_path, "w", encoding="utf-8") as handle:
+    json.dump({"v": 1, "sessions": [{
+        "d": "2026-11-25", "k": "legacy|artist", "t": "Legacy Song",
+        "a": "Test Artist", "s": 45.0, "n": 1, "h": 12, "last": time.time()
+    }]}, handle, ensure_ascii=False)
+legacy_store = L.listening_store.ListeningStore(legacy_path)
+legacy_track = legacy_store.recent_tracks(1)[0]
+check("旧历史惰性迁移且不可续播",
+      legacy_store.data["v"] == 2
+      and legacy_track["source"] == ""
+      and legacy_track["cover"] == ""
+      and legacy_track["resume_id"] == "",
+      (legacy_store.data["v"], legacy_track))
+check("封面缓存按内容键读写",
+      L.listening_store.load_cover(contract_cover) == b"contract-cover"
+      and L.listening_store.load_cover("0" * 64) == b"",
+      contract_cover)
 
 # Same-track SMTC metadata refreshes must not restart the session.
 tracker.on_media({"title": "Stable", "artist": "Test Artist",

@@ -1516,8 +1516,16 @@ class _FakeWatcher(_QObject):
         pass
 
 
+class _FakeContext:
+    config = L.load_config()
+    startup_launch = False
+    store_mode = False
+    boot_ts = _time.time()
+    should_open_player = False
+
+
 def _mk_overlay():
-    ov = L.LyricOverlay(_FakeWatcher())
+    ov = L.LyricOverlay(_FakeWatcher(), _FakeContext)
     ov.tray.showMessage = lambda *a, **k: None
     return ov
 
@@ -1694,6 +1702,7 @@ check("mismatch ui flow", mismatch_ui_flow)
 def async_fetch_ordering():
     """歌词上屏不得被封面下载阻塞；封面走 cover_ready 补发，且只发一次"""
     import time as _t
+    import tempfile as _tf
     PNG = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
            b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
            b"\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01"
@@ -1705,6 +1714,9 @@ def async_fetch_ordering():
             fails.append(why)
 
     real_http, real_fetch = L.http_get, L.fetch_lyrics
+    real_covers_dir = os.environ.get("DESKTOP_SING_COVERS_PATH")
+    covers_tmp = _tf.mkdtemp(prefix="ds_covers_")
+    os.environ["DESKTOP_SING_COVERS_PATH"] = covers_tmp
     calls = []
 
     def fake_http(url, headers=None, timeout=8.0):
@@ -1807,6 +1819,11 @@ def async_fetch_ordering():
 
     finally:
         L.http_get, L.fetch_lyrics = real_http, real_fetch
+        if real_covers_dir is None:
+            os.environ.pop("DESKTOP_SING_COVERS_PATH", None)
+        else:
+            os.environ["DESKTOP_SING_COVERS_PATH"] = real_covers_dir
+        shutil.rmtree(covers_tmp, ignore_errors=True)
 
     for w in fails:
         check("async fetch ordering", lambda w=w: (_ for _ in ()).throw(AssertionError(w)))
