@@ -23,6 +23,7 @@ os.environ["DESKTOP_SING_LISTEN_PATH"] = os.path.join(_tmp.name, "listening.json
 
 import lyrics_overlay as L  # noqa: E402
 import lyrics_view as V  # noqa: E402
+from PySide6.QtCore import QBuffer, QIODevice  # noqa: E402
 from PySide6.QtWidgets import QApplication, QPushButton  # noqa: E402
 
 
@@ -153,6 +154,83 @@ player.show()
 app.processEvents()
 player._refresh_now(force=True)
 player._timer.stop()
+
+_cover_buffer = QBuffer()
+_cover_buffer.open(QIODevice.WriteOnly)
+_cover_pix = L.QPixmap(2, 2)
+_cover_pix.fill(L.QColor("#ff7a4d"))
+_cover_pix.save(_cover_buffer, "PNG")
+_COVER_PNG = bytes(_cover_buffer.data())
+ov.cover_pix = None
+player._refresh_now(force=True)
+app.processEvents()
+check("Late-cover player fallback", player.now.hero_cover.pix is None
+      and player.now.backdrop.cover is None,
+      (player.now.hero_cover.pix, player.now.backdrop.cover))
+late_req = ov._req_id
+ov._on_cover_ready((late_req, _COVER_PNG))
+player._refresh_now()
+app.processEvents()
+check("Late cover reaches player and immersive stage",
+      ov.cover_pix is not None
+      and player.now.hero_cover.pix is ov.cover_pix
+      and player.now.backdrop.cover is ov.cover_pix
+      and player.now.ov_cover_for_paint() is ov.cover_pix,
+      (ov.cover_pix, player.now.hero_cover.pix,
+       player.now.backdrop.cover, player.now.ov_cover_for_paint()))
+
+stale_req = ov._req_id
+ov._req_id += 1
+ov.cover_pix = None
+ov._on_cover_ready((stale_req, _COVER_PNG))
+check("Stale cover request discarded", ov.cover_pix is None, ov.cover_pix)
+ov._req_id = late_req
+
+cover_cache_dir = os.path.join(_tmp.name, "cover-cache")
+L.COVER_CACHE_DIR = cover_cache_dir
+L._COVER_MEMORY_CACHE.clear()
+_http_get = L.http_get
+_cover_calls = 0
+
+
+def _cover_http(url, headers=None, timeout=5.0):
+    global _cover_calls
+    _cover_calls += 1
+    time.sleep(0.04)
+    return _COVER_PNG
+
+
+L.http_get = _cover_http
+_cover_url = "https://example.invalid/desktop-sing-cover.jpg"
+_t0 = time.perf_counter()
+_miss_cover = L.fetch_cover_image(_cover_url, timeout=1.0)
+_miss_ms = (time.perf_counter() - _t0) * 1000.0
+_t0 = time.perf_counter()
+_hit_cover = L.fetch_cover_image(_cover_url, timeout=1.0)
+_hit_ms = (time.perf_counter() - _t0) * 1000.0
+_failure_cover = None
+L.http_get = lambda *a, **k: (_ for _ in ()).throw(ConnectionError("offline"))
+try:
+    _failure_cover = L.fetch_cover_image("https://example.invalid/offline.jpg",
+                                         timeout=1.0)
+except Exception:
+    _failure_cover = None
+L.http_get = _http_get
+
+check("Cover cache hit is faster than miss",
+      _miss_cover is _hit_cover and _cover_calls == 1
+      and _hit_ms < _miss_ms,
+      (str(_miss_cover)[:16], str(_hit_cover)[:16], _cover_calls,
+       round(_miss_ms, 3), round(_hit_ms, 3)))
+check("Offline cover falls back without pixmap", _failure_cover is None
+      and player.now.hero_cover.pix is not None,
+      (_failure_cover, player.now.hero_cover.pix))
+check("Cover disk cache persisted",
+      os.path.exists(L._cover_cache_path(_cover_url)),
+      L._cover_cache_path(_cover_url))
+L.COVER_CACHE_DIR = L.CACHE_DIR
+
+player._timer.start()
 player.now.update_progress(72.0, 240.0, True)
 app.processEvents()
 
@@ -168,7 +246,7 @@ check("进度条与播放条相交",
       (player.now.slider.geometry(), player.now.bar.rect()))
 check("进度值已更新", player.now.slider.value() == 300,
       player.now.slider.value())
-player._timer.start()
+player._timer.stop()
 
 player.navigate("report")
 app.processEvents()

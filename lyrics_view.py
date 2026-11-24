@@ -1786,7 +1786,9 @@ class MainPlayerWindow(QWidget):
         song = self.ov.song or {}
         title = song.get("title") or ""
         artist = song.get("artist") or ""
-        key = (title, artist, id(self.ov.lines), len(self.ov.lines))
+        cover_key = (self.ov.cover_pix.cacheKey()
+                     if self.ov.cover_pix is not None else None)
+        key = (title, artist, id(self.ov.lines), len(self.ov.lines), cover_key)
         if not force and key == self._last_track:
             return
         self._last_track = key
