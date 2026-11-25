@@ -23,8 +23,10 @@ os.environ["DESKTOP_SING_LISTEN_PATH"] = os.path.join(_tmp.name, "listening.json
 
 import lyrics_overlay as L  # noqa: E402
 import lyrics_view as V  # noqa: E402
-from PySide6.QtCore import QBuffer, QIODevice  # noqa: E402
-from PySide6.QtWidgets import QApplication, QPushButton  # noqa: E402
+from app.lyrics_service import LyricsService  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 
 
 FAILS = []
@@ -123,18 +125,107 @@ tracker.flush(final=True)
 check("清空后旧会话不回写", not store.recent_tracks(20),
       store.recent_tracks(20))
 
-# ---- History formatting ---------------------------------------------------
-hist_store = L.listening_store.ListeningStore(
-    os.path.join(_tmp.name, "history.json"))
-hist_store.add_session("Thirty", "Artist", seconds=30.0,
-                       started_at=time.time(), plays=1, total_seconds=30.0)
-history = V.HistoryPage(L._tr, lambda _t, _a: ([], {}))
-history.set_tracks(hist_store.recent_tracks(10))
-rows = history.findChildren(QPushButton)
-row_text = "\n".join(b.text() for b in rows)
-check("历史 30 秒显示秒而非 0 分钟",
-      "30 秒" in row_text and "0 分钟" not in row_text, row_text)
-check("历史显示一次播放", "1 次" in row_text, row_text)
+# ---- Playlist metadata -----------------------------------------------------
+sample_playlist = "\n".join((
+    "#EXTM3U",
+    "#EXTINF:225,示例歌手 - 示例曲目",
+    "https://example.com/sample.mp3",
+    "02 - Second.mp3",
+))
+playlist_tracks = V._parse_m3u(sample_playlist)
+check("M3U 只解析元数据",
+      len(playlist_tracks) == 2
+      and playlist_tracks[0]["title"] == "示例曲目"
+      and playlist_tracks[0]["artist"] == "示例歌手"
+      and playlist_tracks[0]["duration"] == 225.0
+      and "audio_bytes" not in playlist_tracks[0],
+      playlist_tracks)
+check("M3U 按曲名歌手去重",
+      len(V._parse_m3u(
+          "#EXTM3U\n"
+          "#EXTINF:225,示例歌手 - 示例曲目\nhttps://example.com/a.mp3\n"
+          "#EXTINF:225,示例歌手 - 示例曲目\nhttps://example.com/b.mp3"
+      )) == 1,
+      V._parse_m3u("#EXTM3U\n"
+                   "#EXTINF:225,示例歌手 - 示例曲目\nhttps://example.com/a.mp3\n"
+                   "#EXTINF:225,示例歌手 - 示例曲目\nhttps://example.com/b.mp3"))
+check("纯文本不解析为曲目", V._parse_m3u("这不是歌单") == [],
+      V._parse_m3u("这不是歌单"))
+check("歌单链接拒绝本地地址",
+      not V._playlist_host_is_public("localhost")
+      and not V._playlist_host_is_public("127.0.0.1"),
+      (V._playlist_host_is_public("localhost"),
+       V._playlist_host_is_public("127.0.0.1")))
+check("私网与保留地址全部拒绝",
+      not V._playlist_public_addresses("127.0.0.1")
+      and not V._playlist_public_addresses("169.254.169.254")
+      and not V._playlist_public_addresses("0.0.0.0"),
+      (V._playlist_public_addresses("127.0.0.1"),
+       V._playlist_public_addresses("169.254.169.254"),
+       V._playlist_public_addresses("0.0.0.0")))
+check("平台链接直接拒绝",
+      V._playlist_is_platform_url("music.163.com")
+      and V._playlist_is_platform_url("y.qq.com")
+      and not V._playlist_is_platform_url("example.com"),
+      (V._playlist_is_platform_url("music.163.com"),
+       V._playlist_is_platform_url("y.qq.com"),
+       V._playlist_is_platform_url("example.com")))
+
+fetch_results = []
+fetch_failures = []
+fetch_thread = V.PlaylistFetchThread("https://example.com/playlist.m3u8")
+fetch_thread.completed.connect(fetch_results.append)
+fetch_thread.failed.connect(fetch_failures.append)
+original_fetch = V._fetch_playlist_bytes
+V._fetch_playlist_bytes = lambda url: sample_playlist.encode("utf-8")
+try:
+    fetch_thread.run()
+finally:
+    V._fetch_playlist_bytes = original_fetch
+app.processEvents()
+check("歌单 URL 导入线程可完成",
+      fetch_results == [playlist_tracks]
+      and not fetch_failures,
+      (fetch_results, fetch_failures))
+
+class _RedirectResponse:
+    def __init__(self, status, headers):
+        self.status = status
+        self.headers = headers
+    def getheader(self, name):
+        return self.headers.get(name)
+    def read(self, count=-1):
+        return b""
+
+class _RedirectConnection:
+    requests = []
+    def __init__(self, *args, **kwargs):
+        self.pinned_ip = ""
+    def request(self, method, path, headers=None):
+        _RedirectConnection.requests.append(path)
+    def getresponse(self):
+        if len(_RedirectConnection.requests) == 1:
+            return _RedirectResponse(302,
+                                     {"Location": "http://127.0.0.1/x.m3u"})
+        return _RedirectResponse(200, {})
+    def close(self):
+        pass
+
+original_pinned_connection = V._PinnedHTTPSConnection
+_RedirectConnection.requests.clear()
+V._PinnedHTTPSConnection = _RedirectConnection
+redirect_failure = ""
+try:
+    try:
+        V._fetch_playlist_bytes("https://example.com/redirect.m3u")
+    except Exception as exc:
+        redirect_failure = str(exc)
+finally:
+    V._PinnedHTTPSConnection = original_pinned_connection
+check("重定向到私网被拒绝",
+      redirect_failure == "private-playlist-host"
+      and _RedirectConnection.requests == ["/redirect.m3u"],
+      (redirect_failure, _RedirectConnection.requests))
 
 # ---- Real main player construction ----------------------------------------
 ov = L.LyricOverlay(L.MediaWatcher())
@@ -147,6 +238,19 @@ ov.duration = 240.0
 ov.status = "PLAYING"
 ov.anchor_pos = 8.0
 ov.anchor_ts = time.monotonic()
+ov.current_resume_id = lambda: ""
+
+lyrics_cache_dir = tempfile.mkdtemp(prefix="desktop-sing-lyrics-cache-")
+old_cache_dir = L.CACHE_DIR
+L.CACHE_DIR = lyrics_cache_dir
+lyrics_service = LyricsService(L)
+ov.lyrics_service = lyrics_service
+with open(lyrics_service.cache_path("示例曲目", "示例歌手"), "w",
+          encoding="utf-8") as handle:
+    json.dump({"v": 4, "lines": [[0.0, "第一句"], [3.0, "第二句"]],
+               "trans": [[0.1, "First"], [3.1, "Second"]],
+               "words": {}, "sk": False, "roma": []},
+              handle, ensure_ascii=False)
 
 player = V.MainPlayerWindow(ov)
 player.resize(1260, 820)
@@ -154,83 +258,6 @@ player.show()
 app.processEvents()
 player._refresh_now(force=True)
 player._timer.stop()
-
-_cover_buffer = QBuffer()
-_cover_buffer.open(QIODevice.WriteOnly)
-_cover_pix = L.QPixmap(2, 2)
-_cover_pix.fill(L.QColor("#ff7a4d"))
-_cover_pix.save(_cover_buffer, "PNG")
-_COVER_PNG = bytes(_cover_buffer.data())
-ov.cover_pix = None
-player._refresh_now(force=True)
-app.processEvents()
-check("Late-cover player fallback", player.now.hero_cover.pix is None
-      and player.now.backdrop.cover is None,
-      (player.now.hero_cover.pix, player.now.backdrop.cover))
-late_req = ov._req_id
-ov._on_cover_ready((late_req, _COVER_PNG))
-player._refresh_now()
-app.processEvents()
-check("Late cover reaches player and immersive stage",
-      ov.cover_pix is not None
-      and player.now.hero_cover.pix is ov.cover_pix
-      and player.now.backdrop.cover is ov.cover_pix
-      and player.now.ov_cover_for_paint() is ov.cover_pix,
-      (ov.cover_pix, player.now.hero_cover.pix,
-       player.now.backdrop.cover, player.now.ov_cover_for_paint()))
-
-stale_req = ov._req_id
-ov._req_id += 1
-ov.cover_pix = None
-ov._on_cover_ready((stale_req, _COVER_PNG))
-check("Stale cover request discarded", ov.cover_pix is None, ov.cover_pix)
-ov._req_id = late_req
-
-cover_cache_dir = os.path.join(_tmp.name, "cover-cache")
-L.COVER_CACHE_DIR = cover_cache_dir
-L._COVER_MEMORY_CACHE.clear()
-_http_get = L.http_get
-_cover_calls = 0
-
-
-def _cover_http(url, headers=None, timeout=5.0):
-    global _cover_calls
-    _cover_calls += 1
-    time.sleep(0.04)
-    return _COVER_PNG
-
-
-L.http_get = _cover_http
-_cover_url = "https://example.invalid/desktop-sing-cover.jpg"
-_t0 = time.perf_counter()
-_miss_cover = L.fetch_cover_image(_cover_url, timeout=1.0)
-_miss_ms = (time.perf_counter() - _t0) * 1000.0
-_t0 = time.perf_counter()
-_hit_cover = L.fetch_cover_image(_cover_url, timeout=1.0)
-_hit_ms = (time.perf_counter() - _t0) * 1000.0
-_failure_cover = None
-L.http_get = lambda *a, **k: (_ for _ in ()).throw(ConnectionError("offline"))
-try:
-    _failure_cover = L.fetch_cover_image("https://example.invalid/offline.jpg",
-                                         timeout=1.0)
-except Exception:
-    _failure_cover = None
-L.http_get = _http_get
-
-check("Cover cache hit is faster than miss",
-      _miss_cover is _hit_cover and _cover_calls == 1
-      and _hit_ms < _miss_ms,
-      (str(_miss_cover)[:16], str(_hit_cover)[:16], _cover_calls,
-       round(_miss_ms, 3), round(_hit_ms, 3)))
-check("Offline cover falls back without pixmap", _failure_cover is None
-      and player.now.hero_cover.pix is not None,
-      (_failure_cover, player.now.hero_cover.pix))
-check("Cover disk cache persisted",
-      os.path.exists(L._cover_cache_path(_cover_url)),
-      L._cover_cache_path(_cover_url))
-L.COVER_CACHE_DIR = L.CACHE_DIR
-
-player._timer.start()
 player.now.update_progress(72.0, 240.0, True)
 app.processEvents()
 
@@ -246,7 +273,7 @@ check("进度条与播放条相交",
       (player.now.slider.geometry(), player.now.bar.rect()))
 check("进度值已更新", player.now.slider.value() == 300,
       player.now.slider.value())
-player._timer.stop()
+player._timer.start()
 
 player.navigate("report")
 app.processEvents()
@@ -262,9 +289,154 @@ check("报告空态隐藏零值图表",
        player.report.today.isVisible()))
 player.navigate("history")
 app.processEvents()
-check("播放历史入口可用", player.stack.currentWidget() is player.history)
-check("历史空态同时说明统计门槛",
-      "20" in player.history.d_lyrics.text(), player.history.d_lyrics.text())
+player.playlist.refresh()
+app.processEvents()
+
+def current_playlist_rows():
+    return [player.playlist.list_lay.itemAt(index).widget()
+            for index in range(player.playlist.list_lay.count())
+            if isinstance(player.playlist.list_lay.itemAt(index).widget(),
+                          V.PlaylistRowButton)]
+
+check("URL 输入具备无障碍名称与说明",
+      player.playlist.url_input.accessibleName()
+      and player.playlist.url_input.accessibleDescription(),
+      (player.playlist.url_input.accessibleName(),
+       player.playlist.url_input.accessibleDescription()))
+playlist_tracks = [{"title": "示例曲目", "artist": "示例歌手",
+                    "duration": 225.0, "source": "https://example.com/x.mp3"}]
+player.playlist.set_loading()
+app.processEvents()
+check("歌单加载态互斥", not player.playlist.import_btn.isEnabled()
+      and player.playlist.list_lay.count() > 0
+      and not player.playlist.error.isVisible(), player.playlist._state)
+check("加载态显示取消",
+      player.playlist.cancel_btn.isVisible()
+      and player.playlist.cancel_btn.isEnabled(),
+      (player.playlist.cancel_btn.isVisible(),
+       player.playlist.cancel_btn.isEnabled()))
+player.playlist._cancelled = True
+player.playlist._cancel_import()
+app.processEvents()
+check("取消导入立即恢复空态",
+      player.playlist._state == "empty"
+      and player.playlist._tracks == []
+      and not player.playlist.cancel_btn.isVisible(),
+      (player.playlist._state, player.playlist._tracks,
+       player.playlist.cancel_btn.isVisible()))
+player.playlist._on_fetch_completed(playlist_tracks)
+app.processEvents()
+check("取消导入忽略线程结果",
+      player.playlist._state == "empty"
+      and player.playlist._tracks == []
+      and not player.playlist.cancel_btn.isVisible(),
+      (player.playlist._state, player.playlist._tracks,
+       player.playlist.cancel_btn.isVisible()))
+player.playlist.set_error("测试错误")
+app.processEvents()
+check("歌单错误态可见", player.playlist.error.isVisible()
+      and player.playlist._state == "error"
+      and player.playlist.url_input.property("error") == "1",
+      (player.playlist._state, player.playlist.url_input.property("error")))
+player.playlist.set_tracks([])
+app.processEvents()
+check("歌单空态可见", player.playlist._state == "empty",
+      player.playlist._state)
+player.playlist.set_tracks(playlist_tracks)
+app.processEvents()
+playlist_rows = current_playlist_rows()
+check("歌单行可构造", len(playlist_rows) == 1
+      and playlist_rows[0].title.text() == "示例曲目", playlist_rows)
+check("本地歌词缓存行显示已就绪",
+      playlist_rows[0].status.property("matched") == "1"
+      and "歌词已就绪" in playlist_rows[0].status.text()
+      and playlist_rows[0].status.text().startswith("✓"),
+      playlist_rows[0].status.text())
+check("成功态显示导入数量",
+      player.playlist.success.isVisible()
+      and player.playlist.success.text() == "已导入 1 首曲目",
+      player.playlist.success.text())
+selected_tracks = []
+player.playlist.track_selected.connect(selected_tracks.append)
+playlist_rows[0].click()
+app.processEvents()
+check("点击曲目进入歌词页",
+      player.stack.currentWidget() is player.now
+      and selected_tracks == playlist_tracks
+      and player._playlist_track == playlist_tracks[0],
+      (player.stack.currentWidget(), selected_tracks, player._playlist_track))
+player.grab().save("_player_playlist_track_opened.png")
+player.navigate("history")
+app.processEvents()
+playlist_rows = player.playlist.findChildren(V.PlaylistRowButton)
+check("选中曲目状态保持", playlist_rows[0].isChecked(),
+      playlist_rows[0].isChecked())
+player.grab().save("_player_playlist_selected.png")
+
+playlist_tracks = [
+    playlist_tracks[0],
+    {"title": "Unmatched Track", "artist": "示例歌手", "duration": 180.0,
+     "source": "https://example.com/unmatched.mp3"},
+    {"title": "L" * 120, "artist": "A" * 90, "duration": 96.0,
+     "source": "https://example.com/long.mp3"},
+]
+player.playlist.set_tracks(playlist_tracks)
+app.processEvents()
+playlist_rows = current_playlist_rows()
+playlist_rows[1].click()
+app.processEvents()
+check("点击后当前行保持选中",
+      playlist_rows[1].isChecked()
+      and player.playlist._selected_track == playlist_tracks[1],
+      (playlist_rows[1].isChecked(), player.playlist._selected_track))
+player.navigate("history")
+app.processEvents()
+playlist_rows = current_playlist_rows()
+check("行选择强制单选",
+      playlist_rows[1].isChecked()
+      and not playlist_rows[0].isChecked()
+      and not playlist_rows[2].isChecked(),
+      [row.isChecked() for row in playlist_rows])
+playlist_rows[1].click()
+app.processEvents()
+player.navigate("history")
+app.processEvents()
+playlist_rows = current_playlist_rows()
+check("重复点击不清除选中", playlist_rows[1].isChecked(),
+      [row.isChecked() for row in playlist_rows])
+check("超长元数据保留全文并提示",
+      playlist_rows[2].title.toolTip() == playlist_tracks[2]["title"]
+      and playlist_rows[2].artist.toolTip() == playlist_tracks[2]["artist"]
+      and playlist_tracks[2]["title"] in playlist_rows[2].accessibleName()
+      and playlist_tracks[2]["artist"] in playlist_rows[2].accessibleName(),
+      (playlist_rows[2].title.toolTip(),
+       playlist_rows[2].accessibleName()))
+playlist_rows[2].setFocus()
+app.processEvents()
+QTest.keyClick(playlist_rows[2], Qt.Key_Return)
+app.processEvents()
+check("回车激活歌单行",
+      player.stack.currentWidget() is player.now
+      and playlist_rows[2].isChecked()
+      and selected_tracks[-1] == playlist_tracks[2],
+      (player.stack.currentWidget(), [row.isChecked() for row in playlist_rows],
+       selected_tracks[-1]))
+check("未匹配曲目进入明确空态",
+      player.now.canvas.empty_message_key == "未找到本地歌词"
+      and player.now.canvas.empty_description_key == "请添加本地歌词文件后再试。",
+      (player.now.canvas.empty_message_key,
+       player.now.canvas.empty_description_key))
+playlist_rows[0].click()
+app.processEvents()
+player.navigate("history")
+app.processEvents()
+playlist_rows = current_playlist_rows()
+check("切换行后旧行取消选中",
+      playlist_rows[0].isChecked() and not playlist_rows[1].isChecked()
+      and not playlist_rows[2].isChecked(),
+      [row.isChecked() for row in playlist_rows])
+check("歌单页入口可用", player.stack.currentWidget() is player.playlist
+      or player.stack.currentWidget() is player.now)
 
 player.navigate("settings")
 check("设置入口可用", player.stack.currentWidget() is player.settings_page,
@@ -279,6 +451,47 @@ player.toggle_immersive()
 app.processEvents()
 check("退出沉浸模式", not player._immersive and player.sidebar.isVisible(),
       player._immersive)
+
+# ---- Language switch refreshes brand / immersive / stage eyebrow -----------
+def _has_cjk(text):
+    for ch in text or "":
+        code = ord(ch)
+        if 0x2E80 <= code <= 0x9FFF or 0x3040 <= code <= 0x30FF:
+            return True
+    return False
+
+
+L.set_ui_lang("en")
+player.retranslate_ui()
+app.processEvents()
+check("切 en 后窗口标题无中文",
+      "Desktop-sing" in player.windowTitle()
+      and not _has_cjk(player.windowTitle()), player.windowTitle())
+check("切 en 后侧栏品牌", player.sidebar.brand_name.text() == "Desktop-sing",
+      player.sidebar.brand_name.text())
+check("切 en 后沉浸按钮", player.now.immersive_btn.text() == "Immersive lyrics",
+      player.now.immersive_btn.text())
+check("切 en 后舞台 eyebrow", player.now.source.text() == "Now playing",
+      player.now.source.text())
+L.set_ui_lang("ja")
+player.retranslate_ui()
+app.processEvents()
+check("切 ja 后沉浸按钮", player.now.immersive_btn.text() == "没入歌詞",
+      player.now.immersive_btn.text())
+check("切 ja 后舞台 eyebrow", player.now.source.text() == "再生中",
+      player.now.source.text())
+player.now.update_track({"title": "夜航西飞", "artist": "示例歌手",
+                         "duration": 240.0}, None)
+L.set_ui_lang("en")
+player.retranslate_ui()
+app.processEvents()
+check("有曲目时切语言不覆盖歌名",
+      player.now.title.text() == "夜航西飞"
+      and player.now.track_title.text() == "夜航西飞",
+      (player.now.title.text(), player.now.track_title.text()))
+L.set_ui_lang("zh-CN")
+player.retranslate_ui()
+app.processEvents()
 
 player.enter_mini()
 app.processEvents()

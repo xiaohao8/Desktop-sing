@@ -10,14 +10,24 @@ from __future__ import annotations
 import math
 import os
 import time
+import http.client
+import ipaddress
+import socket
+import ssl
+import urllib.parse
+from collections import OrderedDict
+from datetime import datetime
 
-from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QPoint, QPointF, QRectF, QSize, Qt, QThread, QTimer, Signal
+)
 from PySide6.QtGui import (
     QColor, QFont, QFontMetrics, QIcon, QLinearGradient, QPainter,
     QPainterPath, QPen, QPixmap, QRadialGradient,
 )
 from PySide6.QtWidgets import (
     QApplication, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
+    QLineEdit, QFileDialog,
     QGraphicsDropShadowEffect,
     QScrollArea, QSizeGrip, QSizePolicy, QSlider, QSpacerItem,
     QStackedWidget, QVBoxLayout,
@@ -29,7 +39,7 @@ INK = "#1c2026"
 INK_SOFT = "#6e716f"
 PAPER = "#faf8f3"
 PAPER_DEEP = "#f2ede4"
-VERMILION = "#f0643a"
+VERMILION = "#C2410C"
 STAGE = "#080a0f"
 STAGE_SOFT = "#151820"
 LINE = "rgba(24,28,34,18)"
@@ -119,6 +129,293 @@ def _format_duration(seconds: float, tr) -> str:
     if sec < 60.0:
         return "%d %s" % (int(round(sec)), tr("秒"))
     return "%d %s" % (int(round(sec / 60.0)), tr("分钟"))
+
+
+def _format_clock(seconds: float) -> str:
+    sec = max(0, int(float(seconds or 0.0)))
+    return "%d:%02d" % (sec // 60, sec % 60)
+
+
+def _format_last_played(timestamp, tr) -> str:
+    try:
+        moment = datetime.fromtimestamp(float(timestamp or 0.0))
+        now = datetime.now()
+        if moment.date() == now.date():
+            return moment.strftime("%H:%M")
+        if moment.year == now.year:
+            return moment.strftime("%m-%d %H:%M")
+        return moment.strftime("%Y-%m-%d %H:%M")
+    except (OSError, OverflowError, TypeError, ValueError):
+        return tr("仅本机记录")
+
+
+def _history_track_adapter(track):
+    """Map the local listening record into the history view model.
+
+    Cover, duration, position and source/resume fields are intentionally kept
+    optional until the backend contract is delivered. Missing fields remain
+    absent instead of being replaced by mock values.
+    """
+    track = track or {}
+    return {
+        "title": track.get("title") or "",
+        "artist": track.get("artist") or "",
+        "seconds": max(0.0, float(track.get("seconds") or 0.0)),
+        "plays": max(0, int(track.get("plays") or 0)),
+        "days": max(0, int(track.get("days") or 0)),
+        "last": track.get("last"),
+        "cover": (track.get("cover") or "").strip(),
+        "duration": max(0.0, float(track.get("duration") or 0.0)),
+        "position": max(0.0, float(track.get("position") or 0.0)),
+        "source": (track.get("source") or "").strip(),
+        "resume_id": (track.get("resume_id") or "").strip(),
+    }
+
+
+def _playlist_public_addresses(host: str) -> list[tuple[str, int]]:
+    """Resolve every A/AAAA record and reject any non-public address."""
+    host = (host or "").strip().strip("[]").lower()
+    if not host or host in {"localhost", "ip6-localhost", "ip6-loopback"}:
+        return []
+    try:
+        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except (OSError, UnicodeError):
+        return []
+    if not infos:
+        return []
+    addresses = []
+    for info in infos:
+        if info[0] not in (socket.AF_INET, socket.AF_INET6):
+            continue
+        try:
+            address = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return []
+        if (address.is_private or address.is_loopback or address.is_link_local
+                or address.is_multicast or address.is_reserved
+                or address.is_unspecified):
+            return []
+        if (info[4][0], info[0]) not in addresses:
+            addresses.append((info[4][0], info[0]))
+    return addresses
+
+
+def _playlist_host_is_public(host: str) -> bool:
+    """Return whether all resolved records are public HTTP(S) targets."""
+    return bool(_playlist_public_addresses(host))
+
+
+def _safe_playlist_url(url: str) -> urllib.parse.ParseResult:
+    parsed = urllib.parse.urlparse((url or "").strip())
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("unsupported-playlist-url")
+    if _playlist_is_platform_url(parsed.hostname):
+        raise ValueError("platform-playlist-url")
+    if not _playlist_host_is_public(parsed.hostname):
+        raise ValueError("private-playlist-host")
+    return parsed
+
+
+def _playlist_is_platform_url(host: str) -> bool:
+    host = (host or "").strip().strip("[]").lower()
+    platform_hosts = {
+        "b23.tv", "bilibili.com", "deezer.com", "joox.com", "kkbox.com",
+        "kugou.com", "kuwo.cn", "music.163.com", "music.apple.com",
+        "music.youtube.com", "open.spotify.com", "soundcloud.com",
+        "tidal.com", "y.qq.com",
+    }
+    return any(host == item or host.endswith("." + item)
+               for item in platform_hosts)
+
+
+def _fetch_playlist_bytes(url: str, *, timeout: float = 10.0,
+                          max_bytes: int = 2 * 1024 * 1024,
+                          max_redirects: int = 5) -> bytes:
+    """Fetch a playlist document with public-host and size constraints."""
+    current = (url or "").strip()
+    seen = set()
+    for _ in range(max_redirects + 1):
+        parsed = _safe_playlist_url(current)
+        if current in seen:
+            raise ValueError("playlist-redirect-loop")
+        seen.add(current)
+        host = parsed.hostname
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        pinned_addresses = _playlist_public_addresses(host)
+        if not pinned_addresses:
+            raise ValueError("private-playlist-host")
+        path = parsed.path or "/"
+        if parsed.query:
+            path += "?" + parsed.query
+        if parsed.scheme == "https":
+            connection = _PinnedHTTPSConnection(
+                host, port, timeout=timeout, context=ssl.create_default_context())
+        else:
+            connection = _PinnedHTTPConnection(host, port, timeout=timeout)
+        connection.pinned_ip = pinned_addresses[0][0]
+        try:
+            connection.request("GET", path, headers={
+                "User-Agent": "Desktop-sing-playlist/1.0",
+                "Accept": "audio/x-mpegurl,application/x-mpegurl,text/plain,*/*",
+            })
+            response = connection.getresponse()
+            if response.status in (301, 302, 303, 307, 308):
+                location = response.getheader("Location")
+                if not location:
+                    raise ValueError("playlist-redirect-missing")
+                current = urllib.parse.urljoin(current, location)
+                continue
+            if response.status != 200:
+                raise ValueError("playlist-http-error")
+            data = response.read(max_bytes + 1)
+            if len(data) > max_bytes:
+                raise ValueError("playlist-too-large")
+            return data
+        finally:
+            connection.close()
+    raise ValueError("playlist-too-many-redirects")
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    pinned_ip = ""
+
+    def connect(self):
+        address = self.pinned_ip or self.host
+        self.sock = self._create_connection(
+            (address, self.port), self.timeout, self.source_address)
+        try:
+            self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            pass
+
+
+class _PinnedHTTPSConnection(_PinnedHTTPConnection, http.client.HTTPSConnection):
+    pass
+
+
+def _decode_playlist(data: bytes) -> str:
+    for encoding in ("utf-8-sig", "utf-8", "gb18030"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
+def _is_playlist_source_line(line: str) -> bool:
+    parsed = urllib.parse.urlparse(line)
+    if parsed.scheme in ("http", "https", "file"):
+        return bool(parsed.netloc or parsed.path)
+    if len(line) >= 3 and line[1] == ":" and line[2] in ("/", "\\"):
+        return True
+    return (line.startswith(("/", "\\", ".")) or os.path.isabs(line))
+
+
+def _parse_m3u(text: str) -> list[dict]:
+    tracks = []
+    seen = set()
+    pending = None
+    lines = text.splitlines()
+    has_m3u_marker = any(
+        line.upper().startswith("#EXTM3U") or
+        line.upper().startswith("#EXTINF:") for line in lines)
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("#EXTINF:"):
+            metadata = line.split(":", 1)[1]
+            duration_text, _, title = metadata.partition(",")
+            try:
+                duration = max(0.0, float(duration_text))
+            except ValueError:
+                duration = 0.0
+            artist = ""
+            if " - " in title:
+                artist, title = title.rsplit(" - ", 1)
+            pending = {"title": title.strip() or "", "artist": artist.strip(),
+                       "duration": duration}
+            continue
+        if line.startswith("#"):
+            continue
+        if not has_m3u_marker and not _is_playlist_source_line(line):
+            return []
+        source_name = os.path.basename(urllib.parse.urlparse(line).path) or line
+        track = pending or {"title": "", "artist": "", "duration": 0.0}
+        if not track.get("title"):
+            track["title"] = source_name
+        track["source"] = line
+        track_key = ((track.get("title") or "").strip().casefold(),
+                     (track.get("artist") or "").strip().casefold())
+        if track_key in seen:
+            pending = None
+            continue
+        seen.add(track_key)
+        tracks.append(track)
+        pending = None
+    return tracks
+
+
+def _playlist_error_message(message: str, tr) -> str:
+    message = str(message or "")
+    if "platform-playlist-url" in message:
+        return tr("这是平台链接。请直接使用 M3U 或 M3U8 链接。")
+    if "private-playlist-host" in message:
+        return tr("这个地址指向内网或本机，已拒绝。请使用公网 M3U/M3U8 链接。")
+    if "playlist-too-large" in message:
+        return tr("歌单文件超过大小限制，请导入 2MB 以内的 M3U/M3U8。")
+    if "playlist-too-many-tracks" in message:
+        return tr("歌单曲目超过 1000 首，请精简后再导入。")
+    if "unsupported-playlist-url" in message:
+        return tr("无法读取这个歌单。请使用 M3U 或 M3U8 链接。")
+    return tr("无法读取歌单，请检查网络或链接后重试。")
+
+
+def _history_cover_loader(track):
+    """Read a cover produced by the shared local cover cache.
+
+    The disk cache is populated by the backend cover pipeline; the UI only
+    reads the contract path and never fabricates a hash or file.
+    """
+    cover_hash = (track.get("cover") or "").strip()
+    if not cover_hash:
+        return None
+    cache = _history_cover_loader._cache
+    if cover_hash in cache:
+        cache.move_to_end(cover_hash)
+        return cache[cover_hash][0]
+    path = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
+                        "Desktop-sing", "covers", cover_hash + ".png")
+    pixmap = QPixmap(path)
+    if pixmap.isNull():
+        return None
+    estimated_bytes = pixmap.width() * pixmap.height() * 4
+    cache[cover_hash] = (pixmap, estimated_bytes)
+    while sum(item[1] for item in cache.values()) > 50 * 1024 * 1024:
+        cache.popitem(last=False)
+    return pixmap
+
+
+_history_cover_loader._cache = OrderedDict()
+_MAX_PLAYLIST_FILE_BYTES = 2 * 1024 * 1024
+_MAX_PLAYLIST_TRACKS = 1000
+
+
+def _is_current_history_track(track, song, current_resume_id=""):
+    track = track or {}
+    song = song or {}
+    resume_id = (track.get("resume_id") or "").strip()
+    current_resume_id = (current_resume_id or "").strip()
+    if resume_id or current_resume_id:
+        return bool(resume_id) and bool(current_resume_id) \
+            and resume_id == current_resume_id
+    source = (track.get("source") or "").strip()
+    if source and song.get("source"):
+        return source == (song.get("source") or "").strip()
+    return ((track.get("title") or "").strip().lower()
+            == (song.get("title") or "").strip().lower()
+            and (track.get("artist") or "").strip().lower()
+            == (song.get("artist") or "").strip().lower())
 
 
 def _draw_icon(p: QPainter, kind: str, r: QRectF, color: QColor):
@@ -257,6 +554,7 @@ class TitleBar(QWidget):
     def __init__(self, tr, parent=None):
         super().__init__(parent)
         self._tr = tr
+        self._stats = {}
         self._drag = None
         self.setFixedHeight(56)
         self.setObjectName("titlebar")
@@ -268,9 +566,12 @@ class TitleBar(QWidget):
         lay.addWidget(self.page_label)
         lay.addStretch(1)
 
+        self.quick_buttons = {}
+
         for text, icon_name, sig in (
                 (tr("迷你模式"), "mini", self.mini_requested),
                 (tr("沉浸"), "expand", self.immersive_requested)):
+            key = "mini" if icon_name == "mini" else "immersive"
             b = IconButton(text)
             b.setObjectName("quick")
             b.setCursor(Qt.PointingHandCursor)
@@ -278,6 +579,7 @@ class TitleBar(QWidget):
             b.setIconSize(QSize(16, 16))
             b.clicked.connect(sig.emit)
             lay.addWidget(b)
+            self.quick_buttons[key] = b
 
         lay.addSpacing(8)
         self.b_min = self._win_button("min")
@@ -300,6 +602,19 @@ class TitleBar(QWidget):
         b.setAccessibleName(self._tr(label))
         b.paintEvent = lambda e, w=b: self._paint_win(w)
         return b
+
+    def retranslate(self):
+        self.page_label.setText(self._tr("正在播放"))
+        self.quick_buttons["mini"].setText(self._tr("迷你模式"))
+        self.quick_buttons["immersive"].setText(self._tr("沉浸"))
+        self._win_button_labels()
+
+    def _win_button_labels(self):
+        labels = {"min": "最小化", "max": "最大化", "close": "关闭"}
+        for kind, button in (("min", self.b_min), ("max", self.b_max),
+                             ("close", self.b_close)):
+            button.setToolTip(self._tr(labels[kind]))
+            button.setAccessibleName(self._tr(labels[kind]))
 
     def _paint_win(self, b: QPushButton):
         p = QPainter(b)
@@ -348,6 +663,8 @@ class Sidebar(QWidget):
     def __init__(self, tr, parent=None):
         super().__init__(parent)
         self._tr = tr
+        self._status_key = "正在读取系统媒体"
+        self._status_live = False
         self.setObjectName("sidebar")
         self.setFixedWidth(248)
         root = QVBoxLayout(self)
@@ -363,8 +680,9 @@ class Sidebar(QWidget):
         brand.addWidget(mark)
         col = QVBoxLayout()
         col.setSpacing(0)
-        name = QLabel("桌面歌词")
+        name = QLabel(tr("桌面歌词"))
         name.setObjectName("brandname")
+        self.brand_name = name
         sub = QLabel("DESKTOP PLAYER")
         sub.setObjectName("brandsub")
         col.addWidget(name)
@@ -383,7 +701,7 @@ class Sidebar(QWidget):
         for key, text, icon_name in (
                 ("now", tr("正在播放"), "play"),
                 ("report", tr("听歌报告"), "report"),
-                ("history", tr("播放历史"), "history"),
+                ("history", tr("歌单"), "history"),
                 ("settings", tr("桌面歌词设置"), "settings")):
             b = NavButton(text, icon_name)
             b.clicked.connect(lambda _=False, k=key: self.nav_requested.emit(k))
@@ -391,6 +709,11 @@ class Sidebar(QWidget):
             root.addWidget(b)
 
         root.addSpacing(18)
+        self.recent_host = QWidget()
+        self.recent_host.setObjectName("recentHost")
+        recent_root = QVBoxLayout(self.recent_host)
+        recent_root.setContentsMargins(0, 0, 0, 0)
+        recent_root.setSpacing(8)
         head = QHBoxLayout()
         lb = QLabel(tr("最近播放"))
         lb.setObjectName("sidehead")
@@ -399,18 +722,35 @@ class Sidebar(QWidget):
         self.count = QLabel("0")
         self.count.setObjectName("sidecount")
         head.addWidget(self.count)
-        root.addLayout(head)
+        recent_root.addLayout(head)
 
         self.recent_box = QVBoxLayout()
         self.recent_box.setSpacing(2)
-        root.addLayout(self.recent_box)
+        recent_root.addLayout(self.recent_box)
+        self.recent_host.hide()
+        root.addWidget(self.recent_host)
         root.addStretch(1)
 
         tip = QLabel(tr("听歌数据只保存在本机\n不会上传，也不会关联账号"))
         tip.setObjectName("sidetip")
         tip.setWordWrap(True)
         root.addWidget(tip)
+        self.tip = tip
         self.set_active("now")
+
+    def retranslate(self):
+        labels = {"now": "正在播放", "report": "听歌报告",
+                  "history": "歌单", "settings": "桌面歌词设置"}
+        for key, label in labels.items():
+            self.buttons[key].setText(self._tr(label))
+        self.brand_name.setText(self._tr("桌面歌词"))
+        self.tip.setText(self._tr(
+            "听歌数据只保存在本机\n不会上传，也不会关联账号"))
+        self._apply_status()
+
+    def _apply_status(self):
+        self.status.setText(("●  " if self._status_live else "○  ")
+                            + self._tr(self._status_key))
 
     def set_active(self, key: str):
         for k, b in self.buttons.items():
@@ -418,7 +758,9 @@ class Sidebar(QWidget):
             b._update_icon()
 
     def set_status(self, text: str, live: bool = False):
-        self.status.setText(("●  " if live else "○  ") + text)
+        self._status_key = text
+        self._status_live = bool(live)
+        self._apply_status()
         self.status.setProperty("live", "1" if live else "0")
         self.status.style().unpolish(self.status)
         self.status.style().polish(self.status)
@@ -520,6 +862,9 @@ class LyricsCanvas(QWidget):
         self.cover = None
         self.playing = False
         self.song = {}
+        self.empty_message_key = "等待播放"
+        self.empty_description_key = (
+            "在任意接入系统媒体控制的播放器中开始播放")
         self._manual = 0.0
         self._manual_until = 0.0
         self._line_h = 64.0
@@ -539,12 +884,17 @@ class LyricsCanvas(QWidget):
         self._content_rect = (int(x), int(y), max(1, int(w)), max(1, int(h)))
         self.update()
 
-    def set_lyrics(self, lines, trans, song=None):
+    def set_lyrics(self, lines, trans, song=None, *, empty_message_key=None,
+                   empty_description_key=None):
         self.lines = list(lines or [])
         self.trans = dict(trans or {})
         self.song = dict(song or self.song or {})
         self.cur_idx = -1
         self._manual = 0.0
+        self.empty_message_key = empty_message_key or "等待播放"
+        self.empty_description_key = (
+            empty_description_key
+            or "在任意接入系统媒体控制的播放器中开始播放")
         self.update()
 
     def set_playback(self, pos, cur_idx, playing, accent=None, cover=None,
@@ -709,11 +1059,11 @@ class LyricsCanvas(QWidget):
         p.setPen(QColor(255, 255, 255, 225))
         p.setFont(self._font(32, bold=True))
         p.drawText(QRectF(0, cy + 48, w, 46), Qt.AlignCenter,
-                   self._tr("等待播放"))
+                   self._tr(self.empty_message_key))
         p.setPen(QColor(255, 255, 255, 150))
         p.setFont(self._font(13))
         p.drawText(QRectF(20, cy + 92, w - 40, 44), Qt.AlignHCenter | Qt.AlignTop,
-                   self._tr("在任意接入系统媒体控制的播放器中开始播放"))
+                   self._tr(self.empty_description_key))
 
 
 class CoverArt(QWidget):
@@ -793,6 +1143,7 @@ class NowStage(QWidget):
         self.canvas.raise_()
         self.canvas.show()
         self._stage_cover = None
+        self._song = {}
 
         self.source = QLabel(tr("NOW PLAYING"))
         self.source.setObjectName("stageeyebrow")
@@ -956,6 +1307,7 @@ class NowStage(QWidget):
 
     def update_track(self, song, cover):
         song = song or {}
+        self._song = dict(song)
         self.title.setText(song.get("title") or self._tr("等待播放"))
         artist = song.get("artist") or self._tr("播放音乐后自动显示歌词")
         self.artist.setText(artist)
@@ -971,6 +1323,16 @@ class NowStage(QWidget):
         self.time.setText("0:00")
         self.canvas.set_playback(self.canvas.pos, self.canvas.cur_idx,
                                  self.canvas.playing, cover=cover, song=song)
+
+    def retranslate(self):
+        self.source.setText(self._tr("NOW PLAYING"))
+        song = self._song or {}
+        title = song.get("title") or self._tr("等待播放")
+        artist = song.get("artist") or self._tr("播放音乐后自动显示歌词")
+        self.title.setText(title)
+        self.artist.setText(artist)
+        self.track_title.setText(title)
+        self.track_artist.setText(artist)
 
     def update_progress(self, pos, duration, playing):
         self._duration = max(0.0, float(duration or 0.0))
@@ -994,13 +1356,13 @@ class NowStage(QWidget):
     def set_accent(self, color):
         self.canvas.accent = QColor(color)
         self.backdrop.set_accent(color)
-        a = QColor(color).name()
+        a = "#C2410C"
         self.bar.setStyleSheet(
             "QFrame#playbar{background:qlineargradient(x1:0, y1:0, x2:1, y2:1,"
             "stop:0 rgba(34,38,47,228), stop:1 rgba(16,18,23,232));"
             "border:1px solid rgba(255,255,255,34);border-radius:26px;}"
             "QPushButton#playprimary{background:%s;border:none;border-radius:23px;}"
-            "QPushButton#playprimary:hover{background:%s;}"
+            "QPushButton#playprimary:hover{background:#DA542D;}"
             "QPushButton#playround{background:rgba(255,255,255,16);border:1px solid rgba(255,255,255,26);"
             "border-radius:19px;}"
             "QPushButton#playround:hover{background:rgba(255,255,255,30);}"
@@ -1014,10 +1376,10 @@ class NowStage(QWidget):
             "QSlider#progress::sub-page:horizontal{background:%s;border-radius:2px;}"
             "QSlider#progress::handle:horizontal{width:12px;height:12px;margin:-4px 0;"
             "border-radius:6px;background:#fff;}"
-            "QSlider#progress::handle:horizontal:focus{border:2px solid rgba(240,100,58,210);}"
+            "QSlider#progress::handle:horizontal:focus{border:2px solid #DA542D;}"
             "QSlider#progress::handle:horizontal:hover{width:12px;height:12px;margin:-5px 0;"
             "border-radius:7px;background:#ffffff;border:1px solid rgba(255,255,255,150);}" %
-            (a, QColor(color).lighter(115).name(), a))
+            (a, a))
         self.hero_cover.setStyleSheet("")
 
 
@@ -1086,6 +1448,7 @@ class SettingsPage(QWidget):
 
     def __init__(self, ov, tr, parent=None):
         super().__init__(parent)
+        self.ov = ov
         self.setObjectName("settingsPage")
         import lyrics_overlay as lo
         self.panel = lo.SettingsPanel(ov, flags=Qt.Widget)
@@ -1093,6 +1456,15 @@ class SettingsPage(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self.panel)
+
+    def rebuild(self):
+        import lyrics_overlay as lo
+        old_panel = self.panel
+        self.layout().removeWidget(old_panel)
+        self.panel = lo.SettingsPanel(self.ov, flags=Qt.Widget)
+        self.panel.setObjectName("settingsSurface")
+        self.layout().addWidget(self.panel)
+        old_panel.deleteLater()
 
 
 class StatTile(QFrame):
@@ -1127,12 +1499,12 @@ class ReportPage(QWidget):
         head = QHBoxLayout()
         col = QVBoxLayout()
         col.setSpacing(2)
-        title = QLabel(tr("听歌报告"))
-        title.setObjectName("reportTitle")
-        sub = QLabel(tr("只统计这台电脑上的真实播放时长"))
-        sub.setObjectName("reportSub")
-        col.addWidget(title)
-        col.addWidget(sub)
+        self.title = QLabel(tr("听歌报告"))
+        self.title.setObjectName("reportTitle")
+        self.subtitle = QLabel(tr("只统计这台电脑上的真实播放时长"))
+        self.subtitle.setObjectName("reportSub")
+        col.addWidget(self.title)
+        col.addWidget(self.subtitle)
         head.addLayout(col)
         head.addStretch(1)
         self.privacy = QLabel(tr("● 仅保存在本机"))
@@ -1229,7 +1601,24 @@ class ReportPage(QWidget):
         self.empty.setWordWrap(True)
         root.addWidget(self.empty)
 
+    def retranslate(self):
+        self.title.setText(self._tr("听歌报告"))
+        self.subtitle.setText(self._tr("只统计这台电脑上的真实播放时长"))
+        self.clear_btn.setText(self._tr("清空听歌数据"))
+        self.month_label.setText(self._tr("本月已听"))
+        self.month_unit.setText(self._tr("分钟"))
+        self.artist_title.setText(self._tr("最常听歌手"))
+        self.track_title.setText(self._tr("热门歌曲"))
+        self.today.caption.setText(self._tr("今日听歌时长"))
+        self.peak.caption.setText(self._tr("本月最爱时段"))
+        self.streak.caption.setText(self._tr("连续听歌"))
+        self.active.caption.setText(self._tr("活跃天数"))
+        self.empty.setText(self._tr("还没有足够的听歌记录。播放满 20 秒后才会开始统计。"))
+        if self._stats:
+            self.set_stats(self._stats)
+
     def set_stats(self, s: dict):
+        self._stats = s or {}
         has_data = bool(s.get("total_seconds", s.get("total_minutes")))
         month = int(s.get("month_minutes") or 0)
         if month > 0:
@@ -1278,119 +1667,660 @@ class ReportPage(QWidget):
                              else self._tr("● 本地统计 · 不上传"))
 
 
-class HistoryPage(QWidget):
-    def __init__(self, tr, loader, parent=None):
+class HistoryRow(QWidget):
+    playbackRequested = Signal(object)
+
+    def __init__(self, track, tr, cover_loader=None, playback_controller=None):
+        super().__init__()
+        self._tr = tr
+        self._cover_loader = cover_loader
+        self._track = track
+        self._current = False
+        self._availability = "unknown"
+        self.setObjectName("historyRow")
+        self.setProperty("current", "0")
+        self.setProperty("external", "0")
+        self.setFixedHeight(64)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        root = QHBoxLayout(self)
+        root.setContentsMargins(12, 0, 12, 0)
+        root.setSpacing(12)
+
+        self.cover = QLabel("♪")
+        self.cover.setObjectName("historyCover")
+        self.cover.setAlignment(Qt.AlignCenter)
+        self.cover.setFixedSize(40, 40)
+        root.addWidget(self.cover)
+
+        meta = QVBoxLayout()
+        meta.setSpacing(2)
+        self.title = QLabel(track.get("title") or tr("未知歌曲"))
+        self.title.setObjectName("historyTitle")
+        self.artist = QLabel(track.get("artist") or tr("未知歌手"))
+        self.artist.setObjectName("historyArtist")
+        meta.addWidget(self.title)
+        meta.addWidget(self.artist)
+        root.addLayout(meta, 1)
+
+        self.progress = QLabel("")
+        self.progress.setObjectName("historyMeta")
+        self.progress.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.progress.setFixedWidth(112)
+        root.addWidget(self.progress)
+        self.last_played = QLabel("")
+        self.last_played.setObjectName("historyMeta")
+        self.last_played.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.last_played.setFixedWidth(112)
+        root.addWidget(self.last_played)
+        self.plays = QLabel("")
+        self.plays.setObjectName("historyMeta")
+        self.plays.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.plays.setFixedWidth(56)
+        root.addWidget(self.plays)
+
+        self.action = QPushButton()
+        self.action.setObjectName("historyAction")
+        self.action.setFixedSize(28, 28)
+        self.action.setIcon(_icon("play", "#ffffff", 14))
+        self.action.setIconSize(QSize(14, 14))
+        self.action.setVisible(False)
+        self.action.clicked.connect(self._request_playback)
+        root.addWidget(self.action)
+
+        self._set_cover()
+        self.update_playback({"song": {}, "pos": 0.0, "duration": 0.0,
+                              "playing": False})
+
+    @property
+    def track(self):
+        return self._track
+
+    def _set_cover(self):
+        pixmap = None
+        if callable(self._cover_loader):
+            try:
+                pixmap = self._cover_loader(self._track)
+            except Exception:
+                pixmap = None
+        if isinstance(pixmap, QPixmap) and not pixmap.isNull():
+            self.cover.setPixmap(pixmap.scaled(
+                40, 40, Qt.KeepAspectRatioByExpanding,
+                Qt.SmoothTransformation))
+        else:
+            self.cover.setPixmap(QPixmap())
+            self.cover.setText("♪")
+
+    def _meta_text(self, pos, duration, playing):
+        position = float(self._track.get("position") or 0.0)
+        track_duration = float(self._track.get("duration") or 0.0)
+        if track_duration > 0.0 and position > 0.0:
+            progress = "%s / %s" % (_format_clock(position),
+                                    _format_clock(track_duration))
+        elif track_duration > 0.0 and position == 0.0:
+            progress = self._tr("从头播放")
+        elif self._current:
+            if duration > 0.0 and pos > 0.0:
+                progress = "%s / %s" % (_format_clock(pos),
+                                        _format_clock(duration))
+            elif pos == 0.0:
+                progress = self._tr("从头播放")
+            else:
+                progress = _format_clock(pos)
+        else:
+            progress = "—"
+        return progress
+
+    def update_playback(self, playback):
+        song = playback.get("song") or {}
+        current_resume_id = playback.get("current_resume_id") or ""
+        current = _is_current_history_track(self._track, song,
+                                            current_resume_id)
+        external = bool(self._track.get("resume_id")) and not current
+        availability = "current" if current else ("external" if external
+                                                  else "unknown")
+        if availability != self._availability:
+            self._availability = availability
+            self.setProperty("external", "1" if external else "0")
+            self.style().unpolish(self)
+            self.style().polish(self)
+        self.setEnabled(not external)
+        self.cover.setEnabled(not external)
+        self.title.setEnabled(not external)
+        self.artist.setEnabled(not external)
+        self.progress.setEnabled(not external)
+        self.last_played.setEnabled(not external)
+        self.plays.setEnabled(not external)
+        if current != self._current:
+            self._current = current
+            self.setProperty("current", "1" if current else "0")
+            self.style().unpolish(self)
+            self.style().polish(self)
+            self.setCursor(Qt.PointingHandCursor if current else Qt.ArrowCursor)
+        self.action.setVisible(current)
+        self.setAccessibleName("%s %s" % (self.title.text(), self.artist.text()))
+        if current:
+            self.action.setIcon(_icon(
+                "pause" if playback.get("playing") else "play",
+                "#ffffff", 14))
+            self.action.setToolTip(self._tr("播放 / 暂停"))
+            self.action.setAccessibleName(self._tr("播放 / 暂停"))
+            self.setToolTip("%s · %s" % (self.title.text(), self.artist.text()))
+        elif external:
+            self.setToolTip(self._tr("在对应播放器中继续"))
+        else:
+            self.setToolTip("")
+        self.progress.setText(self._meta_text(playback.get("pos", 0.0),
+                                              playback.get("duration", 0.0),
+                                              playback.get("playing", False)))
+        self.last_played.setText(_format_last_played(self._track.get("last"),
+                                                    self._tr))
+        self.plays.setText("%d %s" % (int(self._track.get("plays") or 0),
+                                      self._tr("次")))
+
+    def mousePressEvent(self, e):
+        if self._current and e.button() == Qt.LeftButton:
+            self._request_playback()
+            return
+        super().mousePressEvent(e)
+
+    def _request_playback(self):
+        if self._current:
+            self.playbackRequested.emit(self._track)
+
+
+class PlaylistFetchThread(QThread):
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, url, parent=None):
+        super().__init__(parent)
+        self.url = url
+
+    def run(self):
+        try:
+            data = _fetch_playlist_bytes(self.url)
+            tracks = _parse_m3u(_decode_playlist(data))
+            if len(tracks) > _MAX_PLAYLIST_TRACKS:
+                raise ValueError("playlist-too-many-tracks")
+            self.completed.emit(tracks)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
+class PlaylistRowButton(QPushButton):
+    def __init__(self, track, tr, cover_loader=None, lyrics_loader=None):
+        super().__init__()
+        self._tr = tr
+        self.track = track
+        self._cover_loader = cover_loader
+        self._lyrics_loader = lyrics_loader
+        self.setObjectName("playlistRow")
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setCheckable(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedHeight(56)
+        root = QHBoxLayout(self)
+        root.setContentsMargins(12, 0, 12, 0)
+        root.setSpacing(12)
+        self.cover = QLabel("♪")
+        self.cover.setObjectName("playlistCover")
+        self.cover.setFixedSize(40, 40)
+        self.cover.setAlignment(Qt.AlignCenter)
+        root.addWidget(self.cover)
+        meta = QVBoxLayout()
+        meta.setSpacing(2)
+        self._full_title = track.get("title") or tr("未知歌曲")
+        self._full_artist = track.get("artist") or tr("未知歌手")
+        self.title = QLabel(self._full_title)
+        self.title.setObjectName("playlistTitle")
+        self.artist = QLabel(self._full_artist)
+        self.artist.setObjectName("playlistArtist")
+        self.title.setToolTip(self._full_title)
+        self.artist.setToolTip(self._full_artist)
+        meta.addWidget(self.title)
+        meta.addWidget(self.artist)
+        root.addLayout(meta, 1)
+        self.duration = QLabel(_format_clock(track.get("duration") or 0.0))
+        self.duration.setObjectName("playlistMeta")
+        self.duration.setFixedWidth(56)
+        self.duration.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        root.addWidget(self.duration)
+        self.status = QLabel(self._status_text())
+        self.status.setObjectName("playlistStatus")
+        self.status.setProperty("matched", "1" if self._has_local_lyrics()
+                                else "0")
+        self.status.setFixedWidth(112)
+        self.status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        root.addWidget(self.status)
+        self._set_cover()
+        self._set_accessible_name()
+
+    def _update_metadata_elide(self):
+        for label, full in ((self.title, self._full_title),
+                            (self.artist, self._full_artist)):
+            metrics = QFontMetrics(label.font())
+            label.setText(metrics.elidedText(
+                full, Qt.ElideMiddle, max(1, label.width())))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._update_metadata_elide()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_metadata_elide()
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self.click()
+            return
+        super().keyPressEvent(event)
+
+    def _set_cover(self):
+        pixmap = None
+        if callable(self._cover_loader):
+            try:
+                pixmap = self._cover_loader(self.track)
+            except Exception:
+                pixmap = None
+        if isinstance(pixmap, QPixmap) and not pixmap.isNull():
+            self.cover.setPixmap(pixmap.scaled(
+                40, 40, Qt.KeepAspectRatioByExpanding,
+                Qt.SmoothTransformation))
+        else:
+            self.cover.setPixmap(QPixmap())
+            self.cover.setText("♪")
+
+    def _has_local_lyrics(self):
+        if not callable(self._lyrics_loader):
+            return False
+        try:
+            lines, _ = self._lyrics_loader(self.track.get("title", ""),
+                                           self.track.get("artist", ""))
+        except Exception:
+            lines = []
+        return bool(lines)
+
+    def _status_text(self):
+        if self._has_local_lyrics():
+            return "✓ " + self._tr("歌词已就绪")
+        return self._tr("未找到本地歌词")
+
+    def _update_status_state(self):
+        matched = self._has_local_lyrics()
+        self.status.setProperty("matched", "1" if matched else "0")
+        self.status.style().unpolish(self.status)
+        self.status.style().polish(self.status)
+        self.status.setText(self._status_text())
+
+    def _set_accessible_name(self):
+        self.setAccessibleName("%s，%s，%s，%s" % (
+            self._full_title, self._full_artist,
+            self.duration.text(), self.status.text()))
+
+    def retranslate(self):
+        self._full_title = self.track.get("title") or self._tr("未知歌曲")
+        self._full_artist = self.track.get("artist") or self._tr("未知歌手")
+        self.title.setToolTip(self._full_title)
+        self.artist.setToolTip(self._full_artist)
+        self._update_metadata_elide()
+        self.duration.setText(_format_clock(self.track.get("duration") or 0.0))
+        self._update_status_state()
+        self._set_accessible_name()
+
+
+class PlaylistPage(QWidget):
+    track_selected = Signal(object)
+
+    def __init__(self, tr, parent=None, cover_loader=None, lyrics_loader=None):
         super().__init__(parent)
         self._tr = tr
-        self._loader = loader
-        self.setObjectName("historyPage")
+        self._cover_loader = cover_loader
+        self._lyrics_loader = lyrics_loader
+        self._tracks = []
+        self._state = "empty"
+        self._selected_track = None
+        self._fetch_thread = None
+        self._cancelled = False
+        self.setObjectName("playlistPage")
         root = QVBoxLayout(self)
-        root.setContentsMargins(28, 22, 28, 26)
-        root.setSpacing(14)
-        root.setContentsMargins(28, 22, 28, 28)
-        title = QLabel(tr("播放历史"))
-        title.setObjectName("reportTitle")
-        sub = QLabel(tr("按歌曲聚合；点击一行可查看已缓存的歌词"))
-        sub.setObjectName("reportSub")
-        root.addWidget(title)
-        root.addWidget(sub)
-        root.addSpacing(10)
-        body = QHBoxLayout()
-        body.setSpacing(12)
+        root.setContentsMargins(24, 20, 24, 28)
+        root.setSpacing(16)
+
+        self.title = QLabel(tr("歌单"))
+        self.title.setObjectName("playlistPageTitle")
+        self.subtitle = QLabel(tr("导入歌单信息，选择曲目后进入歌词页。"))
+        self.subtitle.setObjectName("playlistSubtitle")
+        root.addWidget(self.title)
+        root.addWidget(self.subtitle)
+
+        panel = QFrame()
+        panel.setObjectName("playlistPanel")
+        panel_lay = QVBoxLayout(panel)
+        panel_lay.setContentsMargins(16, 16, 16, 12)
+        panel_lay.setSpacing(12)
+        form = QHBoxLayout()
+        form.setSpacing(8)
+        self.url_input = QLineEdit()
+        self.url_input.setObjectName("playlistInput")
+        self.url_input.setPlaceholderText(tr("粘贴 M3U/M3U8 歌单链接"))
+        self.url_input.setAccessibleName(self.url_input.placeholderText())
+        self.url_input.setAccessibleDescription(
+            self.url_input.placeholderText())
+        self.url_input.setFixedHeight(40)
+        self.url_input.returnPressed.connect(self._import_url)
+        form.addWidget(self.url_input, 1)
+        self.import_btn = QPushButton(tr("导入歌单"))
+        self.import_btn.setObjectName("primary")
+        self.import_btn.setFixedHeight(40)
+        self.import_btn.clicked.connect(self._import_url)
+        form.addWidget(self.import_btn)
+        self.file_btn = QPushButton(tr("从文件导入…"))
+        self.file_btn.setObjectName("ghost")
+        self.file_btn.setFixedHeight(40)
+        self.file_btn.clicked.connect(self._import_file)
+        form.addWidget(self.file_btn)
+        self.cancel_btn = QPushButton(tr("取消"))
+        self.cancel_btn.setObjectName("ghost")
+        self.cancel_btn.setFixedHeight(40)
+        self.cancel_btn.clicked.connect(self._cancel_import)
+        self.cancel_btn.hide()
+        form.addWidget(self.cancel_btn)
+        panel_lay.addLayout(form)
+        self.compliance = QLabel(tr("仅导入歌单信息，不获取音乐音频或版权歌词。"))
+        self.compliance.setObjectName("playlistCompliance")
+        self.compliance.setWordWrap(True)
+        panel_lay.addWidget(self.compliance)
+        self.error = QLabel("")
+        self.error.setObjectName("playlistError")
+        self.error.setWordWrap(True)
+        self.error.hide()
+        panel_lay.addWidget(self.error)
+        self.success = QLabel("")
+        self.success.setObjectName("playlistSuccess")
+        self.success.setWordWrap(True)
+        self.success.hide()
+        panel_lay.addWidget(self.success)
+        root.addWidget(panel)
+
+        head = QHBoxLayout()
+        head.setSpacing(8)
+        self.section = QLabel(tr("我的歌单"))
+        self.section.setObjectName("playlistSection")
+        head.addWidget(self.section)
+        head.addStretch(1)
+        self.count = QLabel("0")
+        self.count.setObjectName("playlistCount")
+        head.addWidget(self.count)
+        root.addLayout(head)
+
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.NoFrame)
         self.list_host = QWidget()
         self.list_lay = QVBoxLayout(self.list_host)
-        self.list_lay.setContentsMargins(0, 0, 8, 0)
-        # 58 px rows plus 6 px gaps overflowed the viewport by a few pixels and
-        # clipped the last row. A 56 px row with 4 px gaps fits four complete
-        # rows at the default window size and still leaves the list breathable.
-        self.list_lay.setSpacing(4)
+        self.list_lay.setContentsMargins(0, 0, 0, 0)
+        self.list_lay.setSpacing(0)
         self.scroll.setWidget(self.list_host)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        body.addWidget(self.scroll, 5)
+        root.addWidget(self.scroll, 1)
 
-        self.detail = QFrame()
-        self.detail.setObjectName("historyDetail")
-        dl = QVBoxLayout(self.detail)
-        dl.setContentsMargins(20, 18, 20, 18)
-        dl.setSpacing(6)
-        self.d_title = QLabel(tr("选择一首歌"))
-        self.d_title.setObjectName("detailTitle")
-        self.d_meta = QLabel(tr("历史记录来自本机统计"))
-        self.d_meta.setObjectName("muted")
-        self.d_stats = QLabel("")
-        self.d_stats.setObjectName("detailStats")
-        self.d_lyrics = QLabel(tr("选择左侧歌曲，查看缓存在本机的歌词"))
-        self.d_lyrics.setObjectName("detailLyrics")
-        self.d_lyrics.setWordWrap(True)
-        self.d_lyrics.setAlignment(Qt.AlignTop)
-        self.d_scroll = QScrollArea()
-        self.d_scroll.setWidgetResizable(True)
-        self.d_scroll.setFrameShape(QFrame.NoFrame)
-        self.d_scroll.setWidget(self.d_lyrics)
-        dl.addWidget(self.d_title)
-        dl.addWidget(self.d_meta)
-        dl.addWidget(self.d_stats)
-        dl.addWidget(self.d_scroll, 1)
-        body.addWidget(self.detail, 4)
-        root.addLayout(body, 1)
+        self.setTabOrder(self.url_input, self.import_btn)
+        self.setTabOrder(self.import_btn, self.file_btn)
+        self._show_empty()
 
-    def set_tracks(self, tracks):
+    def _clear_list(self):
         while self.list_lay.count():
             item = self.list_lay.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
-        if not tracks:
-            lb = QLabel(self._tr("暂无播放记录"))
-            lb.setObjectName("sideempty")
-            lb.setAlignment(Qt.AlignCenter)
-            lb.setWordWrap(True)
-            lb.setMinimumHeight(120)
-            self.list_lay.addWidget(lb)
-            self.list_lay.addStretch(1)
-            self.d_title.setText(self._tr("选择一首歌"))
-            self.d_meta.setText(self._tr("历史记录来自本机统计"))
-            self.d_stats.setText("")
-            self.d_lyrics.setText(self._tr("播放满 20 秒后，歌曲会出现在这里。"))
-            return
-        for t in tracks[:24]:
-            b = QPushButton("%s\n%s   ·   %s   ·   %d %s" % (
-                t.get("title") or self._tr("未知歌曲"),
-                t.get("artist") or self._tr("未知歌手"),
-                _format_duration(t.get("seconds", 0), self._tr),
-                int(t.get("plays") or 0), self._tr("次")))
-            b.setObjectName("historyRow")
-            b.setCursor(Qt.PointingHandCursor)
-            b.setFixedHeight(60)
-            b.setToolTip(self._tr("查看缓存歌词"))
-            b.clicked.connect(lambda _=False, row=t: self.show_track(row))
-            self.list_lay.addWidget(b)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.deleteLater()
+
+    def _show_empty(self):
+        card = QFrame()
+        card.setObjectName("playlistEmpty")
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(24, 36, 24, 36)
+        lay.setSpacing(10)
+        lay.setAlignment(Qt.AlignCenter)
+        icon = QLabel("♪")
+        icon.setObjectName("playlistEmptyIcon")
+        icon.setAlignment(Qt.AlignCenter)
+        title = QLabel(self._tr("还没有歌单"))
+        title.setObjectName("playlistEmptyTitle")
+        title.setAlignment(Qt.AlignCenter)
+        desc = QLabel(self._tr("导入你自己的播放列表，选择曲目后进入歌词页。"))
+        desc.setObjectName("playlistEmptyDesc")
+        desc.setAlignment(Qt.AlignCenter)
+        desc.setWordWrap(True)
+        button = QPushButton(self._tr("导入歌单"))
+        button.setObjectName("primary")
+        button.setFixedHeight(40)
+        button.clicked.connect(self._import_file)
+        lay.addWidget(icon)
+        lay.addWidget(title)
+        lay.addWidget(desc)
+        lay.addWidget(button)
+        self.list_lay.addWidget(card)
         self.list_lay.addStretch(1)
 
-    def show_track(self, track):
-        self.d_title.setText(track.get("title") or self._tr("未知歌曲"))
-        self.d_meta.setText("%s   ·   %s" % (track.get("artist") or self._tr("未知歌手"),
-                                             self._tr("仅本机记录")))
-        self.d_stats.setText("%s   ·   %d %s   ·   %d %s" % (
-            _format_duration(track.get("seconds", 0), self._tr),
-            int(track.get("plays") or 0), self._tr("次"),
-            int(track.get("days") or 0), self._tr("天")))
-        lines, trans = self._loader(track.get("title", ""), track.get("artist", ""))
-        if not lines:
-            self.d_lyrics.setText(self._tr("这首歌的歌词没有缓存在本机。"))
+    @staticmethod
+    def _track_key(track):
+        track = track or {}
+        return ((track.get("source") or "").strip(),
+                track.get("title") or "",
+                track.get("artist") or "",
+                float(track.get("duration") or 0.0))
+
+    def _set_selected(self, track):
+        self._selected_track = track
+
+    def _row_is_selected(self, track):
+        if self._selected_track is None:
+            return False
+        return self._track_key(track) == self._track_key(self._selected_track)
+
+    def _set_import_ready(self):
+        self.url_input.setProperty("error", "0")
+        self.url_input.style().unpolish(self.url_input)
+        self.url_input.style().polish(self.url_input)
+        self.import_btn.setEnabled(True)
+        self.file_btn.setEnabled(True)
+        self.import_btn.setText(self._tr("导入歌单"))
+        self.cancel_btn.hide()
+
+    def set_tracks(self, tracks):
+        self._tracks = list(tracks or [])
+        self._state = "tracks" if self._tracks else "empty"
+        self.error.hide()
+        self._set_import_ready()
+        self._clear_list()
+        self.count.setText(str(len(self._tracks)))
+        if self._tracks:
+            if len(self._tracks) == 1:
+                self.success.setText(self._tr("已导入 1 首曲目"))
+            else:
+                self.success.setText(
+                    self._tr("已导入 %d 首曲目") % len(self._tracks))
+            self.success.show()
+        else:
+            self.success.hide()
+        if not self._tracks:
+            self._show_empty()
             return
-        rows = []
-        for i, (_t, text) in enumerate(lines[:160]):
-            rows.append(str(text or ""))
-            tr = trans.get(i, "")
-            if tr:
-                rows.append("    " + str(tr))
-        self.d_lyrics.setText("\n".join(rows))
+        for track in self._tracks:
+            row = PlaylistRowButton(track, self._tr, self._cover_loader,
+                                    self._lyrics_loader)
+            row.setChecked(self._row_is_selected(track))
+            row.clicked.connect(lambda checked=False, row_=row:
+                                self._select_row(row_))
+            self.list_lay.addWidget(row)
+        self.list_lay.addStretch(1)
+
+    def _select_row(self, row):
+        self._set_selected(row.track)
+        for item_index in range(self.list_lay.count()):
+            sibling = self.list_lay.itemAt(item_index).widget()
+            if isinstance(sibling, PlaylistRowButton):
+                sibling.setChecked(sibling is row)
+        self.track_selected.emit(row.track)
+
+    def set_loading(self):
+        self._state = "loading"
+        self.error.hide()
+        self.url_input.setProperty("error", "0")
+        self.url_input.style().unpolish(self.url_input)
+        self.url_input.style().polish(self.url_input)
+        self.import_btn.setEnabled(False)
+        self.file_btn.setEnabled(False)
+        self.import_btn.setText(self._tr("正在导入…"))
+        self.cancel_btn.show()
+        self._clear_list()
+        for _ in range(3):
+            skeleton = QFrame()
+            skeleton.setObjectName("playlistSkeleton")
+            skeleton.setFixedHeight(56)
+            lay = QHBoxLayout(skeleton)
+            lay.setContentsMargins(12, 0, 12, 0)
+            lay.setSpacing(12)
+            cover = QLabel()
+            cover.setObjectName("playlistSkeletonCover")
+            cover.setFixedSize(40, 40)
+            lines = QVBoxLayout()
+            lines.setSpacing(8)
+            first = QLabel()
+            first.setObjectName("playlistSkeletonLine")
+            first.setFixedHeight(12)
+            second = QLabel()
+            second.setObjectName("playlistSkeletonLine")
+            second.setFixedHeight(12)
+            lines.addWidget(first)
+            lines.addWidget(second)
+            lay.addWidget(cover)
+            lay.addLayout(lines, 1)
+            self.list_lay.addWidget(skeleton)
+        self.list_lay.addStretch(1)
+
+    def set_error(self, text):
+        self.set_tracks([])
+        self._state = "error"
+        self.url_input.setProperty("error", "1")
+        self.url_input.style().unpolish(self.url_input)
+        self.url_input.style().polish(self.url_input)
+        self.error.setText(text)
+        self.error.show()
+
+    def _cancel_import(self):
+        self._cancelled = True
+        if self._fetch_thread is not None:
+            try:
+                self._fetch_thread.completed.disconnect(
+                    self._on_fetch_completed)
+                self._fetch_thread.failed.disconnect(self._on_fetch_failed)
+            except (RuntimeError, TypeError):
+                pass
+            self._fetch_thread = None
+        self.set_tracks([])
+
+    def refresh(self):
+        if self._state == "loading":
+            self.set_loading()
+        elif self._state == "tracks":
+            self.set_tracks(self._tracks)
+        elif self._state == "error":
+            self.set_error(self.error.text())
+        else:
+            self._clear_list()
+            self._show_empty()
+
+    def retranslate(self):
+        self.title.setText(self._tr("歌单"))
+        self.subtitle.setText(self._tr("导入歌单信息，选择曲目后进入歌词页。"))
+        self.url_input.setPlaceholderText(self._tr("粘贴 M3U/M3U8 歌单链接"))
+        self.url_input.setAccessibleName(self.url_input.placeholderText())
+        self.url_input.setAccessibleDescription(self.url_input.placeholderText())
+        self.import_btn.setText(self._tr("导入歌单"))
+        self.file_btn.setText(self._tr("从文件导入…"))
+        self.cancel_btn.setText(self._tr("取消"))
+        self.compliance.setText(self._tr(
+            "仅导入歌单信息，不获取音乐音频或版权歌词。"))
+        self.section.setText(self._tr("我的歌单"))
+        if self._state == "loading":
+            self.set_loading()
+        elif self._state == "tracks":
+            self.set_tracks(self._tracks)
+        elif self._state == "error":
+            self.set_error(self.error.text())
+        else:
+            self._clear_list()
+            self._show_empty()
+
+    def _import_url(self):
+        url = self.url_input.text().strip()
+        if not url:
+            self.set_error(self._tr("无法读取这个歌单。请使用 M3U 或 M3U8 链接。"))
+            return
+        try:
+            parsed = urllib.parse.urlparse(url)
+        except ValueError:
+            self.set_error(self._tr("无法读取这个歌单。请使用 M3U 或 M3U8 链接。"))
+            return
+        if _playlist_is_platform_url(parsed.hostname or ""):
+            self.set_error(self._tr("这是平台链接。请直接使用 M3U 或 M3U8 链接。"))
+            return
+        self._cancelled = False
+        self.set_loading()
+        self._fetch_thread = PlaylistFetchThread(url, self)
+        self._fetch_thread.completed.connect(self._on_fetch_completed)
+        self._fetch_thread.failed.connect(self._on_fetch_failed)
+        self._fetch_thread.start()
+
+    def _import_file(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, self._tr("选择歌单文件"), "",
+            "M3U playlist (*.m3u *.m3u8);;All files (*)")
+        if not path:
+            return
+        try:
+            if os.path.getsize(path) > _MAX_PLAYLIST_FILE_BYTES:
+                self.set_error(self._tr(
+                    "歌单文件超过大小限制，请导入 2MB 以内的 M3U/M3U8。"))
+                return
+        except OSError:
+            pass
+        try:
+            with open(path, "rb") as handle:
+                tracks = _parse_m3u(_decode_playlist(handle.read()))
+        except OSError:
+            tracks = []
+        if len(tracks) > _MAX_PLAYLIST_TRACKS:
+            self.set_error(self._tr("歌单曲目超过 1000 首，请精简后再导入。"))
+            return
+        if not tracks:
+            self.set_error(self._tr("无法读取这个歌单。请使用 M3U 或 M3U8 链接。"))
+            return
+        self.set_tracks(tracks)
+
+    def _on_fetch_completed(self, tracks):
+        self._fetch_thread = None
+        self._set_import_ready()
+        if self._cancelled:
+            return
+        if not tracks:
+            self.set_error(self._tr("无法读取这个歌单。请使用 M3U 或 M3U8 链接。"))
+            return
+        self.set_tracks(tracks)
+
+    def _on_fetch_failed(self, message):
+        self._fetch_thread = None
+        self._set_import_ready()
+        if self._cancelled:
+            return
+        self.set_error(_playlist_error_message(message, self._tr))
 
 
+HistoryPage = PlaylistPage
 class MainPlayerWindow(QWidget):
     closed = Signal()
 
@@ -1411,6 +2341,7 @@ class MainPlayerWindow(QWidget):
         self._last_track = None
         self._last_lines_id = None
         self._last_recent = 0.0
+        self._playlist_track = None
         self._drag = None
         self._build()
         self._apply_style()
@@ -1460,7 +2391,12 @@ class MainPlayerWindow(QWidget):
         self.now.immersive_requested.connect(self.toggle_immersive)
         self.report = ReportPage(self._tr)
         self.report.clear_requested.connect(self._clear_listening)
-        self.history = HistoryPage(self._tr, self._load_cached)
+        self.playlist = PlaylistPage(
+            self._tr,
+            cover_loader=_history_cover_loader,
+            lyrics_loader=self._playlist_lyrics_loader)
+        self.history = self.playlist
+        self.playlist.track_selected.connect(self._open_playlist_track)
         self.settings_page = SettingsPage(self.ov, self._tr)
         self.stack.addWidget(self.now)
         self.stack.addWidget(self.report)
@@ -1555,7 +2491,7 @@ class MainPlayerWindow(QWidget):
         QLabel#heroValue { color:#f7f3ea; font-size:56px;
                            font-weight:700; }
         QLabel#heroUnit { color:#8d95a6; font-size:12px; }
-        QFrame#statTile, QFrame#reportCard, QFrame#historyDetail {
+        QFrame#statTile, QFrame#reportCard {
             background:qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1c222c,
                                        stop:1 #12161d);
             border:1px solid rgba(255,255,255,28); border-top-color:rgba(255,255,255,46);
@@ -1576,22 +2512,122 @@ class MainPlayerWindow(QWidget):
                                       min-height:30px; }
         QScrollBar::handle:vertical:hover { background:rgba(255,255,255,82); }
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height:0; }
-        QPushButton#historyRow { background:rgba(255,255,255,9); color:#eceff4;
-                                 border:1px solid rgba(255,255,255,26);
-                                 border-radius:18px; padding:9px 12px 9px 15px; text-align:left;
-                                 font-size:12px; line-height:1.8;
-                                 border-left:3px solid rgba(240,100,58,130); }
-        QPushButton#historyRow:hover { border-color:rgba(240,100,58,190);
-                                       background:rgba(255,255,255,18); }
-        QLabel#detailTitle { color:#f4f1ea; font-size:22px; font-weight:800; }
-        QLabel#detailStats { color:#ffb59d; font-size:12px; }
-        QLabel#detailLyrics { color:#b9bfc9; font-size:13px; line-height:1.8; }
-        QPushButton#nav:focus { border-color:rgba(240,100,58,200); }
+        QLabel#historyPageTitle { color:#F2F2F3; font-size:28px;
+                                  font-weight:600; }
+        QLabel#historyPageSub { color:#9A9AA0; font-size:20px;
+                                font-weight:400; }
+        QWidget#historyRow { background:transparent; border:none;
+                             border-bottom:1px solid #26262A; }
+        QWidget#historyRow:hover { background:rgba(255,255,255,8); }
+        QWidget#historyRow[current="1"] { background:rgba(194,65,12,26);
+                                          border-left:2px solid #C2410C; }
+        QWidget#historyRow[external="1"] { background:rgba(255,255,255,4);
+                                           border-left:2px solid transparent; }
+        QWidget#historyRow[external="1"] QLabel { color:rgba(154,154,160,116); }
+        QLabel#historyCover { background:rgba(255,255,255,22);
+                              color:rgba(255,255,255,190); border-radius:8px;
+                              font-size:18px; font-weight:600; }
+        QLabel#historyTitle { color:#F2F2F3; font-size:15px; font-weight:600; }
+        QLabel#historyArtist { color:#9A9AA0; font-size:12px; font-weight:400; }
+        QLabel#historyMeta { color:#9A9AA0; font-size:12px; font-weight:400;
+                             font-feature-settings:"tnum" 1; }
+        QWidget#playlistPage { background:#0c0f15; }
+        QLabel#playlistPageTitle { color:#F2F2F3; font-size:26px;
+                               font-weight:800; }
+        QLabel#playlistSubtitle { color:#9A9AA0; font-size:13px;
+                                  font-weight:400; }
+        QFrame#playlistPanel { background:#12161d;
+                               border:1px solid rgba(255,255,255,12);
+                               border-radius:16px; }
+        QLineEdit#playlistInput { background:#12161d; color:#F2F2F3;
+                                  border:1px solid rgba(255,255,255,86);
+                                  border-radius:10px; padding:8px 12px;
+                                  font-size:13px; font-weight:600; }
+        QLineEdit#playlistInput:hover { border-color:rgba(255,255,255,24); }
+        QLineEdit#playlistInput:focus { border:2px solid #ffb59d; }
+        QLineEdit#playlistInput[error="1"] { border:2px solid #FF9D8A; }
+        QPushButton#primary { background:#C2421F; color:#fff8ef;
+                              border:none; border-radius:10px;
+                              padding:8px 16px; font-size:13px;
+                              font-weight:600; }
+        QPushButton#primary:hover { background:#A9341A; }
+        QPushButton#primary:pressed { background:#8F2B16; }
+        QPushButton#primary:focus { border:2px solid #ffb59d; }
+        QLabel#playlistCompliance { color:#9A9AA0; font-size:12px;
+                                    font-weight:400; line-height:1.5; }
+        QLabel#playlistError { color:#FF9D8A; font-size:12px;
+                               font-weight:400; }
+        QLabel#playlistSuccess { color:#7ED8A1; font-size:12px;
+                                 font-weight:500; }
+        QLabel#playlistSection { color:#F2F2F3; font-size:16px;
+                                 font-weight:700; }
+        QLabel#playlistCount { color:#9A9AA0; font-size:12px;
+                               font-weight:500; }
+        QPushButton#playlistRow { background:rgba(255,255,255,3);
+                                  border:none;
+                                  border-bottom:1px solid rgba(255,255,255,8);
+                                  border-radius:12px; text-align:left; }
+        QPushButton#playlistRow:hover { background:rgba(255,255,255,6); }
+        QPushButton#playlistRow:pressed { background:rgba(240,100,58,10); }
+        QPushButton#playlistRow:checked { background:rgba(240,100,58,12);
+                                          border-left:3px solid #F0643A; }
+        QPushButton#playlistRow:focus { border:2px solid #ffb59d; }
+        QLabel#playlistCover { background:rgba(255,255,255,22);
+                               color:rgba(255,255,255,190); border-radius:8px;
+                               font-size:18px; font-weight:600; }
+        QLabel#playlistTitle { color:#F4F1EA; font-size:14px;
+                               font-weight:600; }
+        QLabel#playlistArtist { color:#C1C7D2; font-size:12px;
+                                font-weight:400; }
+        QLabel#playlistMeta { color:#9A9AA0; font-size:12px;
+                              font-weight:400;
+                              font-feature-settings:"tnum" 1; }
+        QLabel#playlistStatus { color:#949BAB; font-size:12px;
+                                font-weight:500; }
+        QLabel#playlistStatus[matched="1"] { color:#7ED8A1; }
+        QFrame#playlistSkeleton { background:rgba(255,255,255,6);
+                                  border-bottom:1px solid rgba(255,255,255,8); }
+        QLabel#playlistSkeletonCover { background:rgba(255,255,255,16);
+                                       border-radius:8px; }
+        QLabel#playlistSkeletonLine { background:rgba(255,255,255,16);
+                                      border-radius:6px; }
+        QFrame#playlistEmpty { background:#12161d;
+                               border:1px solid rgba(255,255,255,12);
+                               border-radius:16px; }
+        QLabel#playlistEmptyIcon { color:#9A9AA0; font-size:48px;
+                                   font-weight:400; }
+        QLabel#playlistEmptyTitle { color:#F2F2F3; font-size:20px;
+                                    font-weight:600; }
+        QLabel#playlistEmptyDesc { color:#9A9AA0; font-size:13px;
+                                   font-weight:400; }
+        QLabel#historyEmptyIcon { color:#9A9AA0; font-size:48px;
+                                  font-weight:400; }
+        QLabel#historyEmptyTitle { color:#F2F2F3; font-size:20px;
+                                   font-weight:600; }
+        QLabel#historyEmptyDesc { color:#9A9AA0; font-size:13px;
+                                  font-weight:400; }
+        QFrame#historySkeleton { background:rgba(255,255,255,6);
+                                 border-bottom:1px solid #26262A; }
+        QLabel#historySkeletonCover { background:rgba(255,255,255,16);
+                                      border-radius:8px; }
+        QLabel#historySkeletonLine { background:rgba(255,255,255,16);
+                                     border-radius:6px; }
+        QPushButton#historyAction { background:#C2410C; color:#ffffff;
+                                    border:none; border-radius:14px; }
+        QPushButton#historyAction:hover { background:#DA542D; }
+        QPushButton#historyAction:focus { border:2px solid #DA542D; }
+        QPushButton#ghost { background:rgba(255,255,255,10); color:#F2F2F3;
+                            border:1px solid rgba(255,255,255,86);
+                            border-radius:18px; padding:6px 16px;
+                            font-size:13px; font-weight:400; }
+        QPushButton#ghost:hover { background:rgba(255,255,255,18); }
+        QPushButton#nav:focus { border-color:#DA542D; }
         QPushButton#nav:checked:focus { border-color:rgba(255,255,255,210); }
         QPushButton#recent:focus { background:rgba(255,255,255,14); color:#ffffff;
                                    border-left-color:rgba(240,100,58,230); }
-        QPushButton#quick:focus, QPushButton#stageghost:focus, QPushButton#dangerGhost:focus {
-            border-color:rgba(240,100,58,190); }
+        QPushButton#quick:focus, QPushButton#stageghost:focus,
+        QPushButton#dangerGhost:focus, QPushButton#ghost:focus {
+            border:2px solid #DA542D; }
         QPushButton#historyRow:focus { border-color:rgba(240,100,58,200); }
         """ % {"paper": PAPER, "paper_deep": PAPER_DEEP, "ink": INK,
                "vermilion": VERMILION, "font": _ui_font_family()})
@@ -1606,6 +2642,21 @@ class MainPlayerWindow(QWidget):
 
     def _toggle_max(self):
         self.showNormal() if self.isMaximized() else self.showMaximized()
+
+    def retranslate_ui(self):
+        self.setWindowTitle(self._tr("桌面歌词 · 正在播放"))
+        self.titlebar.retranslate()
+        self.sidebar.retranslate()
+        self.now.retranslate()
+        self.report.retranslate()
+        self.history.retranslate()
+        self.settings_page.rebuild()
+        self.now.immersive_btn.setText(
+            self._tr("退出沉浸") if self._immersive else self._tr("沉浸歌词"))
+        self.now.immersive_btn.adjustSize()
+        self.now.immersive_btn.move(
+            self.now.width() - self.now.immersive_btn.width() - 24, 16)
+        self.navigate(self._page)
 
     def navigate(self, key: str):
         self._page = key
@@ -1623,7 +2674,8 @@ class MainPlayerWindow(QWidget):
             self._refresh_report()
         elif key == "history":
             self.stack.setCurrentWidget(self.history)
-            self.titlebar.page_label.setText(self._tr("播放历史"))
+            self.titlebar.page_label.setText(self._tr("歌单"))
+            self.playlist.refresh()
             self._refresh_history()
         elif key == "settings":
             self.stack.setCurrentWidget(self.settings_page)
@@ -1638,7 +2690,6 @@ class MainPlayerWindow(QWidget):
 
     def open_history_track(self, track):
         self.navigate("history")
-        self.history.show_track(track)
 
     def _open_settings(self):
         self.navigate("settings")
@@ -1693,32 +2744,39 @@ class MainPlayerWindow(QWidget):
         except Exception:
             pass
 
-    def _load_cached(self, title: str, artist: str):
-        service = getattr(self.ov, "lyrics_service", None)
-        if service is not None:
-            return service.load_cached(title, artist)
+    def _current_resume_id(self):
+        provider = getattr(self.ov, "current_resume_id", None)
         try:
-            import lyrics_overlay as lo
-            key = ("%s|%s" % (lo.clean_query_text(title or ""),
-                              lo.clean_query_text(artist or ""))).lower().strip()
-            path = lo._cache_path(key)
-            import json
-            with open(path, encoding="utf-8") as f:
-                raw = json.load(f)
-            lines = raw.get("lines") or []
-            trans_list = raw.get("trans") or []
-            trans = {}
-            for i, (t0, _txt) in enumerate(lines):
-                best, dist = "", 1.2
-                for t1, tx in trans_list:
-                    d = abs(float(t1) - float(t0))
-                    if d < dist:
-                        best, dist = tx, d
-                if best:
-                    trans[i] = best
-            return lines, trans
+            return str(provider() or "") if callable(provider) else ""
         except Exception:
-            return [], {}
+            return ""
+
+    def _playlist_lyrics_loader(self, title: str, artist: str):
+        service = getattr(self.ov, "lyrics_service", None)
+        if callable(getattr(service, "load_cached", None)):
+            return service.load_cached(title, artist)
+        return [], {}
+
+    def _open_playlist_track(self, track):
+        self._playlist_track = track
+        self.navigate("now")
+        self._refresh_now(force=True)
+
+    def _resume_current_session(self, track):
+        track = track or {}
+        resume_id = (track.get("resume_id") or "").strip()
+        if resume_id:
+            current_resume_id = self._current_resume_id()
+            if not current_resume_id or resume_id != current_resume_id:
+                return
+            position = max(0.0, float(track.get("position") or 0.0))
+            if position > 0.0:
+                self.ov.seek(position)
+            if self.ov.status != "PLAYING":
+                self.ov.media_command("toggle")
+            return
+        if _is_current_history_track(track, self.ov.song or {}):
+            self.ov.media_command("toggle")
 
     def _clear_listening(self):
         from PySide6.QtWidgets import QMessageBox
@@ -1774,21 +2832,20 @@ class MainPlayerWindow(QWidget):
 
     def _refresh_history(self):
         try:
-            self.history.set_tracks(self.ov.listen_store.recent_tracks(80))
+            self.playlist.refresh()
         except Exception:
             pass
 
     def on_track_changed(self):
         self._last_track = None
+        self._playlist_track = None
         self._refresh_now(force=True)
 
     def _refresh_now(self, force: bool = False):
-        song = self.ov.song or {}
+        song = self._playlist_track or self.ov.song or {}
         title = song.get("title") or ""
         artist = song.get("artist") or ""
-        cover_key = (self.ov.cover_pix.cacheKey()
-                     if self.ov.cover_pix is not None else None)
-        key = (title, artist, id(self.ov.lines), len(self.ov.lines), cover_key)
+        key = (title, artist, id(self.ov.lines), len(self.ov.lines))
         if not force and key == self._last_track:
             return
         self._last_track = key
@@ -1799,7 +2856,22 @@ class MainPlayerWindow(QWidget):
             trans = self.ov._trans_map or {}
         except Exception:
             pass
-        self.now.canvas.set_lyrics(self.ov.lines or [], trans, song)
+        if self._playlist_track:
+            lines, trans = self._playlist_lyrics_loader(title, artist)
+            if lines:
+                empty_message_key = "正在播放"
+                empty_description_key = ""
+            else:
+                empty_message_key = "未找到本地歌词"
+                empty_description_key = "请添加本地歌词文件后再试。"
+            self.now.canvas.set_lyrics(lines, trans, song,
+                                       empty_message_key=empty_message_key,
+                                       empty_description_key=empty_description_key)
+        else:
+            self.now.canvas.set_lyrics(
+                self.ov.lines or [], trans, song,
+                empty_message_key="等待播放",
+                empty_description_key="在任意接入系统媒体控制的播放器中开始播放")
 
     def _tick(self):
         try:
