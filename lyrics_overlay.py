@@ -1157,6 +1157,8 @@ _I18N_TABLES["zh-TW"].update({
     "墨": "墨",
     "青瓷": "青瓷",
     "跟随系统会随 Windows 深浅色切换": "跟隨系統會隨 Windows 深淺色切換",
+    "减少动态效果": "減少動態效果",
+    "停止页面淡入和过渡动画": "停止頁面淡入和過渡動畫",
 })
 _I18N_TABLES["en"].update({
     "正在播放": "Now playing",
@@ -1265,6 +1267,8 @@ _I18N_TABLES["en"].update({
     "墨": "Ink",
     "青瓷": "Celadon",
     "跟随系统会随 Windows 深浅色切换": "Follow system switches with the Windows light/dark mode",
+    "减少动态效果": "Reduce motion",
+    "停止页面淡入和过渡动画": "Stop page fades and transition animations",
 })
 _I18N_TABLES["ja"].update({
     "正在播放": "再生中",
@@ -1373,6 +1377,8 @@ _I18N_TABLES["ja"].update({
     "墨": "墨",
     "青瓷": "青磁",
     "跟随系统会随 Windows 深浅色切换": "システムに従うと Windows のライト/ダークに連動します",
+    "减少动态效果": "モーションを減らす",
+    "停止页面淡入和过渡动画": "ページのフェードや遷移アニメーションを停止します",
 })
 
 _UI_LANG = "zh-CN"

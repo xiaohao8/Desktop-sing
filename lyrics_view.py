@@ -863,6 +863,7 @@ class StageBackdrop(QWidget):
         self.cover = None
         self._base = QColor(STAGE)
         self._scrim = QColor(7, 9, 12)
+        self._dark = True
         self._cover_cache_key = None
         self._cover_cache_pix = None
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -871,6 +872,9 @@ class StageBackdrop(QWidget):
     def set_theme(self, theme):
         self._base = QColor(theme.bg)
         dark = theme.appearance != "light"
+        self._dark = dark
+        # The lyric stage stays a deep listening surface in both appearances;
+        # white lyric text needs a near-opaque scrim to clear 4.5:1.
         self._scrim = QColor(theme.surface_sunken if dark else theme.text)
         self.update()
 
@@ -912,13 +916,27 @@ class StageBackdrop(QWidget):
         p.fillRect(0, 0, w, h, wash)
         shade = QLinearGradient(0, 0, 0, h)
         c = QColor(self._scrim)
-        c.setAlpha(95)
+        if self._dark:
+            alphas = (95, 120, 190)
+        else:
+            alphas = (178, 208, 236)
+        c.setAlpha(alphas[0])
         shade.setColorAt(0.0, c)
-        c.setAlpha(120)
+        c.setAlpha(alphas[1])
         shade.setColorAt(0.52, c)
-        c.setAlpha(190)
+        c.setAlpha(alphas[2])
         shade.setColorAt(1.0, c)
         p.fillRect(0, 0, w, h, shade)
+        if self._dark:
+            # 2-3% concentric grooves: a quiet vinyl signature in empty space.
+            p.setPen(QPen(QColor(255, 255, 255, 7), 1))
+            p.setBrush(Qt.NoBrush)
+            cx, cy = w * 0.26, h * 0.47
+            radius = 46
+            limit = max(w, h) * 0.72
+            while radius < limit:
+                p.drawEllipse(QPointF(cx, cy), radius, radius)
+                radius += 18
         p.end()
 
 
@@ -1648,6 +1666,17 @@ class AppearanceSection(QFrame):
             self.swatch_buttons[theme_id] = b
         swatches.addStretch(1)
         root.addLayout(swatches)
+
+        motion_row = QHBoxLayout()
+        motion_row.setSpacing(8)
+        self.motion_btn = QPushButton()
+        self.motion_btn.setObjectName("appearanceSeg")
+        self.motion_btn.setCheckable(True)
+        self.motion_btn.setCursor(Qt.PointingHandCursor)
+        self.motion_btn.clicked.connect(self._toggle_motion)
+        motion_row.addWidget(self.motion_btn, 0)
+        motion_row.addStretch(1)
+        root.addLayout(motion_row)
         self.retranslate()
 
     def _manager(self):
@@ -1669,6 +1698,17 @@ class AppearanceSection(QFrame):
         self._save()
         self.refresh()
 
+    def _toggle_motion(self, checked):
+        manager = self._manager()
+        if manager is not None:
+            manager.set_reduce_motion(True if checked else None)
+        if checked:
+            self.ov.cfg["reduce_motion"] = True
+        else:
+            self.ov.cfg.pop("reduce_motion", None)
+        self._save()
+        self.refresh()
+
     def _save(self):
         try:
             import lyrics_overlay as lo
@@ -1686,8 +1726,16 @@ class AppearanceSection(QFrame):
             appearance = "system"
         for key, button in self.seg_buttons.items():
             button.setChecked(key == appearance)
+        effective = manager.current().appearance if manager is not None else \
+            ("dark" if appearance == "dark" else "light")
         for tid, button in self.swatch_buttons.items():
             button.setChecked(tid == theme_id)
+            button.set_appearance(effective)
+        reduce_motion = manager.reduce_motion() if manager is not None else \
+            bool(self.ov.cfg.get("reduce_motion"))
+        self.motion_btn.blockSignals(True)
+        self.motion_btn.setChecked(reduce_motion)
+        self.motion_btn.blockSignals(False)
 
     def retranslate(self):
         tr = self._tr
@@ -1698,6 +1746,9 @@ class AppearanceSection(QFrame):
             self.seg_buttons[key].setText(tr(label))
         for button in self.swatch_buttons.values():
             button.retranslate()
+        self.motion_btn.setText(tr("减少动态效果"))
+        self.motion_btn.setToolTip(tr("停止页面淡入和过渡动画"))
+        self.motion_btn.setAccessibleName(tr("减少动态效果"))
 
 
 class _ThemeSwatchButton(QPushButton):
@@ -1709,6 +1760,7 @@ class _ThemeSwatchButton(QPushButton):
         super().__init__(parent)
         self._tr = tr
         self.theme_id = theme_id
+        self._appearance = "dark"
         self.setObjectName("themeSwatch")
         self.setCheckable(True)
         self.setCursor(Qt.PointingHandCursor)
@@ -1733,9 +1785,16 @@ class _ThemeSwatchButton(QPushButton):
         self._paint_dots()
         self.retranslate()
 
+    def set_appearance(self, appearance):
+        appearance = "light" if appearance == "light" else "dark"
+        if appearance == self._appearance:
+            return
+        self._appearance = appearance
+        self._paint_dots()
+
     def _paint_dots(self):
         for key, dot in self._dots:
-            color = getattr(ui_theme.THEMES[self.theme_id]["dark"], key)
+            color = getattr(ui_theme.THEMES[self.theme_id][self._appearance], key)
             dot.setStyleSheet(
                 "QLabel#themeSwatchDots{background:%s;border-radius:9px;}" % color)
 
@@ -2655,6 +2714,7 @@ class MainPlayerWindow(QWidget):
 
     def _setup_theme_manager(self):
         manager = getattr(self.ov, "theme_manager", None)
+        reduce_motion = True if self.ov.cfg.get("reduce_motion") else None
         if manager is None:
             theme_id = str(self.ov.cfg.get("theme_id") or "ink")
             appearance = str(self.ov.cfg.get("appearance") or "system")
@@ -2662,8 +2722,11 @@ class MainPlayerWindow(QWidget):
                 theme_id = "ink"
             if appearance not in ui_theme.APPEARANCES:
                 appearance = "system"
-            manager = ui_theme.ThemeManager(theme_id, appearance, self)
+            manager = ui_theme.ThemeManager(
+                theme_id, appearance, self, reduce_motion=reduce_motion)
             self.ov.theme_manager = manager
+        else:
+            manager.set_reduce_motion(reduce_motion)
         self._theme_manager = manager
         manager.changed.connect(self._apply_theme)
 
@@ -2814,14 +2877,26 @@ class MainPlayerWindow(QWidget):
             except RuntimeError:
                 pass
         if duration <= 0:
-            effect.setOpacity(1.0)
+            page.setGraphicsEffect(None)
             return
         anim = QPropertyAnimation(effect, b"opacity", page)
         anim.setDuration(duration)
         anim.setStartValue(0.0)
         anim.setEndValue(1.0)
+        anim.finished.connect(lambda p=page: self._finish_page_anim(p))
         anim.start()
         page._page_anim = anim
+
+    def _finish_page_anim(self, page):
+        """Drop the opacity effect once the fade ends.
+
+        Keeping an opacity effect attached at 1.0 forces Qt to render the
+        page through an offscreen surface, which blurs text and can leave
+        stale child-widget ghosts in grabs.
+        """
+        page._page_anim = None
+        if page.graphicsEffect() is not None:
+            page.setGraphicsEffect(None)
 
     def open_report(self):
         try:
