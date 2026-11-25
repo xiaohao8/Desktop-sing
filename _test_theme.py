@@ -130,6 +130,21 @@ for theme in themes:
         round(ratio, 2),
     )
 
+    for background_name in ("surface", "surface_raised"):
+        ratio = contrast(theme.scrollbar_handle, getattr(theme, background_name))
+        ck(
+            f"{theme.id}/{theme.appearance}: scrollbar_handle/{background_name} >= 3.0",
+            ratio >= 3.0,
+            round(ratio, 2),
+        )
+
+    ratio = contrast(theme.grip_dot, theme.surface)
+    ck(
+        f"{theme.id}/{theme.appearance}: grip_dot/surface >= 3.0",
+        ratio >= 3.0,
+        round(ratio, 2),
+    )
+
     for background_name in ("bg", "surface"):
         ratio = contrast(theme.focus, getattr(theme, background_name))
         ck(
@@ -187,6 +202,14 @@ ck(
     "negative probe: low muted text detected",
     contrast(bad_muted.text_muted, bad_muted.surface_sunken) < 4.5,
     round(contrast(bad_muted.text_muted, bad_muted.surface_sunken), 2),
+)
+bad_grip = dataclasses.replace(
+    T.THEMES["ink"]["light"], grip_dot="rgba(255,255,255,.36)"
+)
+ck(
+    "negative probe: white grip dot on light detected",
+    contrast(bad_grip.grip_dot, bad_grip.surface) < 3.0,
+    round(contrast(bad_grip.grip_dot, bad_grip.surface), 2),
 )
 
 sample = " ".join("{" + field + "}" for field in theme_fields)
