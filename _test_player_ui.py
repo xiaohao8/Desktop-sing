@@ -588,6 +588,20 @@ def _has_cjk(text):
     return False
 
 
+ov.main_player = player
+ov.set_ui_lang("zh-CN")
+app.processEvents()
+ov.set_ui_lang("en")
+app.processEvents()
+check("set_ui_lang 联动刷新播放器",
+      "Desktop-sing" in player.windowTitle()
+      and not _has_cjk(player.windowTitle())
+      and player.sidebar.brand_name.text() == "Desktop-sing"
+      and player.now.immersive_btn.text() == "Immersive lyrics"
+      and player.now.source.text() == "Now playing",
+      (player.windowTitle(), player.sidebar.brand_name.text(),
+       player.now.immersive_btn.text(), player.now.source.text()))
+
 L.set_ui_lang("en")
 player.retranslate_ui()
 app.processEvents()

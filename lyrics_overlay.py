@@ -7692,6 +7692,12 @@ class LyricOverlay(QWidget):
             except Exception:
                 pass
             self.panel = None
+        player = getattr(self, "main_player", None)
+        if player is not None:
+            try:
+                player.retranslate_ui()
+            except Exception:
+                pass
 
     def set_lyric_conv(self, kind: str, on: bool):
         """繁简显示转换开关（t2s / s2t），两者互斥——开一个必关另一个。
