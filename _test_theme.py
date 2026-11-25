@@ -96,12 +96,11 @@ for theme in themes:
     )
 
 for theme in themes:
-    for foreground_name, backgrounds in (
-        ("text", ("bg", "surface", "surface_sunken")),
-        ("text_secondary", ("bg", "surface", "surface_sunken")),
-        ("text_muted", ("bg", "surface", "surface_sunken")),
+    surfaces = ("bg", "surface", "surface_raised", "surface_sunken", "surface_hover")
+    for foreground_name in (
+        "text", "text_secondary", "text_muted", "success", "warning", "danger",
     ):
-        for background_name in backgrounds:
+        for background_name in surfaces:
             ratio = contrast(getattr(theme, foreground_name), getattr(theme, background_name))
             ck(
                 f"{theme.id}/{theme.appearance}: {foreground_name}/{background_name} >= 4.5",
@@ -109,26 +108,14 @@ for theme in themes:
                 round(ratio, 2),
             )
 
-    ratio = contrast(theme.success, theme.surface_sunken)
-    ck(
-        f"{theme.id}/{theme.appearance}: success/surface_sunken >= 4.5",
-        ratio >= 4.5,
-        round(ratio, 2),
-    )
-
-    ratio = contrast(theme.text_disabled, theme.surface)
-    ck(
-        f"{theme.id}/{theme.appearance}: text_disabled/surface >= 3.0",
-        ratio >= 3.0,
-        round(ratio, 2),
-    )
-
-    ratio = contrast(theme.border_strong, theme.surface)
-    ck(
-        f"{theme.id}/{theme.appearance}: border_strong/surface >= 3.0",
-        ratio >= 3.0,
-        round(ratio, 2),
-    )
+    for foreground_name in ("text_disabled", "border_strong", "focus"):
+        for background_name in surfaces:
+            ratio = contrast(getattr(theme, foreground_name), getattr(theme, background_name))
+            ck(
+                f"{theme.id}/{theme.appearance}: {foreground_name}/{background_name} >= 3.0",
+                ratio >= 3.0,
+                round(ratio, 2),
+            )
 
     for background_name in ("surface", "surface_raised"):
         ratio = contrast(theme.scrollbar_handle, getattr(theme, background_name))
@@ -144,14 +131,6 @@ for theme in themes:
         ratio >= 3.0,
         round(ratio, 2),
     )
-
-    for background_name in ("bg", "surface"):
-        ratio = contrast(theme.focus, getattr(theme, background_name))
-        ck(
-            f"{theme.id}/{theme.appearance}: focus/{background_name} >= 3.0",
-            ratio >= 3.0,
-            round(ratio, 2),
-        )
 
     ck(
         f"{theme.id}/{theme.appearance}: accent_soft is translucent",
@@ -264,6 +243,26 @@ following = T.ThemeManager(reduce_motion=None)
 ck("manager follows Windows animations", following.reduce_motion() is True,
    following.reduce_motion())
 T.system_animations_enabled = original_system_animations
+
+try:
+    T.ThemeManager(theme_id="amber")
+    rejected_experimental = False
+except ValueError:
+    rejected_experimental = True
+ck("manager rejects experimental theme by default", rejected_experimental)
+
+try:
+    manager.set_theme("amber")
+    rejected_set_experimental = False
+except ValueError:
+    rejected_set_experimental = True
+ck("set_theme rejects experimental theme by default", rejected_set_experimental)
+ck("manager keeps released theme after rejection", manager.current().id == "celadon",
+   manager.current().id)
+
+experimental = T.ThemeManager(theme_id="amber", allow_experimental=True)
+ck("manager allows experimental when opted in", experimental.current().id == "amber",
+   experimental.current().id)
 
 print("----", "FAIL: %d" % len(fails) if fails else "全部通过")
 sys.exit(1 if fails else 0)
