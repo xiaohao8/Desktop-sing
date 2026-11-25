@@ -1691,7 +1691,6 @@ class AppearanceSection(QFrame):
         self.motion_btn = QPushButton()
         self.motion_btn.setObjectName("appearanceSeg")
         self.motion_btn.setCheckable(True)
-        self.motion_btn.setMinimumHeight(32)
         self.motion_btn.setCursor(Qt.PointingHandCursor)
         self.motion_btn.clicked.connect(self._toggle_motion)
         motion_row.addWidget(self.motion_btn, 0)
