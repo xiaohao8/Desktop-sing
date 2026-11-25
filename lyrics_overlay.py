@@ -10513,6 +10513,30 @@ class Switch(QWidget):
         p.end()
 
 
+def _qss_color(value, fallback: QColor) -> QColor:
+    """把主题 token（'#RRGGBB' 或 'rgba(r,g,b,a)'）解析成 QColor。
+
+    Theme.border_strong 之类是 rgba() 字符串，QColor 不认这种写法；
+    直接 QColor("rgba(...)") 会得到无效色（画出来是黑的）。
+    """
+    text = str(value or "").strip()
+    if not text:
+        return QColor(fallback)
+    if text.lower().startswith("rgb"):
+        body = text[text.find("(") + 1:text.rfind(")")]
+        parts = [p.strip() for p in body.split(",") if p.strip()]
+        try:
+            r, g, b = (max(0, min(255, int(round(float(parts[i]))))) for i in range(3))
+            a = 255
+            if len(parts) > 3:
+                a = max(0, min(255, int(round(float(parts[3]) * 255))))
+            return QColor(r, g, b, a)
+        except Exception:
+            return QColor(fallback)
+    color = QColor(text)
+    return color if color.isValid() else QColor(fallback)
+
+
 class Segmented(QWidget):
     """分段选择器：2~4 个互斥选项，选中段用主色填充，比下拉框更直观"""
 
@@ -10524,6 +10548,7 @@ class Segmented(QWidget):
         self._cur = current if current is not None else self._items[0][0]
         self._h = int(h)
         self._accent = QColor(DEFAULT_ACCENT1)
+        self._theme = None
         self.setFixedHeight(self._h)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setCursor(Qt.PointingHandCursor)
@@ -10582,6 +10607,11 @@ class Segmented(QWidget):
 
     def set_accent(self, c: QColor):
         self._accent = QColor(c)
+        self.update()
+
+    def set_theme(self, theme):
+        """深浅主题下轨道/文字改用 token，避免浅色里出现一条黑槽。"""
+        self._theme = theme
         self.update()
 
     def setValue(self, key, emit: bool = False, animate: bool = True):
@@ -10656,10 +10686,24 @@ class Segmented(QWidget):
         # 轨道要比卡片底**明显更深**才读得出"凹槽"。原来用 #181b22，跟卡片底色
         # （#1c2029~#14171e）几乎一样，轨道整个糊进卡片里，看着像选项在飘。
         # 再用竖向渐变把顶部压得更暗，凹槽就有了"深度"而不只是一块深色。
+        theme = self._theme
+        if theme is None:
+            track_top, track_bottom = QColor(7, 9, 13), QColor(20, 24, 31)
+            edge = QColor(0, 0, 0, 120)
+            ink_sel, ink_hover, ink_idle = (QColor(18, 20, 26),
+                                            QColor(214, 221, 233),
+                                            QColor(178, 185, 198))
+        else:
+            sunken = _qss_color(theme.surface_sunken, QColor(20, 24, 31))
+            track_top, track_bottom = sunken.darker(106), sunken
+            edge = _qss_color(theme.border_strong, QColor(0, 0, 0, 120))
+            ink_sel = _qss_color(theme.on_accent, QColor(18, 20, 26))
+            ink_hover = _qss_color(theme.text, QColor(214, 221, 233))
+            ink_idle = _qss_color(theme.text_secondary, QColor(178, 185, 198))
         tg = QLinearGradient(0, 0, 0, h)
-        tg.setColorAt(0.0, QColor(7, 9, 13))
-        tg.setColorAt(1.0, QColor(20, 24, 31))
-        p.setPen(QPen(QColor(0, 0, 0, 120), 1))
+        tg.setColorAt(0.0, track_top)
+        tg.setColorAt(1.0, track_bottom)
+        p.setPen(QPen(edge, 1))
         p.setBrush(QBrush(tg))
         p.drawRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), rad, rad)
         n = max(1, len(self._items))
@@ -10686,11 +10730,11 @@ class Segmented(QWidget):
         for i, (_k, label) in enumerate(self._items):
             sel = abs(self._idx - i) < 0.5
             if sel:
-                p.setPen(QColor(18, 20, 26))
+                p.setPen(ink_sel)
             elif i == self._hover_i:
-                p.setPen(QColor(214, 221, 233))        # 悬停的未选项提亮，给点击预期
+                p.setPen(ink_hover)                    # 悬停的未选项提亮，给点击预期
             else:
-                p.setPen(QColor(178, 185, 198))
+                p.setPen(ink_idle)
             p.drawText(QRectF(i * seg, 0, seg, h), Qt.AlignCenter,
                        fm.elidedText(label, Qt.ElideRight, max(8, int(seg) - 8)))
         if self.hasFocus():
@@ -12454,9 +12498,12 @@ class SettingsPanel(QWidget):
                  + " — " + IDLE_HINT_EN + "）") if _UI_LANG == "zh-CN" \
                 else (_t + " · " + _h)
         self.song_label.setText(t)
+        theme = getattr(self, "_theme", None)
         self.b_toggle.setIcon(make_play_icon(
             bg=self._chrome_accent,
-            glyph="pause" if self.ov.status == "PLAYING" else "play"))
+            glyph="pause" if self.ov.status == "PLAYING" else "play",
+            color=(QColor(theme.on_accent) if theme is not None
+                   else QColor(255, 255, 255, 250))))
 
     def set_theme(self, theme):
         """Chrome accent follows the app theme; cover colour is content-only."""
@@ -12467,8 +12514,22 @@ class SettingsPanel(QWidget):
             sw.set_accent(self._chrome_accent)
         for sg in self._segs:
             sg.set_accent(self._chrome_accent)
+            sg.set_theme(theme)
         self._apply_qss()
+        self._refresh_media_icons()
         self._refresh_play_state()
+
+    def _refresh_media_icons(self):
+        """上一首/下一首/屏保图标按主题重画：默认色 #D6DCE8 是给深色面板的，
+        放到浅色卡片上只有 1.6:1，几乎看不见。"""
+        theme = getattr(self, "_theme", None)
+        color = (QColor(theme.text_secondary) if theme is not None
+                 else QColor(214, 220, 232))
+        for name, kind in (("b_prev", "prev"), ("b_next", "next"),
+                           ("b_saver", "saver")):
+            button = getattr(self, name, None)
+            if button is not None:
+                button.setIcon(make_media_icon(kind, color=color))
 
     def set_content_accent(self, accent: QColor):
         """Album-cover accent: lyric preview / ambience only, never chrome."""
@@ -12539,6 +12600,21 @@ class SettingsPanel(QWidget):
         QScrollBar::handle:vertical { background: __SBH__; border-radius: 5px;
                                       min-height: 38px; }
         QScrollBar::handle:vertical:hover { background: __BSTRONG__; }
+        /* 通用滑块（歌词校准等）：不写就会掉回 Windows 默认高亮蓝 + 方钮。
+           轨道用凹槽色、已填充段用主色、手柄用页面底色 + 强边界。 */
+        QSlider::groove:horizontal { height: 6px; border-radius: 3px;
+                                     background: __SUNKEN__;
+                                     border: 1px solid __BORDER__; }
+        QSlider::sub-page:horizontal { background: __ACCENT__;
+                                       border-radius: 3px; }
+        QSlider::handle:horizontal { width: 14px; height: 14px; margin: -5px 0;
+                                     border-radius: 7px; background: __BG__;
+                                     border: 1px solid __BSTRONG__; }
+        QSlider::handle:horizontal:hover { border-color: __ACCENT__; }
+        /* 嵌入设置页时，头部不再是整窗通栏，收成和下面卡片同一套圆角卡片 */
+        QWidget#settingsSurface QWidget#head { background: __SURF__;
+                                     border: 1px solid __BORDER__;
+                                     border-radius: __R_CARD__px; }
         """
                 extra = (extra
                          .replace("__BG__", theme.bg)

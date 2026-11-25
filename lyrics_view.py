@@ -1819,7 +1819,8 @@ class _ThemeSwatchButton(QPushButton):
         row = QHBoxLayout()
         row.setSpacing(6)
         self._dots = []
-        for key in ("bg", "surface_raised", "accent_fill"):
+        # 底色 / 主色 / 文字色：比「底色 + 两张几乎同色的表面」更能一眼读出这套主题
+        for key in ("bg", "accent_fill", "text"):
             dot = QLabel()
             dot.setObjectName("themeSwatchDots")
             dot.setFixedSize(18, 18)

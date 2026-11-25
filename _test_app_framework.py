@@ -28,6 +28,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from shiboken6 import isValid  # noqa: E402
 
 import lyrics_overlay as L  # noqa: E402
+import ui_theme as UT  # noqa: E402
 from app.context import AppContext  # noqa: E402
 from app.lyrics_service import LyricsService  # noqa: E402
 from app.media_service import MediaService  # noqa: E402
@@ -42,6 +43,32 @@ def check(name, condition, detail=""):
           + ((" | " + str(detail)) if detail and not condition else ""))
     if not condition:
         FAILS.append(name)
+
+
+def _rel_lum(color):
+    def channel(value):
+        value = value / 255.0
+        return value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4
+    return (0.2126 * channel(color.red()) + 0.7152 * channel(color.green())
+            + 0.0722 * channel(color.blue()))
+
+
+def _ratio(first, second):
+    high, low = sorted((_rel_lum(first), _rel_lum(second)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def _icon_worst_contrast(icon, background):
+    """图标在给定底色上的最低对比度（只看实心像素，跳过抗锯齿边缘）。"""
+    image = icon.pixmap(48, 48).toImage()
+    worst = 99.0
+    for y in range(image.height()):
+        for x in range(image.width()):
+            color = image.pixelColor(x, y)
+            if color.alpha() < 200:
+                continue
+            worst = min(worst, _ratio(color, background))
+    return worst
 
 
 class FakeWatcher(QObject):
@@ -175,6 +202,38 @@ check("封面取色进入内容通道",
       settings_panel._content_accent.name())
 check("封面取色不重写面板 QSS",
       "#ff0000" not in settings_panel.styleSheet().lower())
+
+light_theme = UT.THEMES["celadon"]["light"]
+settings_panel.set_theme(light_theme)
+light_qss = settings_panel.styleSheet()
+check("浅色主题补上通用滑块样式（不再掉回系统默认蓝）",
+      "QSlider::groove:horizontal" in light_qss
+      and "#0078d4" not in light_qss.lower())
+check("嵌入设置页头部收成与卡片一致的圆角",
+      "QWidget#settingsSurface QWidget#head" in light_qss)
+icon_bg = QColor(light_theme.surface_raised)
+worst = _icon_worst_contrast(settings_panel.b_prev.icon(), icon_bg)
+check("上一首图标在浅色卡片上可辨识 (>=3:1)", worst >= 3.0, round(worst, 2))
+worst = _icon_worst_contrast(settings_panel.b_saver.icon(), icon_bg)
+check("屏保图标在浅色卡片上可辨识 (>=3:1)", worst >= 3.0, round(worst, 2))
+on_accent = QColor(light_theme.on_accent)
+toggle_img = settings_panel.b_toggle.icon().pixmap(64, 64).toImage()
+uses_on_accent = any(
+    toggle_img.pixelColor(x, y).alpha() > 200
+    and abs(toggle_img.pixelColor(x, y).red() - on_accent.red()) <= 6
+    and abs(toggle_img.pixelColor(x, y).green() - on_accent.green()) <= 6
+    and abs(toggle_img.pixelColor(x, y).blue() - on_accent.blue()) <= 6
+    for y in range(toggle_img.height()) for x in range(toggle_img.width()))
+check("设置页播放图标使用主题 on_accent", uses_on_accent, on_accent.name())
+
+probe_seg = L.Segmented([("a", "A"), ("b", "B")])
+probe_seg.set_theme(light_theme)
+probe_seg.resize(240, 32)
+seg_img = probe_seg.grab().toImage()
+track_color = seg_img.pixelColor(234, 16)
+check("分段控件浅色主题轨道不再是黑槽",
+      _rel_lum(track_color) > 0.5, track_color.name())
+settings_panel.set_theme(theme)
 
 runtime.shell.show_mini()
 app.processEvents()
