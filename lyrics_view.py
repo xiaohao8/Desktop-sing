@@ -191,9 +191,9 @@ def _playlist_public_addresses(host: str) -> list[tuple[str, int]]:
             address = ipaddress.ip_address(info[4][0])
         except ValueError:
             return []
-        if (address.is_private or address.is_loopback or address.is_link_local
-                or address.is_multicast or address.is_reserved
-                or address.is_unspecified):
+        # 公网单播才放行：is_global 已排除 loopback/link-local/private/
+        # CGNAT(100.64.0.0/10)/保留段；多播单独再拦一次。
+        if not address.is_global or address.is_multicast:
             return []
         if (info[4][0], info[0]) not in addresses:
             addresses.append((info[4][0], info[0]))
@@ -2059,6 +2059,7 @@ class PlaylistPage(QWidget):
         self._selected_track = None
         self._fetch_thread = None
         self._cancelled = False
+        self._fetch_generation = 0
         self.setObjectName("playlistPage")
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 28)
@@ -2202,6 +2203,7 @@ class PlaylistPage(QWidget):
         self.url_input.setProperty("error", "0")
         self.url_input.style().unpolish(self.url_input)
         self.url_input.style().polish(self.url_input)
+        self.url_input.setEnabled(True)
         self.import_btn.setEnabled(True)
         self.file_btn.setEnabled(True)
         self.import_btn.setText(self._tr("导入歌单"))
@@ -2246,6 +2248,7 @@ class PlaylistPage(QWidget):
     def set_loading(self):
         self._state = "loading"
         self.error.hide()
+        self.url_input.setEnabled(False)
         self.url_input.setProperty("error", "0")
         self.url_input.style().unpolish(self.url_input)
         self.url_input.style().polish(self.url_input)
@@ -2290,11 +2293,11 @@ class PlaylistPage(QWidget):
 
     def _cancel_import(self):
         self._cancelled = True
+        self._fetch_generation += 1
         if self._fetch_thread is not None:
             try:
-                self._fetch_thread.completed.disconnect(
-                    self._on_fetch_completed)
-                self._fetch_thread.failed.disconnect(self._on_fetch_failed)
+                self._fetch_thread.completed.disconnect()
+                self._fetch_thread.failed.disconnect()
             except (RuntimeError, TypeError):
                 pass
             self._fetch_thread = None
@@ -2334,6 +2337,8 @@ class PlaylistPage(QWidget):
             self._show_empty()
 
     def _import_url(self):
+        if self._state == "loading":
+            return
         url = self.url_input.text().strip()
         if not url:
             self.set_error(self._tr("无法读取这个歌单。请使用 M3U 或 M3U8 链接。"))
@@ -2347,10 +2352,14 @@ class PlaylistPage(QWidget):
             self.set_error(self._tr("这是平台链接。请直接使用 M3U 或 M3U8 链接。"))
             return
         self._cancelled = False
+        self._fetch_generation += 1
+        generation = self._fetch_generation
         self.set_loading()
         self._fetch_thread = PlaylistFetchThread(url, self)
-        self._fetch_thread.completed.connect(self._on_fetch_completed)
-        self._fetch_thread.failed.connect(self._on_fetch_failed)
+        self._fetch_thread.completed.connect(
+            lambda tracks, g=generation: self._on_fetch_completed(g, tracks))
+        self._fetch_thread.failed.connect(
+            lambda message, g=generation: self._on_fetch_failed(g, message))
         self._fetch_thread.start()
 
     def _import_file(self):
@@ -2379,7 +2388,9 @@ class PlaylistPage(QWidget):
             return
         self.set_tracks(tracks)
 
-    def _on_fetch_completed(self, tracks):
+    def _on_fetch_completed(self, generation, tracks):
+        if generation != self._fetch_generation:
+            return
         self._fetch_thread = None
         self._set_import_ready()
         if self._cancelled:
@@ -2389,7 +2400,9 @@ class PlaylistPage(QWidget):
             return
         self.set_tracks(tracks)
 
-    def _on_fetch_failed(self, message):
+    def _on_fetch_failed(self, generation, message):
+        if generation != self._fetch_generation:
+            return
         self._fetch_thread = None
         self._set_import_ready()
         if self._cancelled:

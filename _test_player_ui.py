@@ -164,6 +164,23 @@ check("私网与保留地址全部拒绝",
       (V._playlist_public_addresses("127.0.0.1"),
        V._playlist_public_addresses("169.254.169.254"),
        V._playlist_public_addresses("0.0.0.0")))
+check("CGNAT 与云元数据地址拒绝",
+      not V._playlist_public_addresses("100.64.0.1")
+      and not V._playlist_public_addresses("100.100.100.200")
+      and not V._playlist_public_addresses("192.168.1.1"),
+      (V._playlist_public_addresses("100.64.0.1"),
+       V._playlist_public_addresses("100.100.100.200"),
+       V._playlist_public_addresses("192.168.1.1")))
+check("公网地址放行",
+      bool(V._playlist_public_addresses("8.8.8.8"))
+      and bool(V._playlist_public_addresses("1.1.1.1")),
+      (V._playlist_public_addresses("8.8.8.8"),
+       V._playlist_public_addresses("1.1.1.1")))
+check("IPv6 环回拒绝且公网放行",
+      not V._playlist_public_addresses("::1")
+      and bool(V._playlist_public_addresses("2606:4700:4700::1111")),
+      (V._playlist_public_addresses("::1"),
+       V._playlist_public_addresses("2606:4700:4700::1111")))
 check("平台链接直接拒绝",
       V._playlist_is_platform_url("music.163.com")
       and V._playlist_is_platform_url("y.qq.com")
@@ -496,7 +513,8 @@ check("取消导入立即恢复空态",
       and not player.playlist.cancel_btn.isVisible(),
       (player.playlist._state, player.playlist._tracks,
        player.playlist.cancel_btn.isVisible()))
-player.playlist._on_fetch_completed(playlist_tracks)
+player.playlist._on_fetch_completed(
+    player.playlist._fetch_generation, playlist_tracks)
 app.processEvents()
 check("取消导入忽略线程结果",
       player.playlist._state == "empty"
@@ -524,6 +542,7 @@ check("本地歌词缓存行显示已就绪",
       and "歌词已就绪" in playlist_rows[0].status.text()
       and playlist_rows[0].status.text().startswith("✓"),
       playlist_rows[0].status.text())
+
 check("成功态显示导入数量",
       player.playlist.success.isVisible()
       and player.playlist.success.text() == "已导入 1 首曲目",
@@ -576,6 +595,68 @@ app.processEvents()
 playlist_rows = current_playlist_rows()
 check("重复点击不清除选中", playlist_rows[1].isChecked(),
       [row.isChecked() for row in playlist_rows])
+
+# ---- P1-B: _import_url 竞态守卫（两次请求，第二次先返回）----------------
+race_page = V.PlaylistPage(L._tr)
+race_page.url_input.setText("https://example.com/one.m3u8")
+race_page._import_url()
+app.processEvents()
+check("P1-B 首次请求进入 loading",
+      race_page._state == "loading"
+      and not race_page.import_btn.isEnabled()
+      and not race_page.url_input.isEnabled(),
+      (race_page._state, race_page.import_btn.isEnabled(),
+       race_page.url_input.isEnabled()))
+first_thread = race_page._fetch_thread
+first_generation = race_page._fetch_generation
+# loading 中再次触发被直接忽略，不重启线程、不递增 generation。
+race_page.url_input.setText("https://example.com/two.m3u8")
+race_page._import_url()
+app.processEvents()
+check("P1-B loading 时重复触发被忽略",
+      race_page._fetch_thread is first_thread
+      and race_page._fetch_generation == first_generation,
+      (race_page._fetch_thread is first_thread,
+       race_page._fetch_generation, first_generation))
+# 模拟第二次请求：直接走 generation 路径（绕过 loading 守卫）。
+race_page._cancelled = False
+race_page._fetch_generation += 1
+second_generation = race_page._fetch_generation
+race_page.set_loading()
+second_tracks = [{"title": "Second", "artist": "B", "duration": 1.0,
+                  "source": "https://example.com/2.mp3"}]
+race_page._on_fetch_completed(second_generation, second_tracks)
+app.processEvents()
+check("P1-B 第二次结果先回写",
+      race_page._state == "tracks"
+      and race_page._tracks == second_tracks,
+      (race_page._state, race_page._tracks))
+# 第一次旧线程迟到，必须被 generation 守卫丢弃。
+stale_tracks = [{"title": "Stale", "artist": "A", "duration": 1.0,
+                 "source": "https://example.com/1.mp3"}]
+race_page._on_fetch_completed(first_generation, stale_tracks)
+app.processEvents()
+check("P1-B 迟到旧结果被忽略",
+      race_page._state == "tracks"
+      and race_page._tracks == second_tracks,
+      (race_page._state, race_page._tracks))
+# 取消后再到的旧结果也必须忽略。
+race_page.url_input.setText("https://example.com/three.m3u8")
+race_page._import_url()
+app.processEvents()
+third_generation = race_page._fetch_generation
+race_page._cancel_import()
+app.processEvents()
+check("P1-B 取消后回到空态",
+      race_page._state == "empty" and race_page._tracks == [],
+      (race_page._state, race_page._tracks))
+race_page._on_fetch_completed(third_generation, second_tracks)
+app.processEvents()
+check("P1-B 取消后迟到结果被忽略",
+      race_page._state == "empty" and race_page._tracks == [],
+      (race_page._state, race_page._tracks))
+race_page.deleteLater()
+
 check("超长元数据保留全文并提示",
       playlist_rows[2].title.toolTip() == playlist_tracks[2]["title"]
       and playlist_rows[2].artist.toolTip() == playlist_tracks[2]["artist"]
