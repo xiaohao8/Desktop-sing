@@ -182,13 +182,148 @@ check("IPv6 环回拒绝且公网放行",
       and bool(V._playlist_public_addresses("2606:4700:4700::1111")),
       (V._playlist_public_addresses("::1"),
        V._playlist_public_addresses("2606:4700:4700::1111")))
-check("平台链接直接拒绝",
+check("QQ 平台链接放行，其他平台仍拒绝",
       V._playlist_is_platform_url("music.163.com")
       and V._playlist_is_platform_url("y.qq.com")
-      and not V._playlist_is_platform_url("example.com"),
+      and V._qq_playlist_host("y.qq.com")
+      and V._qq_playlist_host("c6.y.qq.com")
+      and not V._qq_playlist_host("music.163.com")
+      and not V._qq_playlist_host("evil-qq.com"),
       (V._playlist_is_platform_url("music.163.com"),
-       V._playlist_is_platform_url("y.qq.com"),
-       V._playlist_is_platform_url("example.com")))
+       V._qq_playlist_host("y.qq.com"),
+       V._qq_playlist_host("c6.y.qq.com"),
+       V._qq_playlist_host("evil-qq.com")))
+
+# ---- QQ Music share links -------------------------------------------------
+qq_share = ("分享歌单「易入人心的华语民谣」："
+            "https://c6.y.qq.com/base/fcgi-bin/u?__=6RTHDHu5qQ6d "
+            "（来自 QQ 音乐）")
+check("QQ 分享文本提取短链",
+      V._extract_playlist_url(qq_share)
+      == "https://c6.y.qq.com/base/fcgi-bin/u?__=6RTHDHu5qQ6d",
+      V._extract_playlist_url(qq_share))
+check("M3U 链接仍可从带说明文本中提取",
+      V._extract_playlist_url(
+          "我的歌单：https://example.com/list.m3u8，复制后打开")
+      == "https://example.com/list.m3u8",
+      V._extract_playlist_url(
+          "我的歌单：https://example.com/list.m3u8，复制后打开"))
+
+qq_ids = [
+    ("网页歌单", "https://y.qq.com/n/ryqq/playlist/1374105607"),
+    ("详情页", "https://y.qq.com/n/ryqq/playlistDetail/1374105607"),
+    ("手机分享页", "https://i.y.qq.com/n2/m/share/details/taoge.html"
+                   "?ADTAG=pc_v17&id=1374105607&openinqqmusic=1"),
+]
+check("QQ 歌单 ID 支持三种分享路径",
+      all(V._qq_playlist_id_in_url(url) == "1374105607"
+          for _name, url in qq_ids),
+      [(name, V._qq_playlist_id_in_url(url)) for name, url in qq_ids])
+check("QQ 链接缺少歌单 ID 不臆造",
+      V._qq_playlist_id_in_url("https://y.qq.com/n/ryqq/playlist/")
+      == "")
+check("QQ 歌曲链路不误读歌单 ID",
+      V._qq_playlist_id_in_url(
+          "https://y.qq.com/n/ryqq/songDetail/003abc?id=1374105607")
+      == "")
+check("QQ 短链重定向只能落在 QQ 域",
+      V._qq_playlist_host("i.y.qq.com")
+      and not V._qq_playlist_host("i.y.qq.com.evil.example"))
+
+qq_payload = {
+    "code": 0,
+    "subcode": 0,
+    "cdlist": [{
+        "disstid": "1374105607",
+        "dissname": "易入人心的华语民谣",
+        "songlist": [
+            {"songname": "当你老了", "songmid": "mid-1",
+             "singer": [{"name": "赵照"}], "interval": 310,
+             "albumname": "示例专辑"},
+            {"songname": "当你老了", "songmid": "mid-1",
+             "singer": [{"name": "赵照"}], "interval": 310,
+             "albumname": "示例专辑"},
+            {"songname": "南山南", "songmid": "mid-2",
+             "singer": [{"name": "马頔"}, {"name": "其他"}],
+             "interval": "325", "albumname": "孤岛"},
+        ],
+    }],
+}
+qq_tracks = V._parse_qq_playlist_payload(qq_payload)
+check("QQ 歌单只解析元数据并去重",
+      len(qq_tracks) == 2
+      and qq_tracks[0]["title"] == "当你老了"
+      and qq_tracks[0]["artist"] == "赵照"
+      and qq_tracks[0]["duration"] == 310.0
+      and qq_tracks[0]["source"] == "qqmusic:mid-1"
+      and qq_tracks[1]["artist"] == "马頔 / 其他"
+      and qq_tracks[1]["duration"] == 325.0
+      and "audio_bytes" not in qq_tracks[0],
+      qq_tracks)
+
+
+def _raises_value(fn, *args, **kwargs):
+    try:
+        fn(*args, **kwargs)
+    except ValueError:
+        return True
+    return False
+
+
+check("QQ 适配器拒绝非 QQ 主机",
+      _raises_value(V._qq_request_once, "https://evil.example/x",
+                    headers={}))
+check("QQ 空歌单/错误响应不产出假曲目",
+      _raises_value(V._parse_qq_playlist_payload, {"code": 1})
+      and _raises_value(V._parse_qq_playlist_payload,
+                        {"code": 0, "cdlist": []})
+      and _raises_value(V._parse_qq_playlist_payload,
+                        {"code": 0, "cdlist": [{"songlist": []}]})
+      and _raises_value(V._parse_qq_playlist_payload,
+                        {"code": 0, "cdlist": [{
+                            "total_song_num": 1001,
+                            "songlist": [{"songname": "A"}]}]}))
+
+original_qq_follow = V._qq_follow
+qq_api_urls = []
+
+
+def _fake_qq_follow(url, **kwargs):
+    qq_api_urls.append(url)
+    return url, json.dumps(qq_payload).encode("utf-8")
+
+
+V._qq_follow = _fake_qq_follow
+try:
+    qq_api_tracks = V._fetch_qq_playlist_tracks(
+        "https://y.qq.com/n/ryqq/playlist/1374105607")
+finally:
+    V._qq_follow = original_qq_follow
+check("QQ 歌单导入请求公开 API 且不取音频",
+      len(qq_api_tracks) == 2
+      and "disstid=1374105607" in qq_api_urls[0]
+      and "fcg_ucc_getcdinfo_byids_cp.fcg" in qq_api_urls[0],
+      qq_api_urls)
+
+original_loader = V._load_playlist_tracks
+qq_thread_calls = []
+V._load_playlist_tracks = lambda url: qq_thread_calls.append(url) or qq_tracks
+qq_results = []
+qq_failures = []
+qq_thread = V.PlaylistFetchThread(
+    "https://c6.y.qq.com/base/fcgi-bin/u?__=6RTHDHu5qQ6d")
+qq_thread.completed.connect(qq_results.append)
+qq_thread.failed.connect(qq_failures.append)
+try:
+    qq_thread.run()
+finally:
+    V._load_playlist_tracks = original_loader
+app.processEvents()
+check("QQ 短链导入线程可完成",
+      qq_results == [qq_tracks] and not qq_failures
+      and qq_thread_calls == [
+          "https://c6.y.qq.com/base/fcgi-bin/u?__=6RTHDHu5qQ6d"],
+      (qq_results, qq_failures, qq_thread_calls))
 
 fetch_results = []
 fetch_failures = []

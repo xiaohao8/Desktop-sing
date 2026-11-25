@@ -12,6 +12,8 @@ import os
 import time
 import http.client
 import ipaddress
+import json
+import re
 import socket
 import ssl
 import urllib.parse
@@ -231,6 +233,215 @@ def _playlist_is_platform_url(host: str) -> bool:
                for item in platform_hosts)
 
 
+_QQ_PLAYLIST_HOSTS = (
+    "y.qq.com", "i.y.qq.com", "c.y.qq.com", "u.y.qq.com", "c6.y.qq.com",
+)
+_PLAYLIST_URL_RE = re.compile(
+    r"https?://[^\s<>\"'，。！？、；：（）【】《》]+", re.IGNORECASE)
+
+
+def _qq_playlist_host(host: str) -> bool:
+    """Only official QQ Music share/API hosts may be fetched."""
+    host = (host or "").strip().strip("[]").lower()
+    return any(host == item or host.endswith("." + item)
+               for item in _QQ_PLAYLIST_HOSTS)
+
+
+def _extract_playlist_url(text: str) -> str:
+    """Return the first URL in a share message, preferring a QQ link.
+
+    QQ Music's mobile share sheet copies a sentence, not a bare URL.  M3U
+    links may also arrive with surrounding text, so both paths use this.
+    """
+    urls = _PLAYLIST_URL_RE.findall(text or "")
+    if not urls:
+        return ""
+    for candidate in urls:
+        host = urllib.parse.urlparse(candidate).hostname or ""
+        if _qq_playlist_host(host):
+            return candidate.rstrip(".,;:!?)]}>\"'，。！？、；：）】》")
+    return urls[0].rstrip(".,;:!?)]}>\"'，。！？、；：）】》")
+
+
+def _qq_playlist_id_in_url(url: str) -> str:
+    parsed = urllib.parse.urlparse(url or "")
+    query = {key.lower(): values
+             for key, values in urllib.parse.parse_qs(parsed.query).items()}
+    id_keys = ("disstid", "playlistid", "playlist_id")
+    if re.search(r"(?:taoge|playlist|share)", parsed.path, re.IGNORECASE):
+        id_keys = ("id",) + id_keys
+    for key in id_keys:
+        for value in query.get(key, []):
+            value = str(value).strip()
+            if value.isdigit() and len(value) >= 5:
+                return value
+    match = re.search(
+        r"/(?:playlist|playlistdetail|taoge)/(\d{5,})(?:/|$)",
+        parsed.path, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return ""
+
+
+def _qq_request_once(url: str, *, headers: dict,
+                     timeout: float = 10.0,
+                     max_bytes: int = 2 * 1024 * 1024
+                     ) -> tuple[int, str | None, bytes]:
+    """One pinned request to an official QQ Music host."""
+    parsed = urllib.parse.urlparse((url or "").strip())
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("qq-playlist-host")
+    if not _qq_playlist_host(parsed.hostname):
+        raise ValueError("qq-playlist-host")
+    host = parsed.hostname
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    pinned_addresses = _playlist_public_addresses(host)
+    if not pinned_addresses:
+        raise ValueError("qq-playlist-host")
+    path = parsed.path or "/"
+    if parsed.query:
+        path += "?" + parsed.query
+    last_error = None
+    for address, _family in pinned_addresses:
+        try:
+            return _playlist_request_once(
+                parsed.scheme, host, port, path, timeout, address,
+                max_bytes, headers=headers)
+        except (OSError, http.client.HTTPException) as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise ValueError("qq-playlist-host")
+
+
+def _qq_follow(url: str, *, headers: dict, max_bytes: int = 2 * 1024 * 1024,
+               max_redirects: int = 5) -> tuple[str, bytes]:
+    """Follow QQ-host-only redirects and return the final URL and body."""
+    current = (url or "").strip()
+    seen = set()
+    for _ in range(max_redirects + 1):
+        if current in seen:
+            raise ValueError("qq-playlist-id")
+        seen.add(current)
+        status, location, data = _qq_request_once(
+            current, headers=headers, max_bytes=max_bytes)
+        if status in (301, 302, 303, 307, 308):
+            if not location:
+                raise ValueError("qq-playlist-id")
+            current = urllib.parse.urljoin(current, location)
+            continue
+        if status != 200:
+            raise ValueError("qq-playlist-api")
+        if len(data) > max_bytes:
+            raise ValueError("playlist-too-large")
+        return current, data
+    raise ValueError("qq-playlist-api")
+
+
+def _qq_playlist_id_from_url(url: str) -> str:
+    """Extract a playlist id, resolving c6.y.qq.com short shares if needed."""
+    parsed = urllib.parse.urlparse((url or "").strip())
+    if not _qq_playlist_host(parsed.hostname):
+        raise ValueError("qq-playlist-host")
+    playlist_id = _qq_playlist_id_in_url(url)
+    if playlist_id:
+        return playlist_id
+    final_url, _ = _qq_follow(
+        url,
+        headers={"Accept": "text/html,application/xhtml+xml,*/*",
+                 "Referer": "https://y.qq.com/"},
+        max_bytes=256 * 1024)
+    playlist_id = _qq_playlist_id_in_url(final_url)
+    if playlist_id:
+        return playlist_id
+    raise ValueError("qq-playlist-id")
+
+
+def _parse_qq_playlist_payload(payload) -> list[dict]:
+    """Map QQ Music's public playlist JSON to the local track contract."""
+    if not isinstance(payload, dict):
+        raise ValueError("qq-playlist-api")
+    code = payload.get("code")
+    subcode = payload.get("subcode")
+    if str(code) != "0" or (subcode is not None and str(subcode) != "0"):
+        raise ValueError("qq-playlist-api")
+    cdlist = payload.get("cdlist") or []
+    if not cdlist or not isinstance(cdlist[0], dict):
+        raise ValueError("qq-playlist-empty")
+    playlist = cdlist[0]
+    songs = playlist.get("songlist") or []
+    if not isinstance(songs, list):
+        raise ValueError("qq-playlist-api")
+    try:
+        total = int(playlist.get("total_song_num") or 0)
+    except (TypeError, ValueError):
+        total = 0
+    if total > _MAX_PLAYLIST_TRACKS:
+        raise ValueError("playlist-too-many-tracks")
+    tracks = []
+    seen = set()
+    for index, song in enumerate(songs):
+        if not isinstance(song, dict):
+            continue
+        title = str(song.get("songname") or song.get("title") or "").strip()
+        if not title:
+            continue
+        artist = " / ".join(
+            str(singer.get("name") or "").strip()
+            for singer in (song.get("singer") or [])
+            if isinstance(singer, dict) and str(singer.get("name") or "").strip())
+        try:
+            duration = max(0.0, float(song.get("interval") or 0.0))
+        except (TypeError, ValueError):
+            duration = 0.0
+        key = (title.casefold(), artist.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        songmid = str(song.get("songmid") or "").strip()
+        tracks.append({
+            "title": title,
+            "artist": artist,
+            "duration": duration,
+            "album": str(song.get("albumname") or "").strip(),
+            "source": "qqmusic:%s" % (songmid or "%s:%d" % (
+                playlist.get("disstid") or "", index)),
+        })
+    if not tracks:
+        raise ValueError("qq-playlist-empty")
+    return tracks
+
+
+def _fetch_qq_playlist_tracks(url: str) -> list[dict]:
+    """Read a public QQ Music playlist's metadata; never fetch audio."""
+    playlist_id = _qq_playlist_id_from_url(url)
+    api = (
+        "https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?"
+        "type=1&json=1&utf8=1&onlysong=0&disstid=%s&format=json&g_tk=5381&"
+        "loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&"
+        "platform=yqq.json&needNewCode=0"
+    ) % urllib.parse.quote(playlist_id, safe="")
+    _, data = _qq_follow(
+        api,
+        headers={"Accept": "application/json,text/plain,*/*",
+                 "Referer": "https://y.qq.com/"},
+    )
+    try:
+        payload = json.loads(_decode_playlist(data))
+    except (TypeError, ValueError):
+        raise ValueError("qq-playlist-api")
+    return _parse_qq_playlist_payload(payload)
+
+
+def _load_playlist_tracks(url: str) -> list[dict]:
+    """Dispatch a URL to the QQ Music adapter or the M3U parser."""
+    host = urllib.parse.urlparse((url or "").strip()).hostname or ""
+    if _qq_playlist_host(host):
+        return _fetch_qq_playlist_tracks(url)
+    data = _fetch_playlist_bytes(url)
+    return _parse_m3u(_decode_playlist(data))
+
+
 def _fetch_playlist_bytes(url: str, *, timeout: float = 10.0,
                           max_bytes: int = 2 * 1024 * 1024,
                           max_redirects: int = 5) -> bytes:
@@ -279,7 +490,9 @@ def _fetch_playlist_bytes(url: str, *, timeout: float = 10.0,
 
 def _playlist_request_once(scheme: str, host: str, port: int, path: str,
                            timeout: float, pinned_ip: str,
-                           max_bytes: int) -> tuple[int, str | None, bytes]:
+                           max_bytes: int,
+                           headers: dict | None = None
+                           ) -> tuple[int, str | None, bytes]:
     """Open one pinned connection and return (status, location, body)."""
     if scheme == "https":
         connection = _PinnedHTTPSConnection(
@@ -288,10 +501,13 @@ def _playlist_request_once(scheme: str, host: str, port: int, path: str,
         connection = _PinnedHTTPConnection(host, port, timeout=timeout)
     connection.pinned_ip = pinned_ip
     try:
-        connection.request("GET", path, headers={
+        request_headers = {
             "User-Agent": "Desktop-sing-playlist/1.0",
             "Accept": "audio/x-mpegurl,application/x-mpegurl,text/plain,*/*",
-        })
+        }
+        if headers:
+            request_headers.update(headers)
+        connection.request("GET", path, headers=request_headers)
         response = connection.getresponse()
         status = response.status
         if status in (301, 302, 303, 307, 308):
@@ -389,8 +605,16 @@ def _parse_m3u(text: str) -> list[dict]:
 
 def _playlist_error_message(message: str, tr) -> str:
     message = str(message or "")
+    if "qq-playlist-host" in message:
+        return tr("只支持 QQ 音乐官方分享链接。")
+    if "qq-playlist-id" in message:
+        return tr("没有从分享内容中找到 QQ 音乐歌单 ID，请粘贴完整分享文本。")
+    if "qq-playlist-empty" in message:
+        return tr("这个 QQ 音乐歌单不存在、未公开或没有曲目。")
+    if "qq-playlist-api" in message:
+        return tr("QQ 音乐歌单读取失败，请稍后重试。")
     if "platform-playlist-url" in message:
-        return tr("这是平台链接。请直接使用 M3U 或 M3U8 链接。")
+        return tr("这是平台链接。目前只支持 QQ 音乐歌单链接，其他平台请导出 M3U/M3U8。")
     if "private-playlist-host" in message:
         return tr("这个地址指向内网或本机，已拒绝。请使用公网 M3U/M3U8 链接。")
     if "playlist-too-large" in message:
@@ -398,7 +622,7 @@ def _playlist_error_message(message: str, tr) -> str:
     if "playlist-too-many-tracks" in message:
         return tr("歌单曲目超过 1000 首，请精简后再导入。")
     if "unsupported-playlist-url" in message:
-        return tr("无法读取这个歌单。请使用 M3U 或 M3U8 链接。")
+        return tr("无法读取这个歌单。请使用 M3U/M3U8 或 QQ 音乐歌单链接。")
     return tr("无法读取歌单，请检查网络或链接后重试。")
 
 
@@ -2270,8 +2494,7 @@ class PlaylistFetchThread(QThread):
 
     def run(self):
         try:
-            data = _fetch_playlist_bytes(self.url)
-            tracks = _parse_m3u(_decode_playlist(data))
+            tracks = _load_playlist_tracks(self.url)
             if len(tracks) > _MAX_PLAYLIST_TRACKS:
                 raise ValueError("playlist-too-many-tracks")
             self.completed.emit(tracks)
@@ -2455,7 +2678,7 @@ class PlaylistPage(QWidget):
         form.setSpacing(8)
         self.url_input = QLineEdit()
         self.url_input.setObjectName("playlistInput")
-        self.url_input.setPlaceholderText(tr("粘贴 M3U/M3U8 歌单链接"))
+        self.url_input.setPlaceholderText(tr("粘贴 M3U/M3U8 或 QQ 音乐歌单链接"))
         self.url_input.setAccessibleName(self.url_input.placeholderText())
         self.url_input.setAccessibleDescription(
             self.url_input.placeholderText())
@@ -2622,6 +2845,7 @@ class PlaylistPage(QWidget):
     def set_loading(self):
         self._state = "loading"
         self.error.hide()
+        self.success.hide()
         self.url_input.setEnabled(False)
         self.url_input.setProperty("error", "0")
         self.url_input.style().unpolish(self.url_input)
@@ -2691,7 +2915,7 @@ class PlaylistPage(QWidget):
     def retranslate(self):
         self.title.setText(self._tr("歌单"))
         self.subtitle.setText(self._tr("导入歌单信息，选择曲目后进入歌词页。"))
-        self.url_input.setPlaceholderText(self._tr("粘贴 M3U/M3U8 歌单链接"))
+        self.url_input.setPlaceholderText(self._tr("粘贴 M3U/M3U8 或 QQ 音乐歌单链接"))
         self.url_input.setAccessibleName(self.url_input.placeholderText())
         self.url_input.setAccessibleDescription(self.url_input.placeholderText())
         self.import_btn.setText(self._tr("导入歌单"))
@@ -2713,17 +2937,24 @@ class PlaylistPage(QWidget):
     def _import_url(self):
         if self._state == "loading":
             return
-        url = self.url_input.text().strip()
+        raw = self.url_input.text().strip()
+        url = _extract_playlist_url(raw) or raw
+        if url != raw:
+            self.url_input.setText(url)
         if not url:
-            self.set_error(self._tr("无法读取这个歌单。请使用 M3U 或 M3U8 链接。"))
+            self.set_error(self._tr(
+                "无法读取这个歌单。请使用 M3U/M3U8 或 QQ 音乐歌单链接。"))
             return
         try:
             parsed = urllib.parse.urlparse(url)
         except ValueError:
-            self.set_error(self._tr("无法读取这个歌单。请使用 M3U 或 M3U8 链接。"))
+            self.set_error(self._tr(
+                "无法读取这个歌单。请使用 M3U/M3U8 或 QQ 音乐歌单链接。"))
             return
-        if _playlist_is_platform_url(parsed.hostname or ""):
-            self.set_error(self._tr("这是平台链接。请直接使用 M3U 或 M3U8 链接。"))
+        host = parsed.hostname or ""
+        if _playlist_is_platform_url(host) and not _qq_playlist_host(host):
+            self.set_error(self._tr(
+                "这是平台链接。目前只支持 QQ 音乐歌单链接，其他平台请导出 M3U/M3U8。"))
             return
         self._cancelled = False
         self._fetch_generation += 1
@@ -2770,7 +3001,8 @@ class PlaylistPage(QWidget):
         if self._cancelled:
             return
         if not tracks:
-            self.set_error(self._tr("无法读取这个歌单。请使用 M3U 或 M3U8 链接。"))
+            self.set_error(self._tr(
+                "无法读取这个歌单。请使用 M3U/M3U8 或 QQ 音乐歌单链接。"))
             return
         self.set_tracks(tracks)
 
