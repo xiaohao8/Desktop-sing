@@ -22,10 +22,13 @@ _cfg_sandbox.begin(hotkeys=False, keepalive=False, idle_saver=False,
 _tmp = tempfile.TemporaryDirectory(prefix="desktop-sing-framework-test-")
 os.environ["DESKTOP_SING_LISTEN_PATH"] = os.path.join(_tmp.name, "listening.json")
 
-from PySide6.QtCore import QObject, Signal  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Signal  # noqa: E402
+from PySide6.QtGui import QColor  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
+from shiboken6 import isValid  # noqa: E402
 
 import lyrics_overlay as L  # noqa: E402
+import ui_theme as UT  # noqa: E402
 from app.context import AppContext  # noqa: E402
 from app.lyrics_service import LyricsService  # noqa: E402
 from app.media_service import MediaService  # noqa: E402
@@ -40,6 +43,32 @@ def check(name, condition, detail=""):
           + ((" | " + str(detail)) if detail and not condition else ""))
     if not condition:
         FAILS.append(name)
+
+
+def _rel_lum(color):
+    def channel(value):
+        value = value / 255.0
+        return value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4
+    return (0.2126 * channel(color.red()) + 0.7152 * channel(color.green())
+            + 0.0722 * channel(color.blue()))
+
+
+def _ratio(first, second):
+    high, low = sorted((_rel_lum(first), _rel_lum(second)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def _icon_worst_contrast(icon, background):
+    """图标在给定底色上的最低对比度（只看实心像素，跳过抗锯齿边缘）。"""
+    image = icon.pixmap(48, 48).toImage()
+    worst = 99.0
+    for y in range(image.height()):
+        for x in range(image.width()):
+            color = image.pixelColor(x, y)
+            if color.alpha() < 200:
+                continue
+            worst = min(worst, _ratio(color, background))
+    return worst
 
 
 class FakeWatcher(QObject):
@@ -138,6 +167,74 @@ check("窗口协调器可打开设置",
       player.stack.currentWidget() is player.settings_page and player.isVisible(),
       type(player.stack.currentWidget()).__name__)
 
+source = player.now.source
+needed_width = (source.fontMetrics().horizontalAdvance(source.text())
+                + player.now._SOURCE_TRACKING * max(0, len(source.text()) - 1) + 8)
+check("NOW PLAYING 首轮不被裁切", source.width() >= needed_width,
+      (source.width(), needed_width))
+
+theme_manager = player._theme_manager
+theme = theme_manager.current()
+player.now.update_progress(10.0, 100.0, True)
+first_icon_key = player.now.b_toggle.icon().cacheKey()
+player.now.update_progress(11.0, 100.0, True)
+check("播放图标跟随 on_accent 而非硬编码白色",
+      player.now._toggle_icon_key == (True, theme.on_accent),
+      player.now._toggle_icon_key)
+check("同状态 tick 不重建播放图标",
+      player.now.b_toggle.icon().cacheKey() == first_icon_key)
+
+settings_panel = player.settings_page.panel
+check("嵌入设置页无残留 opacity effect",
+      settings_panel.graphicsEffect() is None,
+      settings_panel.graphicsEffect())
+theme_manager.set_reduce_motion(True)
+check("Reduce Motion 下设置面板动画时长为 0",
+      settings_panel._fade_duration() == 0, settings_panel._fade_duration())
+theme_manager.set_reduce_motion(False)
+
+settings_panel.set_content_accent(QColor("#FF0000"))
+check("封面取色不覆盖主题 chrome",
+      settings_panel._chrome_accent.name() == theme.accent_fill.lower(),
+      (settings_panel._chrome_accent.name(), theme.accent_fill))
+check("封面取色进入内容通道",
+      settings_panel._content_accent.name() == "#ff0000",
+      settings_panel._content_accent.name())
+check("封面取色不重写面板 QSS",
+      "#ff0000" not in settings_panel.styleSheet().lower())
+
+light_theme = UT.THEMES["celadon"]["light"]
+settings_panel.set_theme(light_theme)
+light_qss = settings_panel.styleSheet()
+check("浅色主题补上通用滑块样式（不再掉回系统默认蓝）",
+      "QSlider::groove:horizontal" in light_qss
+      and "#0078d4" not in light_qss.lower())
+check("嵌入设置页头部收成与卡片一致的圆角",
+      "QWidget#settingsSurface QWidget#head" in light_qss)
+icon_bg = QColor(light_theme.surface_raised)
+worst = _icon_worst_contrast(settings_panel.b_prev.icon(), icon_bg)
+check("上一首图标在浅色卡片上可辨识 (>=3:1)", worst >= 3.0, round(worst, 2))
+worst = _icon_worst_contrast(settings_panel.b_saver.icon(), icon_bg)
+check("屏保图标在浅色卡片上可辨识 (>=3:1)", worst >= 3.0, round(worst, 2))
+on_accent = QColor(light_theme.on_accent)
+toggle_img = settings_panel.b_toggle.icon().pixmap(64, 64).toImage()
+uses_on_accent = any(
+    toggle_img.pixelColor(x, y).alpha() > 200
+    and abs(toggle_img.pixelColor(x, y).red() - on_accent.red()) <= 6
+    and abs(toggle_img.pixelColor(x, y).green() - on_accent.green()) <= 6
+    and abs(toggle_img.pixelColor(x, y).blue() - on_accent.blue()) <= 6
+    for y in range(toggle_img.height()) for x in range(toggle_img.width()))
+check("设置页播放图标使用主题 on_accent", uses_on_accent, on_accent.name())
+
+probe_seg = L.Segmented([("a", "A"), ("b", "B")])
+probe_seg.set_theme(light_theme)
+probe_seg.resize(240, 32)
+seg_img = probe_seg.grab().toImage()
+track_color = seg_img.pixelColor(234, 16)
+check("分段控件浅色主题轨道不再是黑槽",
+      _rel_lum(track_color) > 0.5, track_color.name())
+settings_panel.set_theme(theme)
+
 runtime.shell.show_mini()
 app.processEvents()
 check("窗口协调器可切回迷你条",
@@ -147,6 +244,23 @@ if player is not None:
     player._timer.stop()
     player.close()
     app.processEvents()
+QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+stored_manager = getattr(runtime.overlay, "theme_manager", None)
+check("关闭播放器后主题管理器仍存活",
+      isValid(stored_manager),
+      "theme_manager=%s" % ("present but deleted" if stored_manager is not None else "missing"))
+reopened = runtime.shell.open_player()
+app.processEvents()
+check("播放器关闭后可再次打开",
+      reopened is not None and reopened.isVisible(),
+      type(reopened).__name__ if reopened is not None else None)
+if reopened is not None:
+    check("二次打开复用同一主题管理器",
+          reopened._theme_manager is runtime.overlay.theme_manager)
+    reopened._timer.stop()
+    reopened.close()
+    app.processEvents()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 runtime.overlay._timer.stop()
 for timer_name in ("_zorder_timer", "_idle_timer"):
     timer = getattr(runtime.overlay, timer_name, None)

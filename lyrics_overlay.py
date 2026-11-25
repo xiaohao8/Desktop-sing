@@ -270,6 +270,9 @@ _I18N_TABLES = {
         "下一首": "下一首",
         "样式": "樣式",
         "配色主题": "配色主題",
+        "歌词强调色": "歌詞強調色",
+        "当前歌词强调色：%s —— 歌词高亮与氛围光晕已同步": "目前歌詞強調色：%s —— 歌詞高亮與氛圍光暈已同步",
+        "跟随专辑封面主色自动为歌词与氛围取色，换歌即换色；点选下方色板可固定歌词强调色。": "跟隨專輯封面主色自動為歌詞與氛圍取色，換歌即換色；點選下方色板可固定歌詞強調色。",
         "封面取色（自动）": "封面取色（自動）",
         "显示模式": "顯示模式",
         "常驻桌面（不遮挡窗口）": "常駐桌面（不遮擋視窗）",
@@ -555,6 +558,9 @@ _I18N_TABLES = {
         "下一首": "Next",
         "样式": "Style",
         "配色主题": "Color theme",
+        "歌词强调色": "Lyric accent",
+        "当前歌词强调色：%s —— 歌词高亮与氛围光晕已同步": "Current lyric accent: %s — lyric highlight and ambience are in sync",
+        "跟随专辑封面主色自动为歌词与氛围取色，换歌即换色；点选下方色板可固定歌词强调色。": "Follows the album-cover accent for lyrics and ambience; pick a swatch below to pin the lyric accent.",
         "封面取色（自动）": "Auto (from cover)",
         "显示模式": "Display mode",
         "常驻桌面（不遮挡窗口）": "On desktop (behind windows)",
@@ -835,6 +841,9 @@ _I18N_TABLES = {
         "下一首": "次の曲",
         "样式": "スタイル",
         "配色主题": "カラーテーマ",
+        "歌词强调色": "歌詞アクセント",
+        "当前歌词强调色：%s —— 歌词高亮与氛围光晕已同步": "現在の歌詞アクセント：%s — 歌詞ハイライトと雰囲気光が同期済み",
+        "跟随专辑封面主色自动为歌词与氛围取色，换歌即换色；点选下方色板可固定歌词强调色。": "アルバムカバーの主要色を歌詞と雰囲気光に自動適用します。下のスウォッチで歌詞アクセントを固定できます。",
         "封面取色（自动）": "自動（カバーから）",
         "显示模式": "表示モード",
         "常驻桌面（不遮挡窗口）": "デスクトップ（窓の背面）",
@@ -1150,6 +1159,15 @@ _I18N_TABLES["zh-TW"].update({
     "歌单曲目超过 1000 首，请精简后再导入。": "歌單曲目超過 1000 首，請精簡後再匯入。",
     "播放": "播放",
     "暂停": "暫停",
+    "外观": "外觀",
+    "跟随系统": "跟隨系統",
+    "浅色": "淺色",
+    "深色": "深色",
+    "墨": "墨",
+    "青瓷": "青瓷",
+    "跟随系统会随 Windows 深浅色切换": "跟隨系統會隨 Windows 深淺色切換",
+    "减少动态效果": "減少動態效果",
+    "停止页面淡入和过渡动画": "停止頁面淡入和過渡動畫",
 })
 _I18N_TABLES["en"].update({
     "正在播放": "Now playing",
@@ -1251,6 +1269,15 @@ _I18N_TABLES["en"].update({
     "歌单曲目超过 1000 首，请精简后再导入。": "Playlist has more than 1000 tracks. Trim it and import again.",
     "播放": "Play",
     "暂停": "Pause",
+    "外观": "Appearance",
+    "跟随系统": "Follow system",
+    "浅色": "Light",
+    "深色": "Dark",
+    "墨": "Ink",
+    "青瓷": "Celadon",
+    "跟随系统会随 Windows 深浅色切换": "Follow system switches with the Windows light/dark mode",
+    "减少动态效果": "Reduce motion",
+    "停止页面淡入和过渡动画": "Stop page fades and transition animations",
 })
 _I18N_TABLES["ja"].update({
     "正在播放": "再生中",
@@ -1352,6 +1379,15 @@ _I18N_TABLES["ja"].update({
     "歌单曲目超过 1000 首，请精简后再导入。": "プレイリストの曲が 1000 曲を超えています。減らしてから読み込んでください。",
     "播放": "再生",
     "暂停": "一時停止",
+    "外观": "外観",
+    "跟随系统": "システムに従う",
+    "浅色": "ライト",
+    "深色": "ダーク",
+    "墨": "墨",
+    "青瓷": "青磁",
+    "跟随系统会随 Windows 深浅色切换": "システムに従うと Windows のライト/ダークに連動します",
+    "减少动态效果": "モーションを減らす",
+    "停止页面淡入和过渡动画": "ページのフェードや遷移アニメーションを停止します",
 })
 
 _UI_LANG = "zh-CN"
@@ -6185,7 +6221,7 @@ def draw_media_glyph(p: QPainter, kind: str, r: QRectF, color: QColor):
     p.restore()
 
 
-def menu_qss(accent: QColor) -> str:
+def menu_qss(accent: QColor, theme=None) -> str:
     """托盘 / 右键菜单的现代深色皮肤（跟随封面主色）
 
     有几样必须显式写出来，缺一个就会退化：
@@ -6196,6 +6232,21 @@ def menu_qss(accent: QColor) -> str:
       · **勾选标记** —— 「主色圆角块 + 白色对勾」两层叠，比纯色块更容易读出"已选中"。
       · **border-radius** —— 圆角需要弹出窗口是半透明的，QMenu 挂上样式表后 Qt 会处理。
     """
+    if theme is not None:
+        try:
+            from ui_theme import build_qss
+            a = theme.accent_fill
+            arrow = ui_icon_url("menu_arrow")
+            check = ui_icon_url("menu_check")
+            arrow_rule = ("QMenu::right-arrow { image: url(%s); width: 12px; height: 12px; }" % arrow) \
+                if arrow else "QMenu::right-arrow { width: 12px; }"
+            check_rule = ("QMenu::indicator:checked { background: %s; border-radius: 4px;\n"
+                          "                                  image: url(%s); }" % (a, check)) \
+                if check else "QMenu::indicator:checked { background: %s; border-radius: 4px; }" % a
+            base = build_qss(theme, "overlay")
+            return base + "\n" + arrow_rule + "\n" + check_rule
+        except Exception:
+            pass
     a = accent.name()
     arrow = ui_icon_url("menu_arrow")
     check = ui_icon_url("menu_check")
@@ -6408,7 +6459,8 @@ def fix_combo_popup(combo: QComboBox):
 
 
 def build_message_box(parent, title: str, text: str, informative: str = "",
-                      accent: QColor = None, warning: bool = False) -> QMessageBox:
+                      accent: QColor = None, warning: bool = False,
+                      theme=None) -> QMessageBox:
     """构造（但不弹出）一个深色皮肤的 QMessageBox。
 
     与 `styled_message` 拆开是为了**可测/可截图**：`exec()` 会阻塞，测试没法驱动。
@@ -6416,6 +6468,26 @@ def build_message_box(parent, title: str, text: str, informative: str = "",
     用不着 `QMessageBox.about()` / `.warning()` —— 那些**静态方法**新起的是系统原生
     对话框，既不继承设置面板的样式表、也不继承菜单皮肤，整个应用就剩它们是白底。
     """
+    if theme is None and parent is not None:
+        theme_getter = getattr(parent, "_current_theme", None)
+        if callable(theme_getter):
+            try:
+                theme = theme_getter()
+            except Exception:
+                theme = None
+    if theme is not None:
+        try:
+            from ui_theme import build_qss
+            box = QMessageBox(parent)
+            box.setWindowTitle(title)
+            box.setText(text)
+            if informative:
+                box.setInformativeText(informative)
+            box.setIcon(QMessageBox.Warning if warning else QMessageBox.Information)
+            box.setStyleSheet(build_qss(theme, "overlay"))
+            return box
+        except Exception:
+            pass
     a = (accent or QColor(DEFAULT_ACCENT1)).name()
     box = QMessageBox(parent)
     box.setWindowTitle(title)
@@ -6501,6 +6573,20 @@ class WelcomeDialog(QDialog):
         btns.addWidget(go)
         v.addLayout(btns)
 
+        theme_getter = getattr(overlay, "_current_theme", None)
+        theme = None
+        if callable(theme_getter):
+            try:
+                theme = theme_getter()
+            except Exception:
+                theme = None
+        if theme is not None:
+            try:
+                from ui_theme import build_qss
+                self.setStyleSheet(build_qss(theme, "overlay"))
+                return
+            except Exception:
+                pass
         self.setStyleSheet(
             "QDialog{background:#14171f;}"
             "QLabel#wdtitle{color:#f2f6fb;font-size:17px;font-weight:600;}"
@@ -7171,7 +7257,7 @@ class LyricOverlay(QWidget):
             self._style_actions[key] = a
 
         # 配色主题（v2.0）：托盘快捷换肤，每项带自己的双色渐变小图标
-        m_color = menu.addMenu(_tr("配色主题"))
+        m_color = menu.addMenu(_tr("歌词强调色"))
         self._color_auto_action = m_color.addAction(_tr("封面取色（自动）"))
         self._color_auto_action.setCheckable(True)
         self._color_auto_action.triggered.connect(lambda: self.set_color_mode("auto"))
@@ -7335,7 +7421,7 @@ class LyricOverlay(QWidget):
         self._a_keep = act_keep
         self._a_saver_auto = act_saver_auto
         menu.aboutToShow.connect(self._sync_tray_menu)
-        menu.setStyleSheet(menu_qss(self.accent1))
+        menu.setStyleSheet(menu_qss(self.accent1, self._current_theme()))
         self._tray_menu = menu
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(
@@ -7609,17 +7695,31 @@ class LyricOverlay(QWidget):
     def _apply_accent_ui(self):
         """封面主色变化后，同步面板与托盘菜单的配色"""
         if getattr(self, "panel", None) is not None:
-            self.panel.update_accent(self.accent1)
+            self.panel.set_content_accent(self.accent1)
         # The embedded settings page owns a second panel instance; without this
         # its switches/segments keep the previous accent after cover recoloring.
         player = getattr(self, "main_player", None)
         embedded = getattr(player, "settings_page", None)
         if embedded is not None and getattr(embedded, "panel", None) is not None:
-            embedded.panel.update_accent(self.accent1)
+            embedded.panel.set_content_accent(self.accent1)
         try:
-            self._tray_menu.setStyleSheet(menu_qss(self.accent1))
+            self._tray_menu.setStyleSheet(menu_qss(self.accent1, self._current_theme()))
         except Exception:
             pass
+
+    def _current_theme(self):
+        """Active ui_theme.Theme for chrome surfaces (menus/dialogs/panels).
+
+        Returns None when no ThemeManager has been attached yet (very early
+        startup); callers fall back to the classic dark literal QSS then.
+        """
+        manager = getattr(self, "theme_manager", None)
+        if manager is None:
+            return None
+        try:
+            return manager.current()
+        except Exception:
+            return None
 
     def set_style_mode(self, mode: str):
         if mode in STYLE_NAMES and mode != self.style_mode:
@@ -10136,7 +10236,7 @@ class LyricOverlay(QWidget):
         act_quit.triggered.connect(self._quit)
         # 右键菜单每次弹出重建，但**必须套皮肤**：不套就是系统原生白底菜单，
         # 和整套深色 UI 直接打架。子菜单（样式/显示模式/摆放位置…）会继承这份样式表。
-        menu.setStyleSheet(menu_qss(self.accent1))
+        menu.setStyleSheet(menu_qss(self.accent1, self._current_theme()))
         return menu
 
     def _show_menu(self, global_pos):
@@ -10413,6 +10513,30 @@ class Switch(QWidget):
         p.end()
 
 
+def _qss_color(value, fallback: QColor) -> QColor:
+    """把主题 token（'#RRGGBB' 或 'rgba(r,g,b,a)'）解析成 QColor。
+
+    Theme.border_strong 之类是 rgba() 字符串，QColor 不认这种写法；
+    直接 QColor("rgba(...)") 会得到无效色（画出来是黑的）。
+    """
+    text = str(value or "").strip()
+    if not text:
+        return QColor(fallback)
+    if text.lower().startswith("rgb"):
+        body = text[text.find("(") + 1:text.rfind(")")]
+        parts = [p.strip() for p in body.split(",") if p.strip()]
+        try:
+            r, g, b = (max(0, min(255, int(round(float(parts[i]))))) for i in range(3))
+            a = 255
+            if len(parts) > 3:
+                a = max(0, min(255, int(round(float(parts[3]) * 255))))
+            return QColor(r, g, b, a)
+        except Exception:
+            return QColor(fallback)
+    color = QColor(text)
+    return color if color.isValid() else QColor(fallback)
+
+
 class Segmented(QWidget):
     """分段选择器：2~4 个互斥选项，选中段用主色填充，比下拉框更直观"""
 
@@ -10424,6 +10548,7 @@ class Segmented(QWidget):
         self._cur = current if current is not None else self._items[0][0]
         self._h = int(h)
         self._accent = QColor(DEFAULT_ACCENT1)
+        self._theme = None
         self.setFixedHeight(self._h)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setCursor(Qt.PointingHandCursor)
@@ -10439,7 +10564,7 @@ class Segmented(QWidget):
 
     def _label_font(self) -> QFont:
         f = QFont("Microsoft YaHei UI")
-        f.setPixelSize(max(11, int(self._h * 0.42)))
+        f.setPixelSize(max(12, int(self._h * 0.42)))
         f.setBold(True)
         return f
 
@@ -10467,7 +10592,7 @@ class Segmented(QWidget):
     def sizeHint(self):
         # 必须有真实 sizeHint，否则 Expanding 策略下在面板布局里塌缩成 0 宽（控件看不见）
         f = QFont("Microsoft YaHei UI")
-        f.setPixelSize(max(11, int(self._h * 0.42)))
+        f.setPixelSize(max(12, int(self._h * 0.42)))
         f.setBold(True)
         fm = QFontMetrics(f)
         pad = 10
@@ -10482,6 +10607,11 @@ class Segmented(QWidget):
 
     def set_accent(self, c: QColor):
         self._accent = QColor(c)
+        self.update()
+
+    def set_theme(self, theme):
+        """深浅主题下轨道/文字改用 token，避免浅色里出现一条黑槽。"""
+        self._theme = theme
         self.update()
 
     def setValue(self, key, emit: bool = False, animate: bool = True):
@@ -10556,10 +10686,24 @@ class Segmented(QWidget):
         # 轨道要比卡片底**明显更深**才读得出"凹槽"。原来用 #181b22，跟卡片底色
         # （#1c2029~#14171e）几乎一样，轨道整个糊进卡片里，看着像选项在飘。
         # 再用竖向渐变把顶部压得更暗，凹槽就有了"深度"而不只是一块深色。
+        theme = self._theme
+        if theme is None:
+            track_top, track_bottom = QColor(7, 9, 13), QColor(20, 24, 31)
+            edge = QColor(0, 0, 0, 120)
+            ink_sel, ink_hover, ink_idle = (QColor(18, 20, 26),
+                                            QColor(214, 221, 233),
+                                            QColor(178, 185, 198))
+        else:
+            sunken = _qss_color(theme.surface_sunken, QColor(20, 24, 31))
+            track_top, track_bottom = sunken.darker(106), sunken
+            edge = _qss_color(theme.border_strong, QColor(0, 0, 0, 120))
+            ink_sel = _qss_color(theme.on_accent, QColor(18, 20, 26))
+            ink_hover = _qss_color(theme.text, QColor(214, 221, 233))
+            ink_idle = _qss_color(theme.text_secondary, QColor(178, 185, 198))
         tg = QLinearGradient(0, 0, 0, h)
-        tg.setColorAt(0.0, QColor(7, 9, 13))
-        tg.setColorAt(1.0, QColor(20, 24, 31))
-        p.setPen(QPen(QColor(0, 0, 0, 120), 1))
+        tg.setColorAt(0.0, track_top)
+        tg.setColorAt(1.0, track_bottom)
+        p.setPen(QPen(edge, 1))
         p.setBrush(QBrush(tg))
         p.drawRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), rad, rad)
         n = max(1, len(self._items))
@@ -10586,11 +10730,11 @@ class Segmented(QWidget):
         for i, (_k, label) in enumerate(self._items):
             sel = abs(self._idx - i) < 0.5
             if sel:
-                p.setPen(QColor(18, 20, 26))
+                p.setPen(ink_sel)
             elif i == self._hover_i:
-                p.setPen(QColor(214, 221, 233))        # 悬停的未选项提亮，给点击预期
+                p.setPen(ink_hover)                    # 悬停的未选项提亮，给点击预期
             else:
-                p.setPen(QColor(178, 185, 198))
+                p.setPen(ink_idle)
             p.drawText(QRectF(i * seg, 0, seg, h), Qt.AlignCenter,
                        fm.elidedText(label, Qt.ElideRight, max(8, int(seg) - 8)))
         if self.hasFocus():
@@ -11425,7 +11569,12 @@ class SettingsPanel(QWidget):
         # 焦点描边（看着像"预设选中了某个操作"）。Tab 仍然能在控件间走。
         self.setFocusPolicy(Qt.StrongFocus)
         self.resize(548, 760)
-        self._accent = QColor(ov.accent1)
+        self._content_accent = QColor(ov.accent1)
+        self._theme = self._current_theme()
+        self._chrome_accent = (QColor(self._theme.accent_fill)
+                               if self._theme is not None
+                               else QColor(ov.accent1))
+        self._accent = self._chrome_accent
         self._switches = []
         self._segs = []
         self._fontrows = {}
@@ -11435,18 +11584,48 @@ class SettingsPanel(QWidget):
         self.refresh()
         self.font_prog.connect(self._on_font_prog)
         self.font_done.connect(self._on_font_done)
-        # 打开时的淡入动画
-        self._fx = QGraphicsOpacityEffect(self)
-        self.setGraphicsEffect(self._fx)
-        self._fx.setOpacity(0.0)
+        # 打开时的淡入动画。效果只在独立窗口显示时临时挂载，
+        # 嵌入设置页由主窗口的页面动画负责，避免两层淡入叠加。
+        self._fx = None
         self._fade = QVariantAnimation(self)
-        self._fade.setDuration(180)
         self._fade.setStartValue(0.0)
         self._fade.setEndValue(1.0)
-        self._fade.valueChanged.connect(self._fx.setOpacity)
+        self._fade.valueChanged.connect(self._set_fade_opacity)
+        self._fade.finished.connect(self._finish_fade)
         self._rt = QTimer(self)
         self._rt.timeout.connect(self._refresh_play_state)
         self._rt.start(500)
+
+    def _fade_duration(self) -> int:
+        manager = getattr(self.ov, "theme_manager", None)
+        if manager is not None:
+            try:
+                return max(0, int(manager.duration("m_base")))
+            except (RuntimeError, AttributeError):
+                pass
+        theme = getattr(self, "_theme", None)
+        return max(0, int(getattr(theme, "m_base", 180))) if theme else 180
+
+    def _current_theme(self):
+        getter = getattr(self.ov, "_current_theme", None)
+        if callable(getter):
+            try:
+                return getter()
+            except Exception:
+                pass
+        return None
+
+    def _set_fade_opacity(self, value):
+        if self._fx is not None:
+            self._fx.setOpacity(float(value))
+
+    def _finish_fade(self):
+        self._clear_fade()
+
+    def _clear_fade(self):
+        self._fade.stop()
+        self.setGraphicsEffect(None)
+        self._fx = None
 
     def showEvent(self, e):
         super().showEvent(e)
@@ -11459,8 +11638,17 @@ class SettingsPanel(QWidget):
                 avail = scr.availableGeometry().width() if scr is not None else 1280
                 if need > self.width():
                     self.resize(min(need, max(520, avail - 80)), self.height())
-        self._fade.stop()
-        self._fade.start()
+        duration = self._fade_duration()
+        if not self.isWindow() or duration <= 0:
+            self._clear_fade()
+        else:
+            if self._fx is None:
+                self._fx = QGraphicsOpacityEffect(self)
+                self.setGraphicsEffect(self._fx)
+            self._fade.stop()
+            self._fade.setDuration(duration)
+            self._fx.setOpacity(0.0)
+            self._fade.start()
         # 焦点落在面板本身，而不是自动落到第一个按钮上（否则首个按钮一开面板就带焦点环）
         self.setFocus()
 
@@ -11468,7 +11656,7 @@ class SettingsPanel(QWidget):
 
     def _switch(self, checked: bool, slot, tip: str = "") -> Switch:
         sw = Switch(checked)
-        sw.set_accent(self._accent)
+        sw.set_accent(self._chrome_accent)
         sw.toggled.connect(slot)
         if tip:
             sw.setToolTip(tip)
@@ -11558,7 +11746,7 @@ class SettingsPanel(QWidget):
             b.setObjectName(obj)
             b.setCursor(Qt.PointingHandCursor)
             if obj == "ctlplay":
-                b.setIcon(make_play_icon(bg=self._accent, glyph="play"))
+                b.setIcon(make_play_icon(bg=self._chrome_accent, glyph="play"))
             else:
                 b.setIcon(make_media_icon(ic))
             b.setIconSize(QSize(sz, sz))
@@ -11635,10 +11823,10 @@ class SettingsPanel(QWidget):
         cv.addWidget(c1)
 
         # ---- 配色主题（v2.0）----
-        c7, l7 = make_card(_tr("配色主题"))
+        c7, l7 = make_card(_tr("歌词强调色"))
         self.color_seg = Segmented([("auto", _tr("封面取色")), ("fixed", _tr("固定主题"))],
                                    ov.color_mode, h=30)
-        self.color_seg.set_accent(self._accent)
+        self.color_seg.set_accent(self._chrome_accent)
         self.color_seg.changed.connect(self._on_color_mode)
         self._segs.append(self.color_seg)
         l7.addWidget(self.color_seg)
@@ -11693,7 +11881,7 @@ class SettingsPanel(QWidget):
 
         self.dm_seg = Segmented([("desktop", _tr("常驻桌面")), ("topmost", _tr("置顶悬浮"))],
                                 ov.display_mode, h=32)
-        self.dm_seg.set_accent(self._accent)
+        self.dm_seg.set_accent(self._chrome_accent)
         self.dm_seg.changed.connect(self._on_display_seg)
         self._segs.append(self.dm_seg)
         l2.addWidget(make_row(_tr("显示模式"), self.dm_seg, expand=True))
@@ -11790,7 +11978,7 @@ class SettingsPanel(QWidget):
         self.saver_seg = Segmented([("particle", _tr("3D 粒子")), ("minimal", _tr("极简")),
                                     ("bars", _tr("音浪")), ("orbits", _tr("星轨"))],
                                    ov.saver_style, h=30)
-        self.saver_seg.set_accent(self._accent)
+        self.saver_seg.set_accent(self._chrome_accent)
         self.saver_seg.changed.connect(self._on_saver_style)
         self._segs.append(self.saver_seg)
         l5.addWidget(make_row(_tr("屏保风格"), self.saver_seg, expand=True))
@@ -11804,7 +11992,7 @@ class SettingsPanel(QWidget):
         self.saver_preview.setToolTip(_tr("当前选择的屏保风格预览（点击可立即进入屏保）"))
         self.saver_preview.setAccessibleName(
             _tr("当前选择的屏保风格预览（点击可立即进入屏保）"))
-        self.saver_preview.set_accent(self._accent)
+        self.saver_preview.set_accent(self._content_accent)
         self.saver_preview.activated.connect(ov.open_saver)
         self.saver_preview.mousePressEvent = lambda _e: ov.open_saver()
         l5.addWidget(self.saver_preview)
@@ -12115,10 +12303,11 @@ class SettingsPanel(QWidget):
         if self.ov.color_mode == "fixed":
             t = COLOR_THEME_MAP.get(self.ov.color_theme) or COLOR_THEMES[0]
             self.color_hint.setText(
-                _tr("当前主题：%s —— 悬浮条、氛围光晕与面板配色已同步换肤") % _tr(t[1]))
+                _tr("当前歌词强调色：%s —— 歌词高亮与氛围光晕已同步") % _tr(t[1]))
         else:
             self.color_hint.setText(
-                _tr("跟随专辑封面主色自动配色，换歌即换色；点选下方色板可固定主题。"))
+                _tr("跟随专辑封面主色自动为歌词与氛围取色，换歌即换色；"
+                    "点选下方色板可固定歌词强调色。"))
 
     def _on_display_seg(self, key):
         self.ov.set_display_mode(key)
@@ -12309,30 +12498,146 @@ class SettingsPanel(QWidget):
                  + " — " + IDLE_HINT_EN + "）") if _UI_LANG == "zh-CN" \
                 else (_t + " · " + _h)
         self.song_label.setText(t)
+        theme = getattr(self, "_theme", None)
         self.b_toggle.setIcon(make_play_icon(
-            bg=self._accent,
-            glyph="pause" if self.ov.status == "PLAYING" else "play"))
+            bg=self._chrome_accent,
+            glyph="pause" if self.ov.status == "PLAYING" else "play",
+            color=(QColor(theme.on_accent) if theme is not None
+                   else QColor(255, 255, 255, 250))))
 
-    def update_accent(self, accent: QColor):
-        self._accent = QColor(accent)
+    def set_theme(self, theme):
+        """Chrome accent follows the app theme; cover colour is content-only."""
+        self._theme = theme
+        self._chrome_accent = QColor(theme.accent_fill)
+        self._accent = self._chrome_accent
         for sw in self._switches:
-            sw.set_accent(self._accent)
+            sw.set_accent(self._chrome_accent)
         for sg in self._segs:
-            sg.set_accent(self._accent)
-        if getattr(self, "saver_preview", None) is not None:
-            self.saver_preview.set_accent(self._accent)
+            sg.set_accent(self._chrome_accent)
+            sg.set_theme(theme)
         self._apply_qss()
-        # 屏保缩略图是用当时的主色现渲的，换主题 / 换歌后不改就会一直显示旧配色
-        self._update_saver_preview()
+        self._refresh_media_icons()
         self._refresh_play_state()
 
+    def _refresh_media_icons(self):
+        """上一首/下一首/屏保图标按主题重画：默认色 #D6DCE8 是给深色面板的，
+        放到浅色卡片上只有 1.6:1，几乎看不见。"""
+        theme = getattr(self, "_theme", None)
+        color = (QColor(theme.text_secondary) if theme is not None
+                 else QColor(214, 220, 232))
+        for name, kind in (("b_prev", "prev"), ("b_next", "next"),
+                           ("b_saver", "saver")):
+            button = getattr(self, name, None)
+            if button is not None:
+                button.setIcon(make_media_icon(kind, color=color))
+
+    def set_content_accent(self, accent: QColor):
+        """Album-cover accent: lyric preview / ambience only, never chrome."""
+        self._content_accent = QColor(accent)
+        if getattr(self, "saver_preview", None) is not None:
+            self.saver_preview.set_accent(self._content_accent)
+        # 屏保缩略图是用当时的主色现渲的，换歌后不改就会一直显示旧配色
+        self._update_saver_preview()
+
+    def update_accent(self, accent: QColor):
+        # Kept for callers that still speak the pre-theme API.
+        self.set_content_accent(accent)
+
     def _apply_qss(self):
-        a = self._accent.name()
-        al = self._accent.lighter(132).name()     # 主色提亮：按钮 / 进度条的渐变顶色
+        a = self._chrome_accent.name()
+        al = self._chrome_accent.lighter(132).name()  # 主色提亮：按钮 / 进度条的渐变顶色
         arrow = combo_arrow_url()
         arrow_rule = ("QComboBox::down-arrow { image: url(%s); width: 12px; height: 12px; }\n"
                       "        QComboBox::down-arrow:on { image: url(%s); }" % (arrow, arrow)) \
             if arrow else "QComboBox::down-arrow { image: none; width: 0; height: 0; }"
+        theme = getattr(self, "_theme", None)
+        if theme is None:
+            theme_getter = getattr(self.ov, "_current_theme", None)
+            if callable(theme_getter):
+                try:
+                    theme = theme_getter()
+                except Exception:
+                    theme = None
+        if theme is not None:
+            try:
+                from ui_theme import build_qss
+                base = build_qss(theme, "overlay")
+                extra = """
+        QWidget#settingsSurface, QWidget#content { background: __BG__; }
+        QWidget#head { background: __SURF__;
+                       border-bottom: 1px solid __DIVIDER__; }
+        QScrollArea#scroll { background: __BG__; border: none; }
+        QScrollArea#scroll > QWidget > QWidget { background: __BG__; }
+        QLabel#title { color: __TEXT__; font-size: 19px; font-weight: 700; }
+        QLabel#song  { color: __TEXT2__; font-size: 12px; }
+        QLabel#hint  { color: __MUTED__; font-size: 12px; }
+        QLabel#footer { color: __MUTED__; font-size: 12px; padding: 4px 0 2px 0; }
+        QLabel#value { color: __TEXT2__; font-size: 12px; }
+        QLabel#rowlabel { color: __TEXT2__; font-size: 13px; }
+        QLabel#rowhint { color: __MUTED__; font-size: 12px; }
+        QLabel#cardtitle { color: __A2__; font-size: 12px; font-weight: 700;
+                           letter-spacing: 1px;
+                           border-left: 3px solid __A2__;
+                           padding-left: 8px; padding-top: 1px; padding-bottom: 1px; }
+        QWidget#card { background: __SURF__;
+                       border: 1px solid __BORDER__;
+                       border-radius: __R_CARD__px; }
+        QWidget#keys { background: __SUNKEN__;
+                       border: 1px solid __BORDER__;
+                       border-radius: 14px; }
+        QLabel#keyitem { color: __MUTED__; font-size: 12px;
+                         font-family: "Consolas", monospace; }
+        QPushButton#primary { background: __ACCENT__; color: __ONACCENT__;
+                              border: none; font-weight: 700; padding: 8px 12px; }
+        QPushButton#primary:hover { background: __ACCENTH__; }
+        QPushButton#primary:pressed { background: __ACCENTP__; }
+        QPushButton#primary:focus { border: 2px solid __FOCUS__; }
+        QPushButton#ctl:focus { border-color: __FOCUS__; }
+        QPushButton#ctlplay:focus { border: 2px solid __FOCUS__; border-radius: 17px; }
+        QPushButton#ghost:focus, QPushButton#saver:focus,
+        QPushButton#dl:focus, QPushButton#dluse:focus, QPushButton#dlon:focus {
+            border: 2px solid __FOCUS__; }
+        QScrollBar::handle:vertical { background: __SBH__; border-radius: 5px;
+                                      min-height: 38px; }
+        QScrollBar::handle:vertical:hover { background: __BSTRONG__; }
+        /* 通用滑块（歌词校准等）：不写就会掉回 Windows 默认高亮蓝 + 方钮。
+           轨道用凹槽色、已填充段用主色、手柄用页面底色 + 强边界。 */
+        QSlider::groove:horizontal { height: 6px; border-radius: 3px;
+                                     background: __SUNKEN__;
+                                     border: 1px solid __BORDER__; }
+        QSlider::sub-page:horizontal { background: __ACCENT__;
+                                       border-radius: 3px; }
+        QSlider::handle:horizontal { width: 14px; height: 14px; margin: -5px 0;
+                                     border-radius: 7px; background: __BG__;
+                                     border: 1px solid __BSTRONG__; }
+        QSlider::handle:horizontal:hover { border-color: __ACCENT__; }
+        /* 嵌入设置页时，头部不再是整窗通栏，收成和下面卡片同一套圆角卡片 */
+        QWidget#settingsSurface QWidget#head { background: __SURF__;
+                                     border: 1px solid __BORDER__;
+                                     border-radius: __R_CARD__px; }
+        """
+                extra = (extra
+                         .replace("__BG__", theme.bg)
+                         .replace("__SURF__", theme.surface_raised)
+                         .replace("__SUNKEN__", theme.surface_sunken)
+                         .replace("__DIVIDER__", theme.divider)
+                         .replace("__TEXT__", theme.text)
+                         .replace("__TEXT2__", theme.text_secondary)
+                         .replace("__MUTED__", theme.text_muted)
+                         .replace("__A2__", theme.accent_text)
+                         .replace("__ACCENT__", theme.accent_fill)
+                         .replace("__ACCENTH__", theme.accent_hover)
+                         .replace("__ACCENTP__", theme.accent_pressed)
+                         .replace("__ONACCENT__", theme.on_accent)
+                         .replace("__FOCUS__", theme.focus)
+                         .replace("__BORDER__", theme.border)
+                         .replace("__BSTRONG__", theme.border_strong)
+                         .replace("__SBH__", theme.scrollbar_handle)
+                         .replace("__R_CARD__", str(UI_R_CARD)))
+                self.setStyleSheet(base + "\n" + extra)
+                return
+            except Exception:
+                pass
         qss = """
         QWidget { background: transparent; color: #dfe4ee; font-size: 13px;
                   font-family: "Microsoft YaHei UI"; }
@@ -12350,14 +12655,14 @@ class SettingsPanel(QWidget):
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
         QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
         QLabel#title { color: #f2f5fa; font-size: 19px; font-weight: 700; }
-        QLabel#vertag { color: #7f8798; font-size: 11px; padding: 2px 7px;
+        QLabel#vertag { color: #7f8798; font-size: 12px; padding: 2px 7px;
                         border: 1px solid rgba(255,255,255,26); border-radius: 8px; }
         QLabel#song  { color: #98a0b2; font-size: 12px; }
         QLabel#hint  { color: #79808f; font-size: 12px; }
-        QLabel#footer { color: #79808f; font-size: 11px; padding: 4px 0 2px 0; }
+        QLabel#footer { color: #79808f; font-size: 12px; padding: 4px 0 2px 0; }
         QLabel#value { color: #cfd6e4; font-size: 12px; }
         QLabel#rowlabel { color: #c6cddb; font-size: 13px; }
-        QLabel#rowhint { color: #838a99; font-size: 11px; }
+        QLabel#rowhint { color: #838a99; font-size: 12px; }
         /* 分区标题：主色文字 + 左侧 3px 主色小竖条。比单纯染色更容易一眼定位分区，
            竖条也把标题和卡片左内边距对齐成一条视觉轴。 */
         QLabel#cardtitle { color: __A__; font-size: 12px; font-weight: 700;
@@ -12365,7 +12670,7 @@ class SettingsPanel(QWidget):
                            border-left: 3px solid __A__;
                            padding-left: 8px; padding-top: 1px; padding-bottom: 1px; }
         QLabel#fontname { color: #d6dbe6; font-size: 13px; font-weight: 600; }
-        QLabel#fontnote { color: #7d8595; font-size: 11px; }
+        QLabel#fontnote { color: #7d8595; font-size: 12px; }
         /* 卡片：顶部一条受光带 + 上亮下暗的分层描边。原来只有一层平描边 + 微渐变，
            读起来还是"贴在面板上的一张色纸"；补上「上缘接光 / 下缘落影」之后，
            它才成为一块"微微抬起的板"。 */
@@ -12416,6 +12721,11 @@ class SettingsPanel(QWidget):
                               border-color: __MID__; border-top-color: rgba(255,255,255,10); }
         /* 键盘 Tab 到按钮时给个描边反馈；边框宽度不变，所以不会有布局跳动 */
         QPushButton:focus { border-color: __A__; border-top-color: __A__; }
+        QPushButton#ctl:focus { border-color: __A__; border-top-color: __A__; }
+        QPushButton#ctlplay:focus { border: 2px solid __A__; border-radius: 17px; }
+        QPushButton#ghost:focus, QPushButton#saver:focus,
+        QPushButton#dl:focus, QPushButton#dluse:focus, QPushButton#dlon:focus {
+            border: 2px solid __A__; }
         QPushButton:disabled { color: #6b7280; border-color: rgba(255,255,255,14); }
         /* 头部控制键：软图标按钮——去掉硬边框感（半透明填充 + 大圆角），
            和下面卡片的圆润语言对齐。原来是棱角分明的方盒，像系统默认控件。 */
