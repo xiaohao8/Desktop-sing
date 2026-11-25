@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
+import re
+from string import Template
 import winreg
 
 from PySide6.QtCore import QObject, Qt, Signal
@@ -381,3 +383,319 @@ class ThemeManager(QObject):
 
 def qss_tokens(theme: Theme) -> dict[str, str]:
     return {field.name: str(getattr(theme, field.name)) for field in fields(theme)}
+
+
+# ---------------------------------------------------------------------------
+# QSS builders
+#
+# Templates use ``string.Template`` ``$token`` placeholders: QSS is full of
+# ``{}`` braces which would fight ``str.format``. Every colour that styles
+# application chrome (window shell, bars, menus, dialogs) is emitted here and
+# only here, so the widget code stays free of colour literals.
+
+_MAIN_QSS = Template(r"""
+* { font-family: $font_text; }
+QFrame#shell { background: $bg;
+               border: 1px solid $border; border-radius: 26px; }
+QWidget#body { background: transparent; }
+QWidget#titlebar { background: $surface; }
+QLabel#pagecrumb { color: $text; font-size: 14px; font-weight: 750; }
+QPushButton#quick { background: $surface_raised; color: $text_muted;
+                    border: 1px solid $border; border-radius: 13px;
+                    padding: 6px 11px; font-size: 12px; font-weight: 650; }
+QPushButton#quick:hover { background: $surface_hover; color: $text;
+                          border-color: $border_strong; }
+QPushButton#quick:pressed { background: $surface_sunken; }
+QPushButton#winbtn, QPushButton#winclose { background: transparent; border: none; }
+QWidget#sidebar { background: $surface;
+                   border-right: 1px solid $divider; }
+QLabel#brandmark { background: $accent_fill; color: $on_accent;
+                   border-radius: 13px; font-size: 19px; font-weight: 700; }
+QLabel#brandname { color: $text; font-size: 17px; font-weight: 800; }
+QLabel#brandsub { color: $text_muted; font-size: 11px; letter-spacing: 2px; }
+QLabel#sidestatus { color: $text_muted; font-size: 12px; padding: 2px 4px; }
+QLabel#sidestatus[live="1"] { color: $success; }
+QPushButton#nav { text-align: left; padding: 0 11px;
+                  border: 2px solid transparent; border-left: 3px solid transparent;
+                  border-radius: 10px;
+                  color: $text_muted; font-size: 13px; font-weight: 650; }
+QPushButton#nav:hover { background: $surface_hover; color: $text; }
+QPushButton#nav:pressed { background: $surface_sunken; color: $text; }
+QPushButton#nav:checked { background: $surface_raised; color: $text;
+                          border-left: 3px solid $accent_fill; }
+QLabel#sidehead { color: $text_muted; font-size: 11px; font-weight: 700;
+                  letter-spacing: 1px; }
+QLabel#sidecount { color: $text_muted; font-size: 11px; }
+QLabel#sideempty { color: $text_disabled; font-size: 12px; padding: 8px 4px; }
+QPushButton#recent { background: transparent; color: $text_secondary; border: none;
+                     border-left: 3px solid transparent; border-radius: 11px;
+                     padding: 7px 9px 7px 11px; text-align: left;
+                     font-size: 12px; }
+QPushButton#recent:hover { background: $surface_hover; color: $text;
+                           border-left-color: $accent_fill; }
+QLabel#sidetip { color: $text_muted; font-size: 11px;
+                 border-top: 1px solid $divider; padding-top: 10px; }
+QStackedWidget#stack { background: transparent; }
+QWidget#stage { background: $bg; }
+QLabel#stageeyebrow { color: $text_muted; font-size: 11px;
+                      letter-spacing: 2px; font-weight: 700; }
+QLabel#stagetrack { color: $text; font-size: 26px; font-weight: 800; }
+QLabel#stageartist { color: $text_secondary; font-size: 13px; }
+QPushButton#stageghost { background: $surface_raised; color: $text_secondary;
+                         border: 1px solid $border; border-radius: 12px;
+                         padding: 5px 10px; font-size: 12px; }
+QPushButton#stageghost:hover { background: $surface_hover; color: $text; }
+QWidget#reportPage, QWidget#historyPage { background: $bg; }
+QWidget#reportScroll { background: $bg; border: none; }
+QWidget#reportBody { background: transparent; }
+QWidget#settingsPage { background: $bg; }
+QLabel#reportTitle { color: $text; font-size: 26px; font-weight: 800; }
+QLabel#reportSub { color: $text_muted; font-size: 13px; }
+QLabel#privacyChip { color: $success; background: $success_soft;
+                     border: 1px solid $success; border-radius: 12px;
+                     padding: 5px 9px; font-size: 12px; }
+QPushButton#dangerGhost { background: transparent; color: $danger;
+                          border: 1px solid $danger; border-radius: 12px;
+                          padding: 6px 10px; font-size: 12px; }
+QPushButton#dangerGhost:hover { background: $danger; color: $bg; }
+QFrame#reportHero { background: $surface_raised;
+                    border: 1px solid $border; border-top-color: $border_strong;
+                    border-radius: 24px; }
+QLabel#heroCaption { color: $text_muted; font-size: 12px; font-weight: 700; }
+QLabel#heroChip { color: $accent_text; background: $accent_soft;
+                  border-radius: 10px; padding: 4px 9px; font-size: 11px; }
+QLabel#heroValue { color: $text; font-size: 56px; font-weight: 700; }
+QLabel#heroUnit { color: $text_muted; font-size: 12px; }
+QFrame#statTile, QFrame#reportCard {
+    background: $surface_raised;
+    border: 1px solid $border; border-top-color: $border_strong;
+    border-radius: 16px; }
+QLabel#statValue { color: $text; font-size: 27px; font-weight: 700; }
+QLabel#statCaption { color: $text_muted; font-size: 11px; }
+QLabel#cardHead { color: $text_muted; font-size: 11px; font-weight: 700;
+                  letter-spacing: 1px; }
+QLabel#artistBig { color: $text; font-size: 24px; font-weight: 800; }
+QLabel#artistMeta { color: $accent_text; font-size: 12px; font-weight: 700;
+                    font-feature-settings: "tnum" 1; }
+QLabel#muted { color: $text_muted; font-size: 12px; }
+QLabel#rankList, QLabel#trackRank { color: $text_secondary; font-size: 12px; }
+QLabel#reportEmpty { color: $text_muted; background: $surface;
+                     border: 1px dashed $border_strong; border-radius: 20px;
+                     font-size: 13px; padding: 24px; }
+QScrollArea { background: transparent; border: none; }
+QScrollArea > QWidget > QWidget { background: transparent; }
+QScrollBar:vertical { background: transparent; width: 8px; margin: 2px; }
+QScrollBar::handle:vertical { background: $scrollbar_handle; border-radius: 4px;
+                              min-height: 30px; }
+QScrollBar::handle:vertical:hover { background: $border_strong; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QLabel#historyPageTitle { color: $text; font-size: 28px; font-weight: 600; }
+QLabel#historyPageSub { color: $text_muted; font-size: 20px; font-weight: 400; }
+QWidget#historyRow { background: transparent; border: none;
+                     border-bottom: 1px solid $divider; border-radius: 12px; }
+QWidget#historyRow:hover { background: $surface_hover; }
+QWidget#historyRow[current="1"] { background: $accent_soft;
+                                  border-left: 3px solid $accent_fill; }
+QWidget#historyRow[external="1"] { background: transparent;
+                                   border-left: 3px solid transparent; }
+QWidget#historyRow[external="1"] QLabel { color: $text_disabled; }
+QLabel#historyCover { background: $surface_raised; color: $text_secondary;
+                      border-radius: 8px; font-size: 18px; font-weight: 600; }
+QLabel#historyTitle { color: $text; font-size: 15px; font-weight: 600; }
+QLabel#historyArtist { color: $text_muted; font-size: 12px; font-weight: 400; }
+QLabel#historyMeta { color: $text_muted; font-size: 12px; font-weight: 400;
+                     font-feature-settings: "tnum" 1; }
+QWidget#playlistPage { background: $bg; }
+QLabel#playlistPageTitle { color: $text; font-size: 26px; font-weight: 800; }
+QLabel#playlistSubtitle { color: $text_muted; font-size: 13px; font-weight: 400; }
+QFrame#playlistPanel { background: $surface_raised;
+                       border: 1px solid $border;
+                       border-radius: 16px; }
+QLineEdit#playlistInput { background: $surface_sunken; color: $text;
+                          border: 1px solid $border;
+                          border-radius: 10px; padding: 8px 12px;
+                          font-size: 13px; font-weight: 600; }
+QLineEdit#playlistInput:hover { border-color: $border_strong; }
+QLineEdit#playlistInput:focus { border: 2px solid $focus; }
+QLineEdit#playlistInput[error="1"] { border: 2px solid $danger; }
+QPushButton#primary { background: $accent_fill; color: $on_accent;
+                      border: none; border-radius: 10px;
+                      padding: 8px 16px; font-size: 13px; font-weight: 600; }
+QPushButton#primary:hover { background: $accent_hover; }
+QPushButton#primary:pressed { background: $accent_pressed; }
+QPushButton#primary:focus { border: 2px solid $focus; }
+QPushButton#primary:disabled { background: $surface_sunken; color: $text_disabled; }
+QLabel#playlistCompliance { color: $text_muted; font-size: 12px; font-weight: 400; }
+QLabel#playlistError { color: $danger; font-size: 12px; font-weight: 400; }
+QLabel#playlistSuccess { color: $success; font-size: 12px; font-weight: 500; }
+QLabel#playlistSection { color: $text; font-size: 16px; font-weight: 700; }
+QLabel#playlistCount { color: $text_muted; font-size: 12px; font-weight: 500; }
+QPushButton#playlistRow { background: transparent;
+                          border: none;
+                          border-bottom: 1px solid $divider;
+                          border-radius: 12px; text-align: left; }
+QPushButton#playlistRow:hover { background: $surface_hover; }
+QPushButton#playlistRow:pressed { background: $accent_soft; }
+QPushButton#playlistRow:checked { background: $accent_soft;
+                                  border-left: 3px solid $accent_fill; }
+QPushButton#playlistRow:focus { border: 2px solid $focus; }
+QLabel#playlistCover { background: $surface_raised; color: $text_secondary;
+                       border-radius: 8px; font-size: 18px; font-weight: 600; }
+QLabel#playlistTitle { color: $text; font-size: 14px; font-weight: 600; }
+QLabel#playlistArtist { color: $text_secondary; font-size: 12px; font-weight: 400; }
+QLabel#playlistMeta { color: $text_muted; font-size: 12px; font-weight: 400;
+                      font-feature-settings: "tnum" 1; }
+QLabel#playlistStatus { color: $text_muted; font-size: 12px; font-weight: 500; }
+QLabel#playlistStatus[matched="1"] { color: $success; }
+QFrame#playlistSkeleton { background: $surface;
+                          border-bottom: 1px solid $divider; }
+QLabel#playlistSkeletonCover { background: $surface_raised; border-radius: 8px; }
+QLabel#playlistSkeletonLine { background: $surface_raised; border-radius: 6px; }
+QFrame#playlistEmpty { background: $surface_raised;
+                       border: 1px solid $border;
+                       border-radius: 16px; }
+QLabel#playlistEmptyIcon { color: $text_muted; font-size: 48px; font-weight: 400; }
+QLabel#playlistEmptyTitle { color: $text; font-size: 20px; font-weight: 600; }
+QLabel#playlistEmptyDesc { color: $text_muted; font-size: 13px; font-weight: 400; }
+QLabel#historyEmptyIcon { color: $text_muted; font-size: 48px; font-weight: 400; }
+QLabel#historyEmptyTitle { color: $text; font-size: 20px; font-weight: 600; }
+QLabel#historyEmptyDesc { color: $text_muted; font-size: 13px; font-weight: 400; }
+QFrame#historySkeleton { background: $surface;
+                         border-bottom: 1px solid $divider; }
+QLabel#historySkeletonCover { background: $surface_raised; border-radius: 8px; }
+QLabel#historySkeletonLine { background: $surface_raised; border-radius: 6px; }
+QPushButton#historyAction { background: $accent_fill; color: $on_accent;
+                            border: none; border-radius: 14px; }
+QPushButton#historyAction:hover { background: $accent_hover; }
+QPushButton#historyAction:focus { border: 2px solid $focus; }
+QPushButton#ghost { background: transparent; color: $text;
+                    border: 1px solid $border_strong;
+                    border-radius: 18px; padding: 6px 16px;
+                    font-size: 13px; font-weight: 400; }
+QPushButton#ghost:hover { background: $surface_hover; }
+QPushButton#nav:focus { border-color: $focus; }
+QPushButton#nav:checked:focus { border-color: $focus; }
+QPushButton#recent:focus { background: $surface_hover; color: $text;
+                           border-left-color: $accent_fill; }
+QPushButton#quick:focus, QPushButton#stageghost:focus,
+QPushButton#dangerGhost:focus, QPushButton#ghost:focus {
+    border: 2px solid $focus; }
+QPushButton#historyRow:focus { border-color: $focus; }
+QFrame#playbar { background: $surface_raised;
+                 border: 1px solid $border; border-radius: 26px; }
+QPushButton#playprimary { background: $accent_fill; border: none; border-radius: 23px; }
+QPushButton#playprimary:hover { background: $accent_hover; }
+QPushButton#playprimary:pressed { background: $accent_pressed; }
+QPushButton#playprimary:focus { border: 2px solid $focus; }
+QPushButton#playround { background: $surface_hover; border: 1px solid $border;
+                        border-radius: 19px; }
+QPushButton#playround:hover { background: $surface_sunken; }
+QPushButton#playround:pressed { background: $surface_sunken; }
+QPushButton#playround:focus { border: 2px solid $focus; }
+QLabel#bartitle { color: $text; font-size: 14px; font-weight: 700; }
+QLabel#barartist { color: $text_secondary; font-size: 12px; }
+QLabel#bartime { color: $text_muted; font-size: 12px;
+                 font-feature-settings: "tnum" 1; }
+QSlider#progress::groove:horizontal { height: 4px; background: $surface_sunken;
+                                      border-radius: 2px; }
+QSlider#progress::sub-page:horizontal { background: $accent_fill; border-radius: 2px; }
+QSlider#progress::handle:horizontal { width: 12px; height: 12px; margin: -4px 0;
+                                      border-radius: 6px; background: $on_accent; }
+QSlider#progress::handle:horizontal:focus { border: 2px solid $focus; }
+QSlider#progress::handle:horizontal:hover { width: 12px; height: 12px; margin: -5px 0;
+                                            border-radius: 7px; background: $on_accent;
+                                            border: 1px solid $border_strong; }
+QFrame#appearanceCard { background: $surface_raised;
+                        border: 1px solid $border;
+                        border-radius: 16px; }
+QLabel#appearanceTitle { color: $text; font-size: 16px; font-weight: 700; }
+QLabel#appearanceHint { color: $text_muted; font-size: 12px; }
+QPushButton#appearanceSeg { background: transparent; color: $text_muted;
+                            border: 1px solid $border; border-radius: 12px;
+                            padding: 7px 0; font-size: 13px; font-weight: 600; }
+QPushButton#appearanceSeg:hover { background: $surface_hover; color: $text; }
+QPushButton#appearanceSeg:checked { background: $accent_soft; color: $accent_text;
+                                    border-color: $accent_fill; }
+QPushButton#appearanceSeg:focus { border: 2px solid $focus; }
+QPushButton#themeSwatch { background: $surface; border: 2px solid $border;
+                          border-radius: 12px; text-align: left;
+                          padding: 10px 12px; }
+QLabel#themeSwatchName { color: $text; font-size: 13px; font-weight: 650; }
+QLabel#themeSwatchDots { border-radius: 9px; }
+QPushButton#themeSwatch:hover { border-color: $border_strong; }
+QPushButton#themeSwatch:checked { border: 2px solid $focus; }
+QPushButton#themeSwatch:focus { border: 2px solid $focus; }
+""")
+
+
+_OVERLAY_QSS = Template(r"""
+* { font-family: $font_text; }
+QDialog, QMessageBox, QMenu { background: $surface_raised; color: $text; }
+QLabel { color: $text; font-size: $fs_bodypx; background: transparent; }
+QLabel#wdtitle { color: $text; font-size: 17px; font-weight: 600; }
+QLabel#wdbody { color: $text_secondary; font-size: 13px; }
+QPushButton { background: $surface; color: $text;
+              border: 1px solid $border; border-radius: $r_controlpx;
+              padding: 6px 18px; min-width: 60px; }
+QPushButton:hover { border-color: $focus; }
+QPushButton:default { background: $accent_fill; color: $on_accent;
+                      border: none; font-weight: 700; }
+QPushButton:default:hover { background: $accent_hover; }
+QPushButton#wdgo { background: $accent_fill; color: $on_accent; border: none;
+                   border-radius: $r_controlpx; padding: 8px 18px; font-weight: 600; }
+QPushButton#wdgo:hover { background: $accent_hover; }
+QPushButton#wdghost { background: transparent; color: $text_muted;
+                      border: 1px solid $border_strong;
+                      border-radius: $r_controlpx; padding: 8px 16px; }
+QPushButton#wdghost:hover { color: $text; border-color: $focus; }
+QMessageBox QLabel { color: $text; font-size: $fs_bodypx; }
+QMessageBox QLabel#qt_msgbox_informativelabel { color: $text_muted;
+                                                font-size: $fs_captionpx; }
+QMenu { background: $surface_raised; color: $text;
+        font-size: $fs_bodypx;
+        border: 1px solid $border; border-radius: 10px; padding: 6px; }
+QMenu::item { padding: 7px 30px 7px 26px; border-radius: 7px; }
+QMenu::item:selected { background: $accent_fill; color: $on_accent; }
+QMenu::item:disabled { color: $text_disabled; }
+QMenu::separator { height: 1px; background: $divider; margin: 6px 10px; }
+QMenu::indicator { width: 14px; height: 14px; margin-left: 7px; }
+QMenu::indicator:checked { background: $accent_fill; border-radius: 4px; }
+QMenu::right-arrow { width: 12px; }
+QToolTip { background: $surface_raised; color: $text;
+           border: 1px solid $border; padding: 4px 6px; }
+QWidget#overlaySurface { background: $surface_raised; color: $text; }
+QWidget#overlaySunken { background: $surface_sunken; color: $text; }
+""")
+
+
+_PLACEHOLDER_RE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*")
+
+
+def build_qss(theme: Theme, scope: str = "main") -> str:
+    """Render the application-chrome stylesheet for ``theme``.
+
+    ``scope="main"`` covers the player window (shell/titlebar/sidebar/now/
+    report/history/playlist/settings). ``scope="overlay"`` covers floating
+    chrome (menus, message boxes, the welcome dialog, tray surfaces) which are
+    top-level widgets and therefore do not inherit a parent stylesheet.
+
+    The result is guaranteed to contain no unresolved ``$token`` placeholder.
+    """
+    if scope == "main":
+        template = _MAIN_QSS
+    elif scope == "overlay":
+        template = _OVERLAY_QSS
+    else:
+        raise ValueError(f"unknown qss scope: {scope}")
+    tokens = qss_tokens(theme)
+    tokens["fs_bodypx"] = "%spx" % tokens["fs_body"]
+    tokens["fs_captionpx"] = "%spx" % tokens["fs_caption"]
+    tokens["fs_smallpx"] = "%spx" % tokens["fs_small"]
+    tokens["r_controlpx"] = "%spx" % tokens["r_control"]
+    tokens["r_rowpx"] = "%spx" % tokens["r_row"]
+    tokens["r_cardpx"] = "%spx" % tokens["r_card"]
+    rendered = template.substitute(tokens)
+    leftover = _PLACEHOLDER_RE.findall(rendered)
+    if leftover:
+        raise ValueError("unresolved qss placeholders: %s" % sorted(set(leftover)))
+    return rendered

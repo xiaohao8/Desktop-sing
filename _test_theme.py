@@ -265,6 +265,42 @@ ck("manager follows Windows animations", following.reduce_motion() is True,
    following.reduce_motion())
 T.system_animations_enabled = original_system_animations
 
+print("---- build_qss ----")
+placeholder_re = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*")
+key_selectors = ("#shell", "#titlebar", "#sidebar", "#playlistPage",
+                 "#settingsPage", "#playbar", "#appearanceSeg", "#themeSwatch",
+                 "#reportScroll", "#reportBody", "#artistMeta", "#stage")
+overlay_selectors = ("QMenu", "QMessageBox", "QDialog", "#wdtitle")
+main_outputs = {}
+for theme in themes:
+    qss = T.build_qss(theme, "main")
+    main_outputs[(theme.id, theme.appearance)] = qss
+    ck(f"{theme.id}/{theme.appearance}: main qss no placeholders",
+       not placeholder_re.findall(qss),
+       placeholder_re.findall(qss)[:5])
+    ck(f"{theme.id}/{theme.appearance}: main qss selectors",
+       all(sel in qss for sel in key_selectors),
+       [sel for sel in key_selectors if sel not in qss])
+    ck(f"{theme.id}/{theme.appearance}: main qss uses scrollbar token",
+       theme.scrollbar_handle in qss, theme.scrollbar_handle)
+    ov = T.build_qss(theme, "overlay")
+    ck(f"{theme.id}/{theme.appearance}: overlay qss no placeholders",
+       not placeholder_re.findall(ov),
+       placeholder_re.findall(ov)[:5])
+    ck(f"{theme.id}/{theme.appearance}: overlay qss selectors",
+       all(sel in ov for sel in overlay_selectors),
+       [sel for sel in overlay_selectors if sel not in ov])
+
+for theme_id in T.THEMES:
+    ck(f"{theme_id}: light/dark main qss differ",
+       main_outputs[(theme_id, "light")] != main_outputs[(theme_id, "dark")])
+
+try:
+    T.build_qss(themes[0], "bogus")
+    ck("unknown scope rejected", False)
+except ValueError:
+    ck("unknown scope rejected", True)
+
 print("----", "FAIL: %d" % len(fails) if fails else "全部通过")
 sys.exit(1 if fails else 0)
 
