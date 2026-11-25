@@ -1334,7 +1334,8 @@ class NowStage(QWidget):
         if label:
             b.setToolTip(self._tr(label))
             b.setAccessibleName(self._tr(label))
-        b.setIcon(_icon(icon_name, self._on_accent_color(), 20 if primary else 17))
+        color = self._on_accent_color() if primary else self._icon_color()
+        b.setIcon(_icon(icon_name, color, 20 if primary else 17))
         b.setIconSize(QSize(20 if primary else 17, 20 if primary else 17))
         return b
 
@@ -1365,10 +1366,10 @@ class NowStage(QWidget):
             self.track_artist.setStyleSheet("")
         self.immersive_btn.setIcon(_icon("expand", self._icon_color(), 15))
         playing = self.b_toggle.toolTip() == self._tr("暂停")
-        self.b_prev.setIcon(_icon("prev", self._on_accent_color(), 17))
+        self.b_prev.setIcon(_icon("prev", self._icon_color(), 17))
         self.b_toggle.setIcon(_icon("pause" if playing else "play",
                                     self._on_accent_color(), 20))
-        self.b_next.setIcon(_icon("next", self._on_accent_color(), 17))
+        self.b_next.setIcon(_icon("next", self._icon_color(), 17))
         # The lyric canvas is translucent: repaint it so it does not keep a
         # stale copy of the previous backdrop baked into its backing store.
         self.canvas.update()

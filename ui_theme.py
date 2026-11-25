@@ -600,10 +600,10 @@ QSlider#progress::groove:horizontal { height: 4px; background: $surface_sunken;
                                       border-radius: 2px; }
 QSlider#progress::sub-page:horizontal { background: $accent_fill; border-radius: 2px; }
 QSlider#progress::handle:horizontal { width: 12px; height: 12px; margin: -4px 0;
-                                      border-radius: 6px; background: $on_accent; }
+                                     border-radius: 6px; background: $text; }
 QSlider#progress::handle:horizontal:focus { border: 2px solid $focus; }
 QSlider#progress::handle:horizontal:hover { width: 12px; height: 12px; margin: -5px 0;
-                                            border-radius: 7px; background: $on_accent;
+                                            border-radius: 7px; background: $text;
                                             border: 1px solid $border_strong; }
 QFrame#appearanceCard { background: $surface_raised;
                         border: 1px solid $border;
