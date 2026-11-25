@@ -132,6 +132,35 @@ for theme in themes:
         round(ratio, 2),
     )
 
+    ratio = max(contrast(theme.control_handle_fill, theme.surface_sunken),
+                contrast(theme.control_handle_outline, theme.surface_sunken))
+    ck(
+        f"{theme.id}/{theme.appearance}: handle visible on groove (0%) >= 3.0",
+        ratio >= 3.0,
+        round(ratio, 2),
+    )
+    ratio = max(contrast(theme.control_handle_fill, theme.accent_fill),
+                contrast(theme.control_handle_outline, theme.accent_fill))
+    ck(
+        f"{theme.id}/{theme.appearance}: handle visible on filled track (100%) >= 3.0",
+        ratio >= 3.0,
+        round(ratio, 2),
+    )
+    ratio = contrast(theme.control_handle_fill, theme.control_handle_outline)
+    ck(
+        f"{theme.id}/{theme.appearance}: handle dual ring (50%) >= 3.0",
+        ratio >= 3.0,
+        round(ratio, 2),
+    )
+
+    for background_name in ("bg", "surface"):
+        ratio = contrast(theme.focus, getattr(theme, background_name))
+        ck(
+            f"{theme.id}/{theme.appearance}: focus/{background_name} >= 3.0",
+            ratio >= 3.0,
+            round(ratio, 2),
+        )
+
     ck(
         f"{theme.id}/{theme.appearance}: accent_soft is translucent",
         theme.accent_soft.startswith("rgba("),
@@ -244,6 +273,49 @@ ck("manager follows Windows animations", following.reduce_motion() is True,
    following.reduce_motion())
 T.system_animations_enabled = original_system_animations
 
+print("---- build_qss ----")
+placeholder_re = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*")
+key_selectors = ("#shell", "#titlebar", "#sidebar", "#playlistPage",
+                 "#settingsPage", "#playbar", "#appearanceSeg", "#themeSwatch",
+                 "#reportScroll", "#reportBody", "#artistMeta", "#stage")
+overlay_selectors = ("QMenu", "QMessageBox", "QDialog", "#wdtitle")
+main_outputs = {}
+for theme in themes:
+    qss = T.build_qss(theme, "main")
+    main_outputs[(theme.id, theme.appearance)] = qss
+    ck(f"{theme.id}/{theme.appearance}: main qss no placeholders",
+       not placeholder_re.findall(qss),
+       placeholder_re.findall(qss)[:5])
+    ck(f"{theme.id}/{theme.appearance}: main qss selectors",
+       all(sel in qss for sel in key_selectors),
+       [sel for sel in key_selectors if sel not in qss])
+    ck(f"{theme.id}/{theme.appearance}: main qss uses scrollbar token",
+       theme.scrollbar_handle in qss, theme.scrollbar_handle)
+    ck(f"{theme.id}/{theme.appearance}: main qss has no 11px text",
+       "font-size: 11px" not in qss)
+    ck(f"{theme.id}/{theme.appearance}: main qss uses dual handle tokens",
+       theme.control_handle_fill in qss and theme.control_handle_outline in qss)
+    ov = T.build_qss(theme, "overlay")
+    ck(f"{theme.id}/{theme.appearance}: overlay qss no placeholders",
+       not placeholder_re.findall(ov),
+       placeholder_re.findall(ov)[:5])
+    ck(f"{theme.id}/{theme.appearance}: overlay qss selectors",
+       all(sel in ov for sel in overlay_selectors),
+       [sel for sel in overlay_selectors if sel not in ov])
+    ck(f"{theme.id}/{theme.appearance}: overlay qss has no 11px text",
+       "font-size: 11px" not in ov)
+    ck(f"{theme.id}/{theme.appearance}: overlay qss has button focus",
+       "QPushButton:focus" in ov)
+
+for theme_id in T.THEMES:
+    ck(f"{theme_id}: light/dark main qss differ",
+       main_outputs[(theme_id, "light")] != main_outputs[(theme_id, "dark")])
+
+try:
+    T.build_qss(themes[0], "bogus")
+    ck("unknown scope rejected", False)
+except ValueError:
+    ck("unknown scope rejected", True)
 try:
     T.ThemeManager(theme_id="amber")
     rejected_experimental = False
@@ -263,7 +335,6 @@ ck("manager keeps released theme after rejection", manager.current().id == "cela
 experimental = T.ThemeManager(theme_id="amber", allow_experimental=True)
 ck("manager allows experimental when opted in", experimental.current().id == "amber",
    experimental.current().id)
-
 print("----", "FAIL: %d" % len(fails) if fails else "全部通过")
 sys.exit(1 if fails else 0)
 

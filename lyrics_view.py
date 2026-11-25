@@ -19,7 +19,8 @@ from collections import OrderedDict
 from datetime import datetime
 
 from PySide6.QtCore import (
-    QEvent, QPoint, QPointF, QRectF, QSize, Qt, QThread, QTimer, Signal
+    QEvent, QPropertyAnimation, QPoint, QPointF, QRectF, QSize, Qt, QThread,
+    QTimer, Signal,
 )
 from PySide6.QtGui import (
     QColor, QFont, QFontMetrics, QIcon, QLinearGradient, QPainter,
@@ -28,11 +29,13 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QFileDialog,
-    QGraphicsDropShadowEffect,
+    QGraphicsDropShadowEffect, QGraphicsOpacityEffect,
     QScrollArea, QSizeGrip, QSizePolicy, QSlider, QSpacerItem,
     QStackedWidget, QVBoxLayout,
     QWidget,
 )
+
+import ui_theme
 
 
 INK = "#1c2026"
@@ -526,10 +529,17 @@ class NavButton(QPushButton):
         self.setCheckable(True)
         self.setCursor(Qt.PointingHandCursor)
         self._icon_kind = icon_kind
+        self._icon_color = "#b9c0cd"
+        self._icon_color_checked = "#ffffff"
         self._update_icon()
         self.setIconSize(QSize(18, 18))
         self.setMinimumHeight(42)
         self.setObjectName("nav")
+
+    def set_theme(self, theme):
+        self._icon_color = theme.text_muted
+        self._icon_color_checked = theme.text
+        self._update_icon()
 
     def enterEvent(self, e):
         if self._shadow is None:
@@ -542,7 +552,7 @@ class NavButton(QPushButton):
         super().enterEvent(e)
 
     def _update_icon(self):
-        color = "#ffffff" if self.isChecked() else "#b9c0cd"
+        color = self._icon_color_checked if self.isChecked() else self._icon_color
         self.setIcon(_icon(self._icon_kind, color, 18))
 
 
@@ -555,12 +565,17 @@ class _SizeGrip(QSizeGrip):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setAutoFillBackground(False)
         self.setStyleSheet("background: transparent; border: none;")
+        self._dot = QColor(255, 255, 255, 92)
+
+    def set_theme(self, theme):
+        self._dot = QColor(theme.grip_dot)
+        self.update()
 
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor(255, 255, 255, 92))
+        p.setBrush(self._dot)
         for x, y in ((11, 5), (5, 11), (11, 11)):
             p.drawEllipse(QPointF(x, y), 1.6, 1.6)
         p.end()
@@ -580,6 +595,7 @@ class TitleBar(QWidget):
         self._tr = tr
         self._stats = {}
         self._drag = None
+        self._theme = None
         self.setFixedHeight(56)
         self.setObjectName("titlebar")
         lay = QHBoxLayout(self)
@@ -599,7 +615,7 @@ class TitleBar(QWidget):
             b = IconButton(text)
             b.setObjectName("quick")
             b.setCursor(Qt.PointingHandCursor)
-            b.setIcon(_icon(icon_name, "#c9cdd6", 16))
+            b.setIcon(_icon(icon_name, self._quick_color(), 16))
             b.setIconSize(QSize(16, 16))
             b.clicked.connect(sig.emit)
             lay.addWidget(b)
@@ -627,6 +643,17 @@ class TitleBar(QWidget):
         b.paintEvent = lambda e, w=b: self._paint_win(w)
         return b
 
+    def _quick_color(self) -> str:
+        return self._theme.text_muted if self._theme is not None else "#c9cdd6"
+
+    def set_theme(self, theme):
+        self._theme = theme
+        for key, icon_name in (("mini", "mini"), ("immersive", "expand")):
+            self.quick_buttons[key].setIcon(
+                _icon(icon_name, self._quick_color(), 16))
+        for b in (self.b_min, self.b_max, self.b_close):
+            b.update()
+
     def retranslate(self):
         self.page_label.setText(self._tr("正在播放"))
         self.quick_buttons["mini"].setText(self._tr("迷你模式"))
@@ -643,12 +670,19 @@ class TitleBar(QWidget):
     def _paint_win(self, b: QPushButton):
         p = QPainter(b)
         p.setRenderHint(QPainter.Antialiasing)
+        theme = self._theme
         if b.underMouse():
-            p.setBrush(QColor("#e45858") if b.objectName() == "winclose"
-                       else QColor(28, 32, 38, 18))
+            if b.objectName() == "winclose":
+                p.setBrush(QColor(theme.danger if theme is not None else "#e45858"))
+            else:
+                p.setBrush(QColor(theme.surface_hover if theme is not None
+                                  else "rgba(28,32,38,18)"))
             p.setPen(Qt.NoPen)
             p.drawRoundedRect(b.rect().adjusted(1, 1, -1, -1), 7, 7)
-        col = QColor("#ffffff") if (b.underMouse() and b.objectName() == "winclose") else QColor("#b6bcc7")
+        if b.underMouse() and b.objectName() == "winclose":
+            col = QColor("#ffffff")
+        else:
+            col = QColor(theme.text_secondary if theme is not None else "#b6bcc7")
         p.setPen(QPen(col, 1.35, Qt.SolidLine, Qt.RoundCap))
         r = b.rect()
         cx, cy = r.center().x(), r.center().y()
@@ -762,6 +796,10 @@ class Sidebar(QWidget):
         self.tip = tip
         self.set_active("now")
 
+    def set_theme(self, theme):
+        for b in self.buttons.values():
+            b.set_theme(theme)
+
     def retranslate(self):
         labels = {"now": "正在播放", "report": "听歌报告",
                   "history": "歌单", "settings": "桌面歌词设置"}
@@ -823,10 +861,22 @@ class StageBackdrop(QWidget):
         super().__init__(parent)
         self.accent = QColor("#ff7a4d")
         self.cover = None
+        self._base = QColor(STAGE)
+        self._scrim = QColor(7, 9, 12)
+        self._dark = True
         self._cover_cache_key = None
         self._cover_cache_pix = None
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setAttribute(Qt.WA_NoSystemBackground, True)
+
+    def set_theme(self, theme):
+        self._base = QColor(theme.bg)
+        dark = theme.appearance != "light"
+        self._dark = dark
+        # The lyric stage stays a deep listening surface in both appearances;
+        # white lyric text needs a near-opaque scrim to clear 4.5:1.
+        self._scrim = QColor(theme.surface_sunken if dark else theme.text)
+        self.update()
 
     def set_cover(self, cover):
         self.cover = cover
@@ -841,7 +891,7 @@ class StageBackdrop(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.SmoothPixmapTransform)
         w, h = self.width(), self.height()
-        p.fillRect(0, 0, w, h, QColor(STAGE))
+        p.fillRect(0, 0, w, h, self._base)
         if self.cover is not None and not self.cover.isNull():
             key = (self.cover.cacheKey(), w, h)
             if self._cover_cache_key != key:
@@ -865,10 +915,28 @@ class StageBackdrop(QWidget):
         wash.setColorAt(1.0, c2)
         p.fillRect(0, 0, w, h, wash)
         shade = QLinearGradient(0, 0, 0, h)
-        shade.setColorAt(0.0, QColor(7, 9, 12, 95))
-        shade.setColorAt(0.52, QColor(7, 9, 12, 120))
-        shade.setColorAt(1.0, QColor(7, 9, 12, 190))
+        c = QColor(self._scrim)
+        if self._dark:
+            alphas = (95, 120, 190)
+        else:
+            alphas = (206, 226, 244)
+        c.setAlpha(alphas[0])
+        shade.setColorAt(0.0, c)
+        c.setAlpha(alphas[1])
+        shade.setColorAt(0.52, c)
+        c.setAlpha(alphas[2])
+        shade.setColorAt(1.0, c)
         p.fillRect(0, 0, w, h, shade)
+        if self._dark:
+            # 2-3% concentric grooves: a quiet vinyl signature in empty space.
+            p.setPen(QPen(QColor(255, 255, 255, 7), 1))
+            p.setBrush(Qt.NoBrush)
+            cx, cy = w * 0.26, h * 0.47
+            radius = 46
+            limit = max(w, h) * 0.72
+            while radius < limit:
+                p.drawEllipse(QPointF(cx, cy), radius, radius)
+                radius += 18
         p.end()
 
 
@@ -1104,7 +1172,20 @@ class CoverArt(QWidget):
         super().__init__(parent)
         self._size = size
         self.pix = None
+        self._placeholder_top = QColor("#2c3038")
+        self._placeholder_bottom = QColor("#171a20")
+        self._placeholder_icon = QColor(255, 255, 255, 150)
+        self._ring = QColor(255, 255, 255, 28)
         self.setFixedSize(size, size)
+
+    def set_theme(self, theme):
+        dark = theme.appearance != "light"
+        self._placeholder_top = QColor(theme.surface_raised)
+        self._placeholder_bottom = QColor(theme.surface_sunken)
+        self._placeholder_icon = QColor(theme.text_muted)
+        self._ring = QColor(theme.text)
+        self._ring.setAlpha(28 if dark else 40)
+        self.update()
 
     def set_cover(self, pix):
         self.pix = pix
@@ -1121,14 +1202,14 @@ class CoverArt(QWidget):
             p.drawPixmap(r.toRect(), self.pix)
         else:
             g = QLinearGradient(0, 0, self.width(), self.height())
-            g.setColorAt(0, QColor("#2c3038"))
-            g.setColorAt(1, QColor("#171a20"))
+            g.setColorAt(0, self._placeholder_top)
+            g.setColorAt(1, self._placeholder_bottom)
             p.fillRect(r, g)
             _draw_icon(p, "note", QRectF(self.width() * 0.27, self.height() * 0.27,
                                         self.width() * 0.46, self.height() * 0.46),
-                       QColor(255, 255, 255, 150))
+                       self._placeholder_icon)
         p.setClipping(False)
-        p.setPen(QPen(QColor(255, 255, 255, 28), 1))
+        p.setPen(QPen(self._ring, 1))
         p.setBrush(Qt.NoBrush)
         p.drawPath(path)
         p.end()
@@ -1160,6 +1241,7 @@ class NowStage(QWidget):
     def __init__(self, tr, parent=None):
         super().__init__(parent)
         self._tr = tr
+        self._theme = None
         self.setObjectName("stage")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.backdrop = StageBackdrop(self)
@@ -1190,7 +1272,7 @@ class NowStage(QWidget):
         self.immersive_btn = QPushButton(tr("沉浸歌词"))
         self.immersive_btn.setObjectName("stageghost")
         self.immersive_btn.setCursor(Qt.PointingHandCursor)
-        self.immersive_btn.setIcon(_icon("expand", "#ffffff", 15))
+        self.immersive_btn.setIcon(_icon("expand", self._icon_color(), 15))
         self.immersive_btn.clicked.connect(self.immersive_requested.emit)
         self.immersive_btn.setParent(self)
 
@@ -1242,6 +1324,8 @@ class NowStage(QWidget):
         self.slider.sliderReleased.connect(self._release_seek)
         self._drag = False
         self._duration = 0.0
+        self._playing = False
+        self._toggle_icon_key = None
 
     def _round_button(self, icon_name: str, primary: bool = False,
                       label: str = "") -> QPushButton:
@@ -1252,9 +1336,63 @@ class NowStage(QWidget):
         if label:
             b.setToolTip(self._tr(label))
             b.setAccessibleName(self._tr(label))
-        b.setIcon(_icon(icon_name, "#ffffff", 20 if primary else 17))
+        color = self._on_accent_color() if primary else self._icon_color()
+        b.setIcon(_icon(icon_name, color, 20 if primary else 17))
         b.setIconSize(QSize(20 if primary else 17, 20 if primary else 17))
         return b
+
+    def _icon_color(self) -> str:
+        if self._theme is not None:
+            return self._theme.text
+        return "#ffffff"
+
+    def _on_accent_color(self) -> str:
+        if self._theme is not None:
+            return self._theme.on_accent
+        return "#ffffff"
+
+    def _refresh_toggle_icon(self):
+        color = self._on_accent_color()
+        key = (self._playing, color)
+        if key == self._toggle_icon_key:
+            return
+        self.b_toggle.setIcon(
+            _icon("pause" if self._playing else "play", color, 20))
+        self._toggle_icon_key = key
+
+    _SOURCE_TRACKING = 2
+
+    def _fit_source_label(self):
+        text = self.source.text()
+        fm = self.source.fontMetrics()
+        width = (fm.horizontalAdvance(text)
+                 + self._SOURCE_TRACKING * max(0, len(text) - 1) + 8)
+        self.source.resize(width, self.source.sizeHint().height())
+
+    def set_theme(self, theme):
+        self._theme = theme
+        self.backdrop.set_theme(theme)
+        self.cover.set_theme(theme)
+        self.hero_cover.set_theme(theme)
+        if theme.appearance == "light":
+            # The stage is a deep listening surface even in light mode, so its
+            # labels need on-dark colors rather than the light chrome tokens.
+            self.source.setStyleSheet("color: rgba(255,255,255,.58);")
+            self.track_title.setStyleSheet("color: #F6F5F1;")
+            self.track_artist.setStyleSheet("color: rgba(255,255,255,.68);")
+        else:
+            self.source.setStyleSheet("")
+            self.track_title.setStyleSheet("")
+            self.track_artist.setStyleSheet("")
+        self.immersive_btn.setIcon(_icon("expand", self._icon_color(), 15))
+        self.b_prev.setIcon(_icon("prev", self._icon_color(), 17))
+        self._refresh_toggle_icon()
+        self.b_next.setIcon(_icon("next", self._icon_color(), 17))
+        # The lyric canvas is translucent: repaint it so it does not keep a
+        # stale copy of the previous backdrop baked into its backing store.
+        self.canvas.update()
+        self.update()
+        self._fit_source_label()
 
     def _release_seek(self):
         self._drag = False
@@ -1272,6 +1410,7 @@ class NowStage(QWidget):
             # behind the translucent lyric layer instead of squeezing the text.
             self.hero_cover.hide()
             self.source.move(24, 18)
+            self._fit_source_label()
             self.track_title.move(24, 52)
             self.track_title.resize(max(220, self.width() - 48), 38)
             self.track_artist.move(24, 90)
@@ -1303,6 +1442,7 @@ class NowStage(QWidget):
                              top + max(0, (available_h - cover_side) // 2))
         lyrics_left = side_margin * 2 + cover_side + gap
         self.source.move(side_margin, top + 12)
+        self._fit_source_label()
         header_y = top + 48
         self.track_title.move(lyrics_left, header_y)
         self.track_title.resize(max(180, self.width() - lyrics_left - 30), 38)
@@ -1332,7 +1472,10 @@ class NowStage(QWidget):
         stage and paints it once; the parent only needs an opaque base colour.
         """
         p = QPainter(self)
-        p.fillRect(self.rect(), QColor(STAGE))
+        if self._theme is not None:
+            p.fillRect(self.rect(), QColor(self._theme.bg))
+        else:
+            p.fillRect(self.rect(), QColor(STAGE))
         p.end()
 
     def ov_cover_for_paint(self):
@@ -1359,6 +1502,7 @@ class NowStage(QWidget):
 
     def retranslate(self):
         self.source.setText(self._tr("NOW PLAYING"))
+        self._fit_source_label()
         song = self._song or {}
         title = song.get("title") or self._tr("等待播放")
         artist = song.get("artist") or self._tr("播放音乐后自动显示歌词")
@@ -1376,7 +1520,8 @@ class NowStage(QWidget):
             self.slider.blockSignals(True)
             self.slider.setValue(val)
             self.slider.blockSignals(False)
-        self.b_toggle.setIcon(_icon("pause" if playing else "play", "#ffffff", 20))
+        self._playing = bool(playing)
+        self._refresh_toggle_icon()
         self.b_toggle.setToolTip(self._tr("暂停") if playing else self._tr("播放"))
         cur = int(max(0, pos))
         if self._duration > 0:
@@ -1387,32 +1532,13 @@ class NowStage(QWidget):
             self.time.setText("%d:%02d" % (cur // 60, cur % 60))
 
     def set_accent(self, color):
+        """Cover-driven accent: lyric highlight + backdrop wash only.
+
+        Chrome (play bar, buttons, slider) follows the active theme; the lyric
+        canvas keeps tracking the album-cover accent as before.
+        """
         self.canvas.accent = QColor(color)
         self.backdrop.set_accent(color)
-        a = "#C2410C"
-        self.bar.setStyleSheet(
-            "QFrame#playbar{background:qlineargradient(x1:0, y1:0, x2:1, y2:1,"
-            "stop:0 rgba(34,38,47,228), stop:1 rgba(16,18,23,232));"
-            "border:1px solid rgba(255,255,255,34);border-radius:26px;}"
-            "QPushButton#playprimary{background:%s;border:none;border-radius:23px;}"
-            "QPushButton#playprimary:hover{background:#DA542D;}"
-            "QPushButton#playround{background:rgba(255,255,255,16);border:1px solid rgba(255,255,255,26);"
-            "border-radius:19px;}"
-            "QPushButton#playround:hover{background:rgba(255,255,255,30);}"
-            "QPushButton#playround:pressed{background:rgba(255,255,255,38);}"
-            "QPushButton#playprimary:focus{border:2px solid rgba(255,255,255,205);}"
-            "QPushButton#playround:focus{border-color:rgba(255,255,255,205);}"
-            "QLabel#bartitle{color:#f5f6f8;font-size:14px;font-weight:700;}"
-            "QLabel#barartist{color:rgba(235,238,243,185);font-size:12px;}"
-            "QLabel#bartime{color:rgba(235,238,243,170);font-size:12px;}"
-            "QSlider#progress::groove:horizontal{height:4px;background:rgba(255,255,255,32);border-radius:2px;}"
-            "QSlider#progress::sub-page:horizontal{background:%s;border-radius:2px;}"
-            "QSlider#progress::handle:horizontal{width:12px;height:12px;margin:-4px 0;"
-            "border-radius:6px;background:#fff;}"
-            "QSlider#progress::handle:horizontal:focus{border:2px solid #DA542D;}"
-            "QSlider#progress::handle:horizontal:hover{width:12px;height:12px;margin:-5px 0;"
-            "border-radius:7px;background:#ffffff;border:1px solid rgba(255,255,255,150);}" %
-            (a, a))
         self.hero_cover.setStyleSheet("")
 
 
@@ -1421,7 +1547,20 @@ class MiniSparkline(QWidget):
         super().__init__(parent)
         self.values = [0] * 7
         self.labels = [""] * 7
+        self._line = QColor(VERMILION)
+        self._dot = QColor(VERMILION)
+        self._dot_ring = QColor("#fffaf3")
+        self._label = QColor(255, 255, 255, 158)
+        self._label_px = 12
         self.setMinimumHeight(170)
+
+    def set_theme(self, theme):
+        self._line = QColor(theme.accent_fill)
+        self._dot = QColor(theme.accent_fill)
+        self._dot_ring = QColor(theme.surface)
+        self._label = QColor(theme.text_muted)
+        self._label_px = max(12, int(getattr(theme, "fs_caption", 12)))
+        self.update()
 
     def set_data(self, daily):
         # Plot seconds so a valid 20-second session does not collapse to 0.
@@ -1454,22 +1593,26 @@ class MiniSparkline(QWidget):
             path.lineTo(pts[-1][0], h - bottom)
             path.closeSubpath()
             g = QLinearGradient(0, top, 0, h - bottom)
-            g.setColorAt(0.0, QColor(240, 100, 58, 72))
-            g.setColorAt(1.0, QColor(240, 100, 58, 0))
+            fill_top = QColor(self._line)
+            fill_top.setAlpha(72)
+            fill_bottom = QColor(self._line)
+            fill_bottom.setAlpha(0)
+            g.setColorAt(0.0, fill_top)
+            g.setColorAt(1.0, fill_bottom)
             p.fillPath(path, g)
             line = QPainterPath()
             line.moveTo(pts[0][0], pts[0][1])
             for x, y in pts[1:]:
                 line.lineTo(x, y)
-            p.setPen(QPen(QColor(VERMILION), 2.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            p.setPen(QPen(self._line, 2.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
             p.setBrush(Qt.NoBrush)
             p.drawPath(line)
             for x, y in pts:
-                p.setPen(QPen(QColor("#fffaf3"), 2))
-                p.setBrush(QColor(VERMILION))
+                p.setPen(QPen(self._dot_ring, 2))
+                p.setBrush(self._dot)
                 p.drawEllipse(QRectF(x - 4, y - 4, 8, 8))
-        p.setFont(_pick_ui_font(11))
-        p.setPen(QColor(255, 255, 255, 158))
+        p.setFont(_pick_ui_font(self._label_px))
+        p.setPen(self._label)
         for i, label in enumerate(self.labels):
             x = left + (w - left - right) * i / n
             p.drawText(QRectF(x - 22, h - 24, 44, 18), Qt.AlignCenter, label)
@@ -1482,13 +1625,18 @@ class SettingsPage(QWidget):
     def __init__(self, ov, tr, parent=None):
         super().__init__(parent)
         self.ov = ov
+        self._tr = tr
         self.setObjectName("settingsPage")
         import lyrics_overlay as lo
+        self.appearance = AppearanceSection(ov, tr, self)
         self.panel = lo.SettingsPanel(ov, flags=Qt.Widget)
         self.panel.setObjectName("settingsSurface")
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setContentsMargins(24, 20, 24, 0)
+        lay.setSpacing(14)
+        lay.addWidget(self.appearance)
         lay.addWidget(self.panel)
+        self.appearance.refresh()
 
     def rebuild(self):
         import lyrics_overlay as lo
@@ -1498,6 +1646,207 @@ class SettingsPage(QWidget):
         self.panel.setObjectName("settingsSurface")
         self.layout().addWidget(self.panel)
         old_panel.deleteLater()
+        self.retranslate()
+
+    def retranslate(self):
+        self.appearance.retranslate()
+
+    def set_theme(self, theme):
+        # The embedded legacy panel builds its stylesheet once at construction;
+        # refresh it whenever the app theme changes.
+        self.appearance.refresh()
+        self.panel.set_theme(theme)
+
+
+class AppearanceSection(QFrame):
+    """「外观」section: appearance mode (system/light/dark) + theme swatches.
+
+    Sits at the top of the settings page, above the embedded legacy panel.
+    Applies instantly through the shared ThemeManager and persists to cfg.
+    """
+
+    _APPEARANCES = ("system", "light", "dark")
+    _THEMES = ("ink", "celadon")
+
+    def __init__(self, ov, tr, parent=None):
+        super().__init__(parent)
+        self.ov = ov
+        self._tr = tr
+        self.setObjectName("appearanceCard")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 14, 18, 16)
+        root.setSpacing(10)
+
+        head = QVBoxLayout()
+        head.setSpacing(2)
+        self.title = QLabel()
+        self.title.setObjectName("appearanceTitle")
+        self.hint = QLabel()
+        self.hint.setObjectName("appearanceHint")
+        self.hint.setWordWrap(True)
+        head.addWidget(self.title)
+        head.addWidget(self.hint)
+        root.addLayout(head)
+
+        seg = QHBoxLayout()
+        seg.setSpacing(8)
+        self.seg_buttons = {}
+        for key in self._APPEARANCES:
+            b = QPushButton()
+            b.setObjectName("appearanceSeg")
+            b.setCheckable(True)
+            b.setCursor(Qt.PointingHandCursor)
+            b.clicked.connect(lambda _=False, k=key: self._pick_appearance(k))
+            seg.addWidget(b, 1)
+            self.seg_buttons[key] = b
+        root.addLayout(seg)
+
+        swatches = QHBoxLayout()
+        swatches.setSpacing(10)
+        self.swatch_buttons = {}
+        for theme_id in self._THEMES:
+            b = _ThemeSwatchButton(theme_id, tr)
+            b.clicked.connect(lambda _=False, t=theme_id: self._pick_theme(t))
+            swatches.addWidget(b, 1)
+            self.swatch_buttons[theme_id] = b
+        swatches.addStretch(1)
+        root.addLayout(swatches)
+
+        motion_row = QHBoxLayout()
+        motion_row.setSpacing(8)
+        self.motion_btn = QPushButton()
+        self.motion_btn.setObjectName("appearanceSeg")
+        self.motion_btn.setCheckable(True)
+        self.motion_btn.setCursor(Qt.PointingHandCursor)
+        self.motion_btn.clicked.connect(self._toggle_motion)
+        motion_row.addWidget(self.motion_btn, 0)
+        motion_row.addStretch(1)
+        root.addLayout(motion_row)
+        self.retranslate()
+
+    def _manager(self):
+        return getattr(self.ov, "theme_manager", None)
+
+    def _pick_appearance(self, key):
+        manager = self._manager()
+        if manager is not None:
+            manager.set_appearance(key)
+        self.ov.cfg["appearance"] = key
+        self._save()
+        self.refresh()
+
+    def _pick_theme(self, theme_id):
+        manager = self._manager()
+        if manager is not None:
+            manager.set_theme(theme_id)
+        self.ov.cfg["theme_id"] = theme_id
+        self._save()
+        self.refresh()
+
+    def _toggle_motion(self, checked):
+        manager = self._manager()
+        if manager is not None:
+            manager.set_reduce_motion(True if checked else None)
+        if checked:
+            self.ov.cfg["reduce_motion"] = True
+        else:
+            self.ov.cfg.pop("reduce_motion", None)
+        self._save()
+        self.refresh()
+
+    def _save(self):
+        try:
+            import lyrics_overlay as lo
+            lo.save_config(self.ov.cfg)
+        except Exception:
+            pass
+
+    def refresh(self):
+        manager = self._manager()
+        appearance = manager.appearance() if manager is not None else \
+            str(self.ov.cfg.get("appearance") or "system")
+        theme_id = manager.theme_id() if manager is not None else \
+            str(self.ov.cfg.get("theme_id") or "ink")
+        if appearance not in self._APPEARANCES:
+            appearance = "system"
+        for key, button in self.seg_buttons.items():
+            button.setChecked(key == appearance)
+        effective = manager.current().appearance if manager is not None else \
+            ("dark" if appearance == "dark" else "light")
+        for tid, button in self.swatch_buttons.items():
+            button.setChecked(tid == theme_id)
+            button.set_appearance(effective)
+        reduce_motion = manager.reduce_motion() if manager is not None else \
+            bool(self.ov.cfg.get("reduce_motion"))
+        self.motion_btn.blockSignals(True)
+        self.motion_btn.setChecked(reduce_motion)
+        self.motion_btn.blockSignals(False)
+
+    def retranslate(self):
+        tr = self._tr
+        self.title.setText(tr("外观"))
+        self.hint.setText(tr("跟随系统会随 Windows 深浅色切换"))
+        for key, label in (("system", "跟随系统"), ("light", "浅色"),
+                           ("dark", "深色")):
+            self.seg_buttons[key].setText(tr(label))
+        for button in self.swatch_buttons.values():
+            button.retranslate()
+        self.motion_btn.setText(tr("减少动态效果"))
+        self.motion_btn.setToolTip(tr("停止页面淡入和过渡动画"))
+        self.motion_btn.setAccessibleName(tr("减少动态效果"))
+
+
+class _ThemeSwatchButton(QPushButton):
+    """Theme card: three colour dots (bg/surface/accent) + name + check ring."""
+
+    _NAMES = {"ink": "墨", "celadon": "青瓷"}
+
+    def __init__(self, theme_id, tr, parent=None):
+        super().__init__(parent)
+        self._tr = tr
+        self.theme_id = theme_id
+        self._appearance = "dark"
+        self.setObjectName("themeSwatch")
+        self.setCheckable(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setMinimumHeight(64)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(4, 8, 4, 8)
+        lay.setSpacing(8)
+        self.name = QLabel()
+        self.name.setObjectName("themeSwatchName")
+        lay.addWidget(self.name)
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        self._dots = []
+        for key in ("bg", "surface_raised", "accent_fill"):
+            dot = QLabel()
+            dot.setObjectName("themeSwatchDots")
+            dot.setFixedSize(18, 18)
+            row.addWidget(dot)
+            self._dots.append((key, dot))
+        row.addStretch(1)
+        lay.addLayout(row)
+        self._paint_dots()
+        self.retranslate()
+
+    def set_appearance(self, appearance):
+        appearance = "light" if appearance == "light" else "dark"
+        if appearance == self._appearance:
+            return
+        self._appearance = appearance
+        self._paint_dots()
+
+    def _paint_dots(self):
+        theme = ui_theme.THEMES[self.theme_id][self._appearance]
+        for key, dot in self._dots:
+            color = getattr(theme, key)
+            dot.setStyleSheet(
+                "QLabel#themeSwatchDots{background:%s;border:1px solid %s;"
+                "border-radius:9px;}" % (color, theme.border_strong))
+
+    def retranslate(self):
+        self.name.setText(self._tr(self._NAMES[self.theme_id]))
 
 
 class StatTile(QFrame):
@@ -2423,6 +2772,7 @@ class MainPlayerWindow(QWidget):
             self._tr = _lo._tr
         except Exception:
             self._tr = _identity
+        self._setup_theme_manager()
         self.setWindowTitle(self._tr("桌面歌词 · 正在播放"))
         self.setMinimumSize(1060, 680)
         self.resize(1260, 820)
@@ -2440,6 +2790,39 @@ class MainPlayerWindow(QWidget):
         self._timer.setInterval(90)
         self._timer.timeout.connect(self._tick)
         self._timer.start()
+
+    def _setup_theme_manager(self):
+        from shiboken6 import isValid
+
+        manager = getattr(self.ov, "theme_manager", None)
+        if manager is not None and not isValid(manager):
+            manager = None
+        reduce_motion = True if self.ov.cfg.get("reduce_motion") else None
+        if manager is None:
+            theme_id = str(self.ov.cfg.get("theme_id") or "ink")
+            appearance = str(self.ov.cfg.get("appearance") or "system")
+            if theme_id not in ui_theme.THEMES:
+                theme_id = "ink"
+            if appearance not in ui_theme.APPEARANCES:
+                appearance = "system"
+            # The overlay outlives the player window, so it owns the manager.
+            # Parenting to the window makes overlay.theme_manager a dangling
+            # wrapper after close/deleteLater, breaking the next open.
+            manager = ui_theme.ThemeManager(
+                theme_id, appearance, self.ov, reduce_motion=reduce_motion)
+            self.ov.theme_manager = manager
+        else:
+            manager.set_reduce_motion(reduce_motion)
+        self._theme_manager = manager
+        manager.changed.connect(self._apply_theme)
+
+    def _release_theme_manager(self):
+        manager = getattr(self, "_theme_manager", None)
+        if manager is not None:
+            try:
+                manager.changed.disconnect(self._apply_theme)
+            except (RuntimeError, TypeError):
+                pass
 
     def _build(self):
         root = QVBoxLayout(self)
@@ -2499,232 +2882,30 @@ class MainPlayerWindow(QWidget):
         self.grip.raise_()
 
     def _apply_style(self):
-        self.shell.setStyleSheet("""
-        * { font-family:"%(font)s"; }
-        QFrame#shell { background:qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                                                  stop:0 #12161d, stop:0.52 #0d1016,
-                                                  stop:1 #080a0f);
-                       border:1px solid rgba(255,255,255,34); border-radius:26px; }
-        QWidget#body { background:transparent; }
-        QWidget#titlebar { background:rgba(10,12,17,188); }
-        QLabel#pagecrumb { color:#f3f1ec; font-size:13px; font-weight:750; }
-        QPushButton#quick { background:rgba(255,255,255,7); color:#c9cdd6;
-                            border:1px solid rgba(255,255,255,18); border-top-color:rgba(255,255,255,34);
-                            border-radius:13px; padding:6px 11px; font-size:12px; font-weight:650; }
-        QPushButton#quick:hover { background:rgba(255,255,255,16); color:#ffffff;
-                                  border-color:rgba(255,255,255,42); }
-        QPushButton#quick:pressed { background:rgba(255,255,255,5); }
-        QPushButton#winbtn, QPushButton#winclose { background:transparent; border:none; }
-        QWidget#sidebar { background:qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                                     stop:0 rgba(22,26,34,214),
-                                                     stop:1 rgba(11,14,20,224));
-                          border-right:1px solid rgba(255,255,255,24); }
-        QLabel#brandmark { background:qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                                                      stop:0 #ff9a6b, stop:1 %(vermilion)s);
-                           color:#fff8ef; border-radius:13px;
-                           font-size:19px; font-weight:700; }
-        QLabel#brandname { color:#f5f2ec; font-size:17px; font-weight:800; }
-        QLabel#brandsub { color:#949bab; font-size:11px; letter-spacing:2px; }
-        QLabel#sidestatus { color:#9aa2b2; font-size:12px; padding:2px 4px; }
-        QLabel#sidestatus[live="1"] { color:#7ed8a1; }
-        QPushButton#nav { text-align:left; padding:0 11px; border:2px solid transparent; border-radius:14px;
-                          color:#9aa2b2; font-size:13px; font-weight:650; }
-        QPushButton#nav:hover { background:rgba(255,255,255,12); color:#ffffff; }
-        QPushButton#nav:pressed { background:rgba(255,255,255,7); color:#f4f6f8; }
-        QPushButton#nav:checked { background:qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                                                             stop:0 %(vermilion)s, stop:1 #c2421f);
-                                  color:#fffaf3; }
-        QLabel#sidehead { color:#949bab; font-size:11px; font-weight:700;
-                          letter-spacing:1px; }
-        QLabel#sidecount { color:#8d95a6; font-size:11px; }
-        QLabel#sideempty { color:#7f8796; font-size:12px; padding:8px 4px; }
-        QPushButton#recent { background:transparent; color:#b6bcc7; border:none;
-                             border-left:3px solid transparent; border-radius:11px;
-                             padding:7px 9px 7px 11px; text-align:left;
-                             font-size:12px; line-height:1.5; }
-        QPushButton#recent:hover { background:rgba(255,255,255,10); color:#ffffff;
-                                   border-left-color:rgba(240,100,58,190); }
-        QLabel#sidetip { color:#7b8393; font-size:11px; line-height:1.55;
-                         border-top:1px solid rgba(255,255,255,20); padding-top:10px; }
-        QStackedWidget#stack { background:transparent; }
-        QWidget#stage { background:#0c0e12; }
-        QLabel#stageeyebrow { color:rgba(255,255,255,155); font-size:11px;
-                              letter-spacing:2px; font-weight:700; }
-        QLabel#stagetrack { color:#f7f4ed; font-size:26px; font-weight:800; }
-        QLabel#stageartist { color:rgba(240,238,232,150); font-size:13px; }
-        QPushButton#stageghost { background:rgba(255,255,255,14); color:rgba(255,255,255,190);
-                                 border:1px solid rgba(255,255,255,22); border-radius:12px;
-                                 padding:5px 10px; font-size:12px; }
-        QPushButton#stageghost:hover { background:rgba(255,255,255,26); color:#fff; }
-        QWidget#reportPage, QWidget#historyPage { background:qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                                                             stop:0 #10141b,
-                                                                             stop:1 #090b10); }
-        QWidget#settingsPage { background:#0c0f15; }
-        QLabel#reportTitle { color:#f4f1ea; font-size:26px; font-weight:800; }
-        QLabel#reportSub { color:#8f97a7; font-size:13px; }
-        QLabel#privacyChip { color:#7ed8a1; background:rgba(126,216,161,16);
-                             border:1px solid rgba(126,216,161,44); border-radius:12px;
-                             padding:5px 9px; font-size:12px; }
-        QPushButton#dangerGhost { background:transparent; color:#ff9d8a;
-                                  border:1px solid rgba(255,157,138,72); border-radius:12px;
-                                  padding:6px 10px; font-size:12px; }
-        QPushButton#dangerGhost:hover { background:#ff9d8a; color:#12151b; }
-        QFrame#reportHero { background:qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                                                       stop:0 rgba(31,37,48,238),
-                                                       stop:1 rgba(15,19,26,242));
-                           border:1px solid rgba(255,255,255,32); border-top-color:rgba(255,255,255,50);
-                           border-radius:24px; }
-        QLabel#heroCaption { color:#9aa2b2; font-size:12px; font-weight:700; }
-        QLabel#heroChip { color:#ffb59d; background:rgba(240,100,58,26);
-                          border-radius:10px; padding:4px 9px; font-size:11px; }
-        QLabel#heroValue { color:#f7f3ea; font-size:56px;
-                           font-weight:700; }
-        QLabel#heroUnit { color:#8d95a6; font-size:12px; }
-        QFrame#statTile, QFrame#reportCard {
-            background:qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1c222c,
-                                       stop:1 #12161d);
-            border:1px solid rgba(255,255,255,28); border-top-color:rgba(255,255,255,46);
-            border-radius:22px; }
-        QLabel#statValue { color:#f2eee6; font-size:27px; font-weight:700; }
-        QLabel#statCaption { color:#8f97a7; font-size:11px; }
-        QLabel#cardHead { color:#9aa2b2; font-size:11px; font-weight:700; letter-spacing:1px; }
-        QLabel#artistBig { color:#f5f1e9; font-size:24px; font-weight:800; }
-        QLabel#artistMeta { color:#ffb59d; font-size:12px; font-weight:700;
-                            font-feature-settings:"tnum" 1; }
-        QLabel#muted { color:#949bab; font-size:12px; }
-        QLabel#rankList, QLabel#trackRank { color:#c1c7d2; font-size:12px; line-height:1.7; }
-        QLabel#reportEmpty { color:#949bab; background:rgba(255,255,255,6);
-                             border:1px dashed rgba(255,255,255,52); border-radius:20px;
-                             font-size:13px; padding:24px; }
-        QScrollArea { background:transparent; border:none; }
-        QScrollArea > QWidget > QWidget { background:transparent; }
-        QWidget#reportBody { background:transparent; }
-        QScrollBar:vertical { background:transparent; width:8px; margin:2px; }
-        QScrollBar::handle:vertical { background:rgba(255,255,255,46); border-radius:4px;
-                                      min-height:30px; }
-        QScrollBar::handle:vertical:hover { background:rgba(255,255,255,82); }
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height:0; }
-        QLabel#historyPageTitle { color:#F2F2F3; font-size:28px;
-                                  font-weight:600; }
-        QLabel#historyPageSub { color:#9A9AA0; font-size:20px;
-                                font-weight:400; }
-        QWidget#historyRow { background:transparent; border:none;
-                             border-bottom:1px solid #26262A; }
-        QWidget#historyRow:hover { background:rgba(255,255,255,8); }
-        QWidget#historyRow[current="1"] { background:rgba(194,65,12,26);
-                                          border-left:2px solid #C2410C; }
-        QWidget#historyRow[external="1"] { background:rgba(255,255,255,4);
-                                           border-left:2px solid transparent; }
-        QWidget#historyRow[external="1"] QLabel { color:rgba(154,154,160,116); }
-        QLabel#historyCover { background:rgba(255,255,255,22);
-                              color:rgba(255,255,255,190); border-radius:8px;
-                              font-size:18px; font-weight:600; }
-        QLabel#historyTitle { color:#F2F2F3; font-size:15px; font-weight:600; }
-        QLabel#historyArtist { color:#9A9AA0; font-size:12px; font-weight:400; }
-        QLabel#historyMeta { color:#9A9AA0; font-size:12px; font-weight:400;
-                             font-feature-settings:"tnum" 1; }
-        QWidget#playlistPage { background:#0c0f15; }
-        QLabel#playlistPageTitle { color:#F2F2F3; font-size:26px;
-                               font-weight:800; }
-        QLabel#playlistSubtitle { color:#9A9AA0; font-size:13px;
-                                  font-weight:400; }
-        QFrame#playlistPanel { background:#12161d;
-                               border:1px solid rgba(255,255,255,12);
-                               border-radius:16px; }
-        QLineEdit#playlistInput { background:#12161d; color:#F2F2F3;
-                                  border:1px solid rgba(255,255,255,86);
-                                  border-radius:10px; padding:8px 12px;
-                                  font-size:13px; font-weight:600; }
-        QLineEdit#playlistInput:hover { border-color:rgba(255,255,255,24); }
-        QLineEdit#playlistInput:focus { border:2px solid #ffb59d; }
-        QLineEdit#playlistInput[error="1"] { border:2px solid #FF9D8A; }
-        QPushButton#primary { background:#C2421F; color:#fff8ef;
-                              border:none; border-radius:10px;
-                              padding:8px 16px; font-size:13px;
-                              font-weight:600; }
-        QPushButton#primary:hover { background:#A9341A; }
-        QPushButton#primary:pressed { background:#8F2B16; }
-        QPushButton#primary:focus { border:2px solid #ffb59d; }
-        QLabel#playlistCompliance { color:#9A9AA0; font-size:12px;
-                                    font-weight:400; line-height:1.5; }
-        QLabel#playlistError { color:#FF9D8A; font-size:12px;
-                               font-weight:400; }
-        QLabel#playlistSuccess { color:#7ED8A1; font-size:12px;
-                                 font-weight:500; }
-        QLabel#playlistSection { color:#F2F2F3; font-size:16px;
-                                 font-weight:700; }
-        QLabel#playlistCount { color:#9A9AA0; font-size:12px;
-                               font-weight:500; }
-        QPushButton#playlistRow { background:rgba(255,255,255,3);
-                                  border:none;
-                                  border-bottom:1px solid rgba(255,255,255,8);
-                                  border-radius:12px; text-align:left; }
-        QPushButton#playlistRow:hover { background:rgba(255,255,255,6); }
-        QPushButton#playlistRow:pressed { background:rgba(240,100,58,10); }
-        QPushButton#playlistRow:checked { background:rgba(240,100,58,12);
-                                          border-left:3px solid #F0643A; }
-        QPushButton#playlistRow:focus { border:2px solid #ffb59d; }
-        QLabel#playlistCover { background:rgba(255,255,255,22);
-                               color:rgba(255,255,255,190); border-radius:8px;
-                               font-size:18px; font-weight:600; }
-        QLabel#playlistTitle { color:#F4F1EA; font-size:14px;
-                               font-weight:600; }
-        QLabel#playlistArtist { color:#C1C7D2; font-size:12px;
-                                font-weight:400; }
-        QLabel#playlistMeta { color:#9A9AA0; font-size:12px;
-                              font-weight:400;
-                              font-feature-settings:"tnum" 1; }
-        QLabel#playlistStatus { color:#949BAB; font-size:12px;
-                                font-weight:500; }
-        QLabel#playlistStatus[matched="1"] { color:#7ED8A1; }
-        QFrame#playlistSkeleton { background:rgba(255,255,255,6);
-                                  border-bottom:1px solid rgba(255,255,255,8); }
-        QLabel#playlistSkeletonCover { background:rgba(255,255,255,16);
-                                       border-radius:8px; }
-        QLabel#playlistSkeletonLine { background:rgba(255,255,255,16);
-                                      border-radius:6px; }
-        QFrame#playlistEmpty { background:#12161d;
-                               border:1px solid rgba(255,255,255,12);
-                               border-radius:16px; }
-        QLabel#playlistEmptyIcon { color:#9A9AA0; font-size:48px;
-                                   font-weight:400; }
-        QLabel#playlistEmptyTitle { color:#F2F2F3; font-size:20px;
-                                    font-weight:600; }
-        QLabel#playlistEmptyDesc { color:#9A9AA0; font-size:13px;
-                                   font-weight:400; }
-        QLabel#historyEmptyIcon { color:#9A9AA0; font-size:48px;
-                                  font-weight:400; }
-        QLabel#historyEmptyTitle { color:#F2F2F3; font-size:20px;
-                                   font-weight:600; }
-        QLabel#historyEmptyDesc { color:#9A9AA0; font-size:13px;
-                                  font-weight:400; }
-        QFrame#historySkeleton { background:rgba(255,255,255,6);
-                                 border-bottom:1px solid #26262A; }
-        QLabel#historySkeletonCover { background:rgba(255,255,255,16);
-                                      border-radius:8px; }
-        QLabel#historySkeletonLine { background:rgba(255,255,255,16);
-                                     border-radius:6px; }
-        QPushButton#historyAction { background:#C2410C; color:#ffffff;
-                                    border:none; border-radius:14px; }
-        QPushButton#historyAction:hover { background:#DA542D; }
-        QPushButton#historyAction:focus { border:2px solid #DA542D; }
-        QPushButton#ghost { background:rgba(255,255,255,10); color:#F2F2F3;
-                            border:1px solid rgba(255,255,255,86);
-                            border-radius:18px; padding:6px 16px;
-                            font-size:13px; font-weight:400; }
-        QPushButton#ghost:hover { background:rgba(255,255,255,18); }
-        QPushButton#nav:focus { border-color:#DA542D; }
-        QPushButton#nav:checked:focus { border-color:rgba(255,255,255,210); }
-        QPushButton#recent:focus { background:rgba(255,255,255,14); color:#ffffff;
-                                   border-left-color:rgba(240,100,58,230); }
-        QPushButton#quick:focus, QPushButton#stageghost:focus,
-        QPushButton#dangerGhost:focus, QPushButton#ghost:focus {
-            border:2px solid #DA542D; }
-        QPushButton#historyRow:focus { border-color:rgba(240,100,58,200); }
-        """ % {"paper": PAPER, "paper_deep": PAPER_DEEP, "ink": INK,
-               "vermilion": VERMILION, "font": _ui_font_family()})
-        self.titlebar.page_label.setStyleSheet(
-            "color:#f3f1ec;font-size:14px;font-weight:750;")
+        manager = getattr(self.ov, "theme_manager", None)
+        theme = manager.current() if manager is not None else ui_theme.THEMES["ink"]["dark"]
+        self.shell.setStyleSheet(ui_theme.build_qss(theme, "main"))
+        self._push_theme(theme)
+
+    def _push_theme(self, theme):
+        for widget in (self.titlebar, self.sidebar, self.now, self.grip,
+                       self.settings_page):
+            setter = getattr(widget, "set_theme", None)
+            if callable(setter):
+                setter(theme)
+        self.report.spark.set_theme(theme)
+
+    def _apply_theme(self, theme):
+        self._apply_style()
+        self._refresh_now(force=True)
+        # The standalone overlay settings window is a separate top-level
+        # widget; refresh it too if it is currently open.
+        panel = getattr(self.ov, "panel", None)
+        if panel is not None:
+            try:
+                panel.set_theme(theme)
+            except (RuntimeError, AttributeError):
+                pass
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -2743,6 +2924,7 @@ class MainPlayerWindow(QWidget):
         self.report.retranslate()
         self.history.retranslate()
         self.settings_page.rebuild()
+        self.settings_page.retranslate()
         self.now.immersive_btn.setText(
             self._tr("退出沉浸") if self._immersive else self._tr("沉浸歌词"))
         self.now.immersive_btn.adjustSize()
@@ -2772,6 +2954,44 @@ class MainPlayerWindow(QWidget):
         elif key == "settings":
             self.stack.setCurrentWidget(self.settings_page)
             self.titlebar.page_label.setText(self._tr("设置"))
+        self._animate_page(self.stack.currentWidget())
+
+    def _animate_page(self, page):
+        if page is None:
+            return
+        manager = getattr(self, "_theme_manager", None)
+        duration = manager.duration("m_base") if manager is not None else 180
+        effect = page.graphicsEffect()
+        if not isinstance(effect, QGraphicsOpacityEffect):
+            effect = QGraphicsOpacityEffect(page)
+            page.setGraphicsEffect(effect)
+        old = getattr(page, "_page_anim", None)
+        if old is not None:
+            try:
+                old.stop()
+            except RuntimeError:
+                pass
+        if duration <= 0:
+            page.setGraphicsEffect(None)
+            return
+        anim = QPropertyAnimation(effect, b"opacity", page)
+        anim.setDuration(duration)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.finished.connect(lambda p=page: self._finish_page_anim(p))
+        anim.start()
+        page._page_anim = anim
+
+    def _finish_page_anim(self, page):
+        """Drop the opacity effect once the fade ends.
+
+        Keeping an opacity effect attached at 1.0 forces Qt to render the
+        page through an offscreen surface, which blurs text and can leave
+        stale child-widget ghosts in grabs.
+        """
+        page._page_anim = None
+        if page.graphicsEffect() is not None:
+            page.setGraphicsEffect(None)
 
     def open_report(self):
         try:
@@ -2883,12 +3103,10 @@ class MainPlayerWindow(QWidget):
         box.setInformativeText(self._tr("此操作不可恢复，但不会影响歌词缓存与播放设置。"))
         box.setStandardButtons(QMessageBox.Cancel | QMessageBox.Yes)
         box.setDefaultButton(QMessageBox.Cancel)
-        box.setStyleSheet("QMessageBox{background:#161a22;border-radius:18px;}"
-                          "QLabel{color:#e5e9f0;font-size:13px;}"
-                          "QPushButton{background:#232935;color:#e5e9f0;"
-                          "border:1px solid rgba(255,255,255,32);"
-                          "border-radius:12px;padding:7px 18px;}"
-                          "QPushButton:hover{border-color:#f0643a;color:#ffffff;}")
+        manager = getattr(self.ov, "theme_manager", None)
+        theme = manager.current() if manager is not None else \
+            ui_theme.THEMES["ink"]["dark"]
+        box.setStyleSheet(ui_theme.build_qss(theme, "overlay"))
         if box.exec() != QMessageBox.Yes:
             return
         try:
@@ -3014,6 +3232,7 @@ class MainPlayerWindow(QWidget):
             self.ov.listen_tracker.flush(final=True)
         except Exception:
             pass
+        self._release_theme_manager()
         self.closed.emit()
         super().closeEvent(e)
 
