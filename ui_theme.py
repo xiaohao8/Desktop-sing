@@ -46,6 +46,8 @@ class Theme:
     focus: str
     selection: str
     shadow: str
+    scrollbar_handle: str
+    grip_dot: str
     font_display: str
     font_text: str
     font_cjk: str
@@ -104,6 +106,8 @@ def _theme(
     focus: str,
     selection: str,
     shadow: str,
+    scrollbar_handle: str,
+    grip_dot: str,
 ) -> Theme:
     return Theme(
         id=theme_id,
@@ -136,6 +140,8 @@ def _theme(
         focus=focus,
         selection=selection,
         shadow=shadow,
+        scrollbar_handle=scrollbar_handle,
+        grip_dot=grip_dot,
         font_display='"Segoe UI Variable Display", "Segoe UI", "MiSans", "Microsoft YaHei UI"',
         font_text='"Segoe UI Variable Text", "Segoe UI", "MiSans", "Microsoft YaHei UI"',
         font_cjk='"MiSans", "Microsoft YaHei UI", sans-serif',
@@ -175,6 +181,7 @@ THEMES: dict[str, dict[str, Theme]] = {
             "rgba(201,67,34,.16)", "#63C79A", "rgba(99,199,154,.16)",
             "#E3B15C", "rgba(227,177,92,.16)", "#F06A5E", "rgba(240,106,94,.16)",
             "#F06A4A", "rgba(240,106,74,.24)", "rgba(0,0,0,.42)",
+            "rgba(255,255,255,.38)", "rgba(255,255,255,.38)",
         ),
         "light": _theme(
             "ink", "墨", "light",
@@ -185,6 +192,7 @@ THEMES: dict[str, dict[str, Theme]] = {
             "rgba(194,66,31,.12)", "#176349", "rgba(23,99,73,.14)",
             "#8A5200", "rgba(138,82,0,.14)", "#B3261E", "rgba(179,38,30,.12)",
             "#C2421F", "rgba(194,66,31,.18)", "rgba(27,26,24,.22)",
+            "rgba(27,26,24,.50)", "rgba(27,26,24,.50)",
         ),
     },
     "celadon": {
@@ -197,6 +205,7 @@ THEMES: dict[str, dict[str, Theme]] = {
             "rgba(46,158,120,.18)", "#63C79A", "rgba(99,199,154,.16)",
             "#D8B36A", "rgba(216,179,106,.16)", "#F08076", "rgba(240,128,118,.16)",
             "#5FD0A0", "rgba(95,208,160,.24)", "rgba(0,0,0,.42)",
+            "rgba(255,255,255,.38)", "rgba(255,255,255,.38)",
         ),
         "light": _theme(
             "celadon", "青瓷", "light",
@@ -207,6 +216,7 @@ THEMES: dict[str, dict[str, Theme]] = {
             "rgba(31,122,90,.13)", "#176349", "rgba(23,99,73,.14)",
             "#7A5200", "rgba(122,82,0,.14)", "#A8342C", "rgba(168,52,44,.12)",
             "#1F7A5A", "rgba(31,122,90,.19)", "rgba(20,32,26,.20)",
+            "rgba(20,32,26,.50)", "rgba(20,32,26,.50)",
         ),
     },
     "amber": {
@@ -219,6 +229,7 @@ THEMES: dict[str, dict[str, Theme]] = {
             "rgba(217,145,47,.18)", "#7BC79E", "rgba(123,199,158,.16)",
             "#E8B35C", "rgba(232,179,92,.16)", "#F08076", "rgba(240,128,118,.16)",
             "#E8A33D", "rgba(232,163,61,.24)", "rgba(0,0,0,.42)",
+            "rgba(255,255,255,.38)", "rgba(255,255,255,.38)",
         ),
         "light": _theme(
             "amber", "琥珀", "light",
@@ -229,6 +240,7 @@ THEMES: dict[str, dict[str, Theme]] = {
             "rgba(154,91,0,.13)", "#176349", "rgba(23,99,73,.14)",
             "#7A5200", "rgba(122,82,0,.14)", "#A8342C", "rgba(168,52,44,.12)",
             "#9A5B00", "rgba(154,91,0,.19)", "rgba(29,26,21,.20)",
+            "rgba(29,26,21,.50)", "rgba(29,26,21,.50)",
         ),
     },
 }
