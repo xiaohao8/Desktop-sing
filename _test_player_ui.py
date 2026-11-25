@@ -6,6 +6,7 @@ Run with the project build environment:
 """
 import json
 import os
+import socket
 import sys
 import tempfile
 import time
@@ -308,6 +309,66 @@ check("https 歌单抓取走 TLS 连接并返回数据",
       fetched.startswith(b"#EXTM3U") and fetched_conn is not None
       and fetched_conn.pinned_ip == "93.184.216.34" and fetched_conn.closed,
       (fetched[:14], getattr(fetched_conn, "pinned_ip", None)))
+
+
+# ---- Multi-IP fallback: try each pinned address before giving up ----------
+class _MultiIpConnection(_PlaylistHTTPSConnection):
+    attempts = []
+
+    def getresponse(self):
+        _MultiIpConnection.attempts.append(self.pinned_ip)
+        if self.pinned_ip == "203.0.113.10":
+            raise socket.timeout("pinned ip unreachable")
+        return _PlaylistResponse()
+
+
+_MultiIpConnection.attempts.clear()
+V._playlist_public_addresses = lambda host: [
+    ("203.0.113.10", 0), ("203.0.113.11", 0)]
+V._PinnedHTTPSConnection = _MultiIpConnection
+multi_ip_data = b""
+multi_ip_error = ""
+try:
+    try:
+        multi_ip_data = V._fetch_playlist_bytes("https://example.com/list.m3u")
+    except Exception as exc:
+        multi_ip_error = str(exc)
+finally:
+    V._playlist_public_addresses = original_resolve
+    V._PinnedHTTPSConnection = original_https
+check("多 IP 回退：首个地址超时后改用下一个",
+      multi_ip_data.startswith(b"#EXTM3U") and not multi_ip_error
+      and _MultiIpConnection.attempts == ["203.0.113.10", "203.0.113.11"],
+      (multi_ip_data[:14], multi_ip_error, _MultiIpConnection.attempts))
+
+
+class _DeadIpConnection(_PlaylistHTTPSConnection):
+    attempts = []
+
+    def getresponse(self):
+        _DeadIpConnection.attempts.append(self.pinned_ip)
+        raise ConnectionResetError("pinned ip reset")
+
+
+_DeadIpConnection.attempts.clear()
+V._playlist_public_addresses = lambda host: [
+    ("203.0.113.20", 0), ("203.0.113.21", 0)]
+V._PinnedHTTPSConnection = _DeadIpConnection
+dead_ip_error = ""
+dead_ip_type = ""
+try:
+    try:
+        V._fetch_playlist_bytes("https://example.com/list.m3u")
+    except Exception as exc:
+        dead_ip_error = str(exc)
+        dead_ip_type = type(exc).__name__
+finally:
+    V._playlist_public_addresses = original_resolve
+    V._PinnedHTTPSConnection = original_https
+check("多 IP 回退：全部失败时抛最后一个错误",
+      dead_ip_type == "ConnectionResetError"
+      and _DeadIpConnection.attempts == ["203.0.113.20", "203.0.113.21"],
+      (dead_ip_type, dead_ip_error, _DeadIpConnection.attempts))
 
 # ---- Real main player construction ----------------------------------------
 ov = L.LyricOverlay(L.MediaWatcher())
