@@ -175,8 +175,8 @@ THEMES: dict[str, dict[str, Theme]] = {
         "dark": _theme(
             "ink", "墨", "dark",
             "#0B0B0C", "#141416", "#1B1B1E", "#08080A", "#202024",
-            "#F3F0E9", "#A8A49B", "#8A867E", "#6E6B65",
-            "rgba(255,255,255,.08)", "rgba(255,255,255,.34)", "rgba(255,255,255,.12)",
+            "#F3F0E9", "#A8A49B", "#8B877F", "#6E6B65",
+            "rgba(255,255,255,.08)", "rgba(255,255,255,.36)", "rgba(255,255,255,.12)",
             "#C94322", "#F06A4A", "#B93C1D", "#A9341A", "#FFF8F0",
             "rgba(201,67,34,.16)", "#63C79A", "rgba(99,199,154,.16)",
             "#E3B15C", "rgba(227,177,92,.16)", "#F06A5E", "rgba(240,106,94,.16)",
@@ -200,7 +200,7 @@ THEMES: dict[str, dict[str, Theme]] = {
             "celadon", "青瓷", "dark",
             "#0A1210", "#121B18", "#19251F", "#060C0A", "#1F2C25",
             "#EDF2EC", "#A2B0A7", "#84958B", "#6B7B72",
-            "rgba(255,255,255,.09)", "rgba(255,255,255,.34)", "rgba(255,255,255,.13)",
+            "rgba(255,255,255,.09)", "rgba(255,255,255,.36)", "rgba(255,255,255,.13)",
             "#2E9E78", "#5FD0A0", "#35B287", "#2A906E", "#06140F",
             "rgba(46,158,120,.18)", "#63C79A", "rgba(99,199,154,.16)",
             "#D8B36A", "rgba(216,179,106,.16)", "#F08076", "rgba(240,128,118,.16)",
@@ -223,8 +223,8 @@ THEMES: dict[str, dict[str, Theme]] = {
         "dark": _theme(
             "amber", "琥珀", "dark",
             "#0D0C0A", "#171512", "#201D18", "#090806", "#282219",
-            "#F2EDE4", "#ADA69A", "#8C8577", "#716A5E",
-            "rgba(255,255,255,.09)", "rgba(255,255,255,.34)", "rgba(255,255,255,.13)",
+            "#F2EDE4", "#ADA69A", "#90897B", "#736C60",
+            "rgba(255,255,255,.09)", "rgba(255,255,255,.36)", "rgba(255,255,255,.13)",
             "#D9912F", "#E8A33D", "#E8A33D", "#C77F22", "#1E1304",
             "rgba(217,145,47,.18)", "#7BC79E", "rgba(123,199,158,.16)",
             "#E8B35C", "rgba(232,179,92,.16)", "#F08076", "rgba(240,128,118,.16)",
@@ -269,10 +269,11 @@ class ThemeManager(QObject):
         appearance: str = "system",
         parent: QObject | None = None,
         reduce_motion: bool | None = None,
+        allow_experimental: bool = False,
     ) -> None:
         super().__init__(parent)
-        if theme_id not in THEMES:
-            raise ValueError(f"unknown theme id: {theme_id}")
+        self._allow_experimental = allow_experimental
+        self._validate_theme_id(theme_id)
         if appearance not in APPEARANCES:
             raise ValueError(f"unknown appearance: {appearance}")
         self._theme_id = theme_id
@@ -280,6 +281,12 @@ class ThemeManager(QObject):
         self._reduce_motion = reduce_motion
         self._current = self._resolve()
         self._connect_system_appearance()
+
+    def _validate_theme_id(self, theme_id: str) -> None:
+        if theme_id not in THEMES:
+            raise ValueError(f"unknown theme id: {theme_id}")
+        if theme_id in EXPERIMENTAL_THEME_IDS and not self._allow_experimental:
+            raise ValueError(f"experimental theme is not user selectable: {theme_id}")
 
     def _connect_system_appearance(self) -> None:
         app = QGuiApplication.instance()
@@ -305,8 +312,7 @@ class ThemeManager(QObject):
         return self._appearance
 
     def set_theme(self, theme_id: str) -> None:
-        if theme_id not in THEMES:
-            raise ValueError(f"unknown theme id: {theme_id}")
+        self._validate_theme_id(theme_id)
         if theme_id == self._theme_id:
             return
         self._theme_id = theme_id
