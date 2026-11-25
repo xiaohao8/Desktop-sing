@@ -9,6 +9,11 @@ from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QGuiApplication
 
 
+APPEARANCES = ("system", "dark", "light")
+RELEASED_THEME_IDS = ("ink", "celadon")
+EXPERIMENTAL_THEME_IDS = ("amber",)
+
+
 @dataclass(frozen=True)
 class Theme:
     id: str
@@ -139,8 +144,8 @@ def _theme(
         fs_heading=16,
         fs_body=13,
         fs_small=12,
-        fs_caption=11,
-        fs_eyebrow=11,
+        fs_caption=12,
+        fs_eyebrow=12,
         lh_body=20,
         s1=4,
         s2=8,
@@ -165,7 +170,7 @@ THEMES: dict[str, dict[str, Theme]] = {
             "ink", "墨", "dark",
             "#0B0B0C", "#141416", "#1B1B1E", "#08080A", "#202024",
             "#F3F0E9", "#A8A49B", "#8A867E", "#6E6B65",
-            "rgba(255,255,255,.08)", "rgba(255,255,255,.18)", "rgba(255,255,255,.12)",
+            "rgba(255,255,255,.08)", "rgba(255,255,255,.34)", "rgba(255,255,255,.12)",
             "#C94322", "#F06A4A", "#B93C1D", "#A9341A", "#FFF8F0",
             "rgba(201,67,34,.16)", "#63C79A", "rgba(99,199,154,.16)",
             "#E3B15C", "rgba(227,177,92,.16)", "#F06A5E", "rgba(240,106,94,.16)",
@@ -174,10 +179,10 @@ THEMES: dict[str, dict[str, Theme]] = {
         "light": _theme(
             "ink", "墨", "light",
             "#F2EFE8", "#FAF8F2", "#FFFFFF", "#E9E5DC", "#FFFFFF",
-            "#1B1A18", "#5D5951", "#6B6559", "#9A958B",
-            "rgba(27,26,24,.12)", "rgba(27,26,24,.28)", "rgba(27,26,24,.18)",
-            "#C2421F", "#A93618", "#C2421F", "#A03719", "#FFF8EF",
-            "rgba(194,66,31,.12)", "#1F7A5A", "rgba(31,122,90,.14)",
+            "#1B1A18", "#4F4B44", "#625D55", "#837E74",
+            "rgba(27,26,24,.12)", "rgba(27,26,24,.50)", "rgba(27,26,24,.18)",
+            "#C2421F", "#A93618", "#A9341A", "#8F2B16", "#FFF8EF",
+            "rgba(194,66,31,.12)", "#176349", "rgba(23,99,73,.14)",
             "#8A5200", "rgba(138,82,0,.14)", "#B3261E", "rgba(179,38,30,.12)",
             "#C2421F", "rgba(194,66,31,.18)", "rgba(27,26,24,.22)",
         ),
@@ -187,8 +192,8 @@ THEMES: dict[str, dict[str, Theme]] = {
             "celadon", "青瓷", "dark",
             "#0A1210", "#121B18", "#19251F", "#060C0A", "#1F2C25",
             "#EDF2EC", "#A2B0A7", "#84958B", "#6B7B72",
-            "rgba(255,255,255,.09)", "rgba(255,255,255,.19)", "rgba(255,255,255,.13)",
-            "#2E9E78", "#5FD0A0", "#3BAA84", "#2A906E", "#06140F",
+            "rgba(255,255,255,.09)", "rgba(255,255,255,.34)", "rgba(255,255,255,.13)",
+            "#2E9E78", "#5FD0A0", "#35B287", "#2A906E", "#06140F",
             "rgba(46,158,120,.18)", "#63C79A", "rgba(99,199,154,.16)",
             "#D8B36A", "rgba(216,179,106,.16)", "#F08076", "rgba(240,128,118,.16)",
             "#5FD0A0", "rgba(95,208,160,.24)", "rgba(0,0,0,.42)",
@@ -196,10 +201,10 @@ THEMES: dict[str, dict[str, Theme]] = {
         "light": _theme(
             "celadon", "青瓷", "light",
             "#EFF3EE", "#F8FAF6", "#FFFFFF", "#E2E8E1", "#FFFFFF",
-            "#14201A", "#55645B", "#607065", "#87948C",
-            "rgba(20,32,26,.13)", "rgba(20,32,26,.30)", "rgba(20,32,26,.20)",
-            "#1F7A5A", "#176349", "#1F7A5A", "#1C6E51", "#F7FFFB",
-            "rgba(31,122,90,.13)", "#1F7A5A", "rgba(31,122,90,.14)",
+            "#14201A", "#46554C", "#55645B", "#707E75",
+            "rgba(20,32,26,.13)", "rgba(20,32,26,.52)", "rgba(20,32,26,.20)",
+            "#1F7A5A", "#176349", "#1A6A4E", "#155A42", "#F7FFFB",
+            "rgba(31,122,90,.13)", "#176349", "rgba(23,99,73,.14)",
             "#7A5200", "rgba(122,82,0,.14)", "#A8342C", "rgba(168,52,44,.12)",
             "#1F7A5A", "rgba(31,122,90,.19)", "rgba(20,32,26,.20)",
         ),
@@ -209,8 +214,8 @@ THEMES: dict[str, dict[str, Theme]] = {
             "amber", "琥珀", "dark",
             "#0D0C0A", "#171512", "#201D18", "#090806", "#282219",
             "#F2EDE4", "#ADA69A", "#8C8577", "#716A5E",
-            "rgba(255,255,255,.09)", "rgba(255,255,255,.19)", "rgba(255,255,255,.13)",
-            "#D9912F", "#E8A33D", "#E5A143", "#C1822A", "#1E1304",
+            "rgba(255,255,255,.09)", "rgba(255,255,255,.34)", "rgba(255,255,255,.13)",
+            "#D9912F", "#E8A33D", "#E8A33D", "#C77F22", "#1E1304",
             "rgba(217,145,47,.18)", "#7BC79E", "rgba(123,199,158,.16)",
             "#E8B35C", "rgba(232,179,92,.16)", "#F08076", "rgba(240,128,118,.16)",
             "#E8A33D", "rgba(232,163,61,.24)", "rgba(0,0,0,.42)",
@@ -218,15 +223,29 @@ THEMES: dict[str, dict[str, Theme]] = {
         "light": _theme(
             "amber", "琥珀", "light",
             "#F1EEE6", "#F9F6EF", "#FFFFFF", "#E5E0D6", "#FFFFFF",
-            "#1D1A15", "#615B50", "#6D675C", "#8F887C",
-            "rgba(29,26,21,.13)", "rgba(29,26,21,.30)", "rgba(29,26,21,.20)",
-            "#9A5B00", "#7D4900", "#8A5200", "#7A4700", "#FFF8EC",
-            "rgba(154,91,0,.13)", "#1F7A5A", "rgba(31,122,90,.14)",
+            "#1D1A15", "#4F4A41", "#5E584E", "#79736A",
+            "rgba(29,26,21,.13)", "rgba(29,26,21,.52)", "rgba(29,26,21,.20)",
+            "#9A5B00", "#7D4900", "#7D4900", "#653A00", "#FFF8EC",
+            "rgba(154,91,0,.13)", "#176349", "rgba(23,99,73,.14)",
             "#7A5200", "rgba(122,82,0,.14)", "#A8342C", "rgba(168,52,44,.12)",
             "#9A5B00", "rgba(154,91,0,.19)", "rgba(29,26,21,.20)",
         ),
     },
 }
+
+
+def system_animations_enabled() -> bool:
+    """Whether Windows animations are enabled (Reduce Motion is off)."""
+    for module_name in ("winsdk", "winrt"):
+        try:
+            module = __import__(
+                f"{module_name}.windows.ui.viewmanagement",
+                fromlist=["UISettings"],
+            )
+            return bool(module.UISettings().animations_enabled)
+        except Exception:
+            continue
+    return True
 
 
 class ThemeManager(QObject):
@@ -237,22 +256,41 @@ class ThemeManager(QObject):
         theme_id: str = "ink",
         appearance: str = "system",
         parent: QObject | None = None,
+        reduce_motion: bool | None = None,
     ) -> None:
         super().__init__(parent)
         if theme_id not in THEMES:
             raise ValueError(f"unknown theme id: {theme_id}")
-        if appearance not in ("system", "dark", "light"):
+        if appearance not in APPEARANCES:
             raise ValueError(f"unknown appearance: {appearance}")
         self._theme_id = theme_id
         self._appearance = appearance
+        self._reduce_motion = reduce_motion
         self._current = self._resolve()
+        self._connect_system_appearance()
+
+    def _connect_system_appearance(self) -> None:
+        app = QGuiApplication.instance()
+        if app is None:
+            return
+        try:
+            hints = app.styleHints()
+            hints.colorSchemeChanged.connect(self._on_system_appearance_changed)
+        except (AttributeError, RuntimeError, TypeError):
+            pass
+
+    def _on_system_appearance_changed(self, *_args) -> None:
+        if self._appearance == "system":
+            self._sync()
 
     def current(self) -> Theme:
-        theme = self._resolve()
-        if theme != self._current:
-            self._current = theme
-            self.changed.emit(theme)
-        return theme
+        return self._current
+
+    def theme_id(self) -> str:
+        return self._theme_id
+
+    def appearance(self) -> str:
+        return self._appearance
 
     def set_theme(self, theme_id: str) -> None:
         if theme_id not in THEMES:
@@ -260,18 +298,35 @@ class ThemeManager(QObject):
         if theme_id == self._theme_id:
             return
         self._theme_id = theme_id
-        self._publish()
+        self._sync()
 
     def set_appearance(self, appearance: str) -> None:
-        if appearance not in ("system", "dark", "light"):
+        if appearance not in APPEARANCES:
             raise ValueError(f"unknown appearance: {appearance}")
         if appearance == self._appearance:
             return
         self._appearance = appearance
-        self._publish()
+        self._sync()
 
     def refresh_system(self) -> Theme:
-        return self.current()
+        self._sync()
+        return self._current
+
+    def reduce_motion(self) -> bool:
+        if self._reduce_motion is not None:
+            return self._reduce_motion
+        return not system_animations_enabled()
+
+    def set_reduce_motion(self, enabled: bool | None) -> None:
+        if enabled == self._reduce_motion:
+            return
+        self._reduce_motion = enabled
+        self.changed.emit(self._current)
+
+    def duration(self, key: str = "m_base") -> int:
+        if self.reduce_motion():
+            return 0
+        return int(getattr(self._current, key))
 
     def system_appearance(self) -> str:
         try:
@@ -305,7 +360,7 @@ class ThemeManager(QObject):
         )
         return THEMES[self._theme_id][appearance]
 
-    def _publish(self) -> None:
+    def _sync(self) -> None:
         theme = self._resolve()
         if theme != self._current:
             self._current = theme
