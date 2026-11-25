@@ -452,6 +452,47 @@ app.processEvents()
 check("退出沉浸模式", not player._immersive and player.sidebar.isVisible(),
       player._immersive)
 
+# ---- Language switch refreshes brand / immersive / stage eyebrow -----------
+def _has_cjk(text):
+    for ch in text or "":
+        code = ord(ch)
+        if 0x2E80 <= code <= 0x9FFF or 0x3040 <= code <= 0x30FF:
+            return True
+    return False
+
+
+L.set_ui_lang("en")
+player.retranslate_ui()
+app.processEvents()
+check("切 en 后窗口标题无中文",
+      "Desktop-sing" in player.windowTitle()
+      and not _has_cjk(player.windowTitle()), player.windowTitle())
+check("切 en 后侧栏品牌", player.sidebar.brand_name.text() == "Desktop-sing",
+      player.sidebar.brand_name.text())
+check("切 en 后沉浸按钮", player.now.immersive_btn.text() == "Immersive lyrics",
+      player.now.immersive_btn.text())
+check("切 en 后舞台 eyebrow", player.now.source.text() == "Now playing",
+      player.now.source.text())
+L.set_ui_lang("ja")
+player.retranslate_ui()
+app.processEvents()
+check("切 ja 后沉浸按钮", player.now.immersive_btn.text() == "没入歌詞",
+      player.now.immersive_btn.text())
+check("切 ja 后舞台 eyebrow", player.now.source.text() == "再生中",
+      player.now.source.text())
+player.now.update_track({"title": "夜航西飞", "artist": "示例歌手",
+                         "duration": 240.0}, None)
+L.set_ui_lang("en")
+player.retranslate_ui()
+app.processEvents()
+check("有曲目时切语言不覆盖歌名",
+      player.now.title.text() == "夜航西飞"
+      and player.now.track_title.text() == "夜航西飞",
+      (player.now.title.text(), player.now.track_title.text()))
+L.set_ui_lang("zh-CN")
+player.retranslate_ui()
+app.processEvents()
+
 player.enter_mini()
 app.processEvents()
 check("切换到迷你模式会隐藏主窗口", not player.isVisible())

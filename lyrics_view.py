@@ -680,8 +680,9 @@ class Sidebar(QWidget):
         brand.addWidget(mark)
         col = QVBoxLayout()
         col.setSpacing(0)
-        name = QLabel("桌面歌词")
+        name = QLabel(tr("桌面歌词"))
         name.setObjectName("brandname")
+        self.brand_name = name
         sub = QLabel("DESKTOP PLAYER")
         sub.setObjectName("brandsub")
         col.addWidget(name)
@@ -742,6 +743,7 @@ class Sidebar(QWidget):
                   "history": "歌单", "settings": "桌面歌词设置"}
         for key, label in labels.items():
             self.buttons[key].setText(self._tr(label))
+        self.brand_name.setText(self._tr("桌面歌词"))
         self.tip.setText(self._tr(
             "听歌数据只保存在本机\n不会上传，也不会关联账号"))
         self._apply_status()
@@ -1141,6 +1143,7 @@ class NowStage(QWidget):
         self.canvas.raise_()
         self.canvas.show()
         self._stage_cover = None
+        self._song = {}
 
         self.source = QLabel(tr("NOW PLAYING"))
         self.source.setObjectName("stageeyebrow")
@@ -1304,6 +1307,7 @@ class NowStage(QWidget):
 
     def update_track(self, song, cover):
         song = song or {}
+        self._song = dict(song)
         self.title.setText(song.get("title") or self._tr("等待播放"))
         artist = song.get("artist") or self._tr("播放音乐后自动显示歌词")
         self.artist.setText(artist)
@@ -1319,6 +1323,16 @@ class NowStage(QWidget):
         self.time.setText("0:00")
         self.canvas.set_playback(self.canvas.pos, self.canvas.cur_idx,
                                  self.canvas.playing, cover=cover, song=song)
+
+    def retranslate(self):
+        self.source.setText(self._tr("NOW PLAYING"))
+        song = self._song or {}
+        title = song.get("title") or self._tr("等待播放")
+        artist = song.get("artist") or self._tr("播放音乐后自动显示歌词")
+        self.title.setText(title)
+        self.artist.setText(artist)
+        self.track_title.setText(title)
+        self.track_artist.setText(artist)
 
     def update_progress(self, pos, duration, playing):
         self._duration = max(0.0, float(duration or 0.0))
@@ -2633,9 +2647,15 @@ class MainPlayerWindow(QWidget):
         self.setWindowTitle(self._tr("桌面歌词 · 正在播放"))
         self.titlebar.retranslate()
         self.sidebar.retranslate()
+        self.now.retranslate()
         self.report.retranslate()
         self.history.retranslate()
         self.settings_page.rebuild()
+        self.now.immersive_btn.setText(
+            self._tr("退出沉浸") if self._immersive else self._tr("沉浸歌词"))
+        self.now.immersive_btn.adjustSize()
+        self.now.immersive_btn.move(
+            self.now.width() - self.now.immersive_btn.width() - 24, 16)
         self.navigate(self._page)
 
     def navigate(self, key: str):
