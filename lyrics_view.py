@@ -191,9 +191,9 @@ def _playlist_public_addresses(host: str) -> list[tuple[str, int]]:
             address = ipaddress.ip_address(info[4][0])
         except ValueError:
             return []
-        if (address.is_private or address.is_loopback or address.is_link_local
-                or address.is_multicast or address.is_reserved
-                or address.is_unspecified):
+        # 公网单播才放行：is_global 已排除 loopback/link-local/private/
+        # CGNAT(100.64.0.0/10)/保留段；多播单独再拦一次。
+        if not address.is_global or address.is_multicast:
             return []
         if (info[4][0], info[0]) not in addresses:
             addresses.append((info[4][0], info[0]))
@@ -1929,6 +1929,7 @@ class PlaylistRowButton(QPushButton):
         meta.setSpacing(2)
         self._full_title = track.get("title") or tr("未知歌曲")
         self._full_artist = track.get("artist") or tr("未知歌手")
+        self._full_status = self._status_text()
         self.title = QLabel(self._full_title)
         self.title.setObjectName("playlistTitle")
         self.artist = QLabel(self._full_artist)
@@ -1943,15 +1944,41 @@ class PlaylistRowButton(QPushButton):
         self.duration.setFixedWidth(56)
         self.duration.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         root.addWidget(self.duration)
-        self.status = QLabel(self._status_text())
+        self.status = QLabel(self._full_status)
         self.status.setObjectName("playlistStatus")
         self.status.setProperty("matched", "1" if self._has_local_lyrics()
                                 else "0")
-        self.status.setFixedWidth(112)
         self.status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.status.setToolTip(self._full_status)
+        self._update_status_metrics()
         root.addWidget(self.status)
         self._set_cover()
         self._set_accessible_name()
+
+    def _update_status_metrics(self):
+        """按当前语言两条状态文案取最大宽度，避免硬截断。
+
+        加上左右各 8px 的视觉余量，保证 en/ja/zh 四语言与三档 DPI
+        下状态列不被截断；仍保留 ElideRight 与 tooltip 兜底。
+        """
+        metrics = QFontMetrics(self.status.font())
+        candidates = (
+            "✓ " + self._tr("歌词已就绪"),
+            self._tr("未找到本地歌词"),
+        )
+        widest = max(
+            metrics.horizontalAdvance(text) for text in candidates)
+        self.status.setMinimumWidth(widest + 16)
+
+    def _update_status_elide(self):
+        """超长时按 ElideRight 省略，全文保留在 tooltip / accessibleName。"""
+        width = self.status.width()
+        if width <= 0:
+            self.status.setText(self._full_status)
+            return
+        metrics = QFontMetrics(self.status.font())
+        self.status.setText(metrics.elidedText(
+            self._full_status, Qt.ElideRight, max(1, width)))
 
     def _update_metadata_elide(self):
         for label, full in ((self.title, self._full_title),
@@ -1963,10 +1990,12 @@ class PlaylistRowButton(QPushButton):
     def showEvent(self, event):
         super().showEvent(event)
         self._update_metadata_elide()
+        self._update_status_elide()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_metadata_elide()
+        self._update_status_elide()
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
@@ -2006,15 +2035,18 @@ class PlaylistRowButton(QPushButton):
 
     def _update_status_state(self):
         matched = self._has_local_lyrics()
+        self._full_status = self._status_text()
         self.status.setProperty("matched", "1" if matched else "0")
         self.status.style().unpolish(self.status)
         self.status.style().polish(self.status)
-        self.status.setText(self._status_text())
+        self.status.setToolTip(self._full_status)
+        self._update_status_metrics()
+        self._update_status_elide()
 
     def _set_accessible_name(self):
         self.setAccessibleName("%s，%s，%s，%s" % (
             self._full_title, self._full_artist,
-            self.duration.text(), self.status.text()))
+            self.duration.text(), self._full_status))
 
     def retranslate(self):
         self._full_title = self.track.get("title") or self._tr("未知歌曲")
@@ -2040,6 +2072,7 @@ class PlaylistPage(QWidget):
         self._selected_track = None
         self._fetch_thread = None
         self._cancelled = False
+        self._fetch_generation = 0
         self.setObjectName("playlistPage")
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 28)
@@ -2183,6 +2216,7 @@ class PlaylistPage(QWidget):
         self.url_input.setProperty("error", "0")
         self.url_input.style().unpolish(self.url_input)
         self.url_input.style().polish(self.url_input)
+        self.url_input.setEnabled(True)
         self.import_btn.setEnabled(True)
         self.file_btn.setEnabled(True)
         self.import_btn.setText(self._tr("导入歌单"))
@@ -2227,6 +2261,7 @@ class PlaylistPage(QWidget):
     def set_loading(self):
         self._state = "loading"
         self.error.hide()
+        self.url_input.setEnabled(False)
         self.url_input.setProperty("error", "0")
         self.url_input.style().unpolish(self.url_input)
         self.url_input.style().polish(self.url_input)
@@ -2271,11 +2306,11 @@ class PlaylistPage(QWidget):
 
     def _cancel_import(self):
         self._cancelled = True
+        self._fetch_generation += 1
         if self._fetch_thread is not None:
             try:
-                self._fetch_thread.completed.disconnect(
-                    self._on_fetch_completed)
-                self._fetch_thread.failed.disconnect(self._on_fetch_failed)
+                self._fetch_thread.completed.disconnect()
+                self._fetch_thread.failed.disconnect()
             except (RuntimeError, TypeError):
                 pass
             self._fetch_thread = None
@@ -2315,6 +2350,8 @@ class PlaylistPage(QWidget):
             self._show_empty()
 
     def _import_url(self):
+        if self._state == "loading":
+            return
         url = self.url_input.text().strip()
         if not url:
             self.set_error(self._tr("无法读取这个歌单。请使用 M3U 或 M3U8 链接。"))
@@ -2328,10 +2365,14 @@ class PlaylistPage(QWidget):
             self.set_error(self._tr("这是平台链接。请直接使用 M3U 或 M3U8 链接。"))
             return
         self._cancelled = False
+        self._fetch_generation += 1
+        generation = self._fetch_generation
         self.set_loading()
         self._fetch_thread = PlaylistFetchThread(url, self)
-        self._fetch_thread.completed.connect(self._on_fetch_completed)
-        self._fetch_thread.failed.connect(self._on_fetch_failed)
+        self._fetch_thread.completed.connect(
+            lambda tracks, g=generation: self._on_fetch_completed(g, tracks))
+        self._fetch_thread.failed.connect(
+            lambda message, g=generation: self._on_fetch_failed(g, message))
         self._fetch_thread.start()
 
     def _import_file(self):
@@ -2360,7 +2401,9 @@ class PlaylistPage(QWidget):
             return
         self.set_tracks(tracks)
 
-    def _on_fetch_completed(self, tracks):
+    def _on_fetch_completed(self, generation, tracks):
+        if generation != self._fetch_generation:
+            return
         self._fetch_thread = None
         self._set_import_ready()
         if self._cancelled:
@@ -2370,7 +2413,9 @@ class PlaylistPage(QWidget):
             return
         self.set_tracks(tracks)
 
-    def _on_fetch_failed(self, message):
+    def _on_fetch_failed(self, generation, message):
+        if generation != self._fetch_generation:
+            return
         self._fetch_thread = None
         self._set_import_ready()
         if self._cancelled:
