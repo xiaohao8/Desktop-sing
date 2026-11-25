@@ -2127,8 +2127,8 @@ class PlaylistPage(QWidget):
             if len(self._tracks) == 1:
                 self.success.setText(self._tr("已导入 1 首曲目"))
             else:
-                self.success.setText(self._tr(
-                    "已导入 %d 首曲目" % len(self._tracks)))
+                self.success.setText(
+                    self._tr("已导入 %d 首曲目") % len(self._tracks))
             self.success.show()
         else:
             self.success.hide()

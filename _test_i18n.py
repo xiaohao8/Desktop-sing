@@ -93,5 +93,48 @@ L.set_ui_lang("zh-CN")
 L._source_mark("qq", False); L._source_mark("qq", False)
 ck("源健康计数", L._SOURCE_HEALTH["qq"]["fail"] == 2)
 ck("score 罚分生效", L.score_lyrics([[0.0, "a"], [999999.0, "b"]], {}, [], 200.0) < 0)
+
+# 6) lyrics_view.py 里所有 tr()/_tr() 字面量都必须有 en / ja 译文
+import ast as _ast
+
+
+def _tr_call_name(node):
+    if isinstance(node, _ast.Name):
+        return node.id
+    if isinstance(node, _ast.Attribute):
+        return node.attr
+    return ""
+
+
+_view_keys = set()
+_view_tree = _ast.parse(open(os.path.join(APP_DIR, "lyrics_view.py"),
+                             encoding="utf-8").read())
+for _node in _ast.walk(_view_tree):
+    if isinstance(_node, _ast.Call) and _tr_call_name(_node.func) in ("tr", "_tr"):
+        for _arg in _node.args:
+            if isinstance(_arg, _ast.Constant) and isinstance(_arg.value, str):
+                _view_keys.add(_arg.value)
+            elif (isinstance(_arg, _ast.BinOp)
+                  and isinstance(_arg.op, _ast.Mod)
+                  and isinstance(_arg.left, _ast.Constant)
+                  and isinstance(_arg.left.value, str)):
+                _view_keys.add(_arg.left.value)
+    if isinstance(_node, _ast.Assign):
+        for _target in _node.targets:
+            if (isinstance(_target, _ast.Name)
+                    and _target.id in ("empty_message_key", "empty_description_key")
+                    and isinstance(_node.value, _ast.Constant)
+                    and isinstance(_node.value.value, str)
+                    and _node.value.value.strip()):
+                _view_keys.add(_node.value.value)
+for _lang in ("en", "ja"):
+    L.set_ui_lang(_lang)
+    _table = L._I18N_TABLES.get(_lang) or {}
+    _missing = sorted(_key for _key in _view_keys
+                      if not str(_table.get(_key) or "").strip())
+    ck("lyrics_view 文案无缺译 (%s, %d keys)" % (_lang, len(_view_keys)),
+       not _missing, _missing[:10])
+L.set_ui_lang("zh-CN")
+
 print("----", "FAIL: %d" % len(fails) if fails else "全部通过")
 sys.exit(1 if fails else 0)
