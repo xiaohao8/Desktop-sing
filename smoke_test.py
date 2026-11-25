@@ -1705,6 +1705,14 @@ def async_fetch_ordering():
             fails.append(why)
 
     real_http, real_fetch = L.http_get, L.fetch_lyrics
+    # 封面磁盘缓存必须隔离：真实 CACHE_DIR 里残留的 cover-*.bytes 会让
+    # fetch_cover_image 直接命中缓存、根本不发请求，断言「只请求一次」就
+    # 变成「一次都没请求」。这是测试隔离问题，不是产品回归。
+    real_cover_dir = L.COVER_CACHE_DIR
+    real_mem_cache = dict(L._COVER_MEMORY_CACHE)
+    cover_tmp = tempfile.mkdtemp(prefix="ds_cover_cache_")
+    L.COVER_CACHE_DIR = cover_tmp
+    L._COVER_MEMORY_CACHE.clear()
     calls = []
 
     def fake_http(url, headers=None, timeout=8.0):
@@ -1735,6 +1743,20 @@ def async_fetch_ordering():
 
         ov.fetched.disconnect()
         ov.fetched.connect(wrapped)
+
+        # 计时前必须先清空事件队列：前面几十个用例各自留下了仍在跑的
+        # LyricOverlay（每个都有 33ms 重绘定时器），主线程积压会让 emit
+        # 排队几百毫秒甚至 2s+。这时量到的是「前面用例的排队延迟」，
+        # 不是「歌词在等封面」，断言就变成了随机失败（实测 1/8 概率）。
+        # 真实验场景是干净启动，所以这里只保留被测路径自身的延迟。
+        drain_deadline = _t.perf_counter() + 3.0
+        while _t.perf_counter() < drain_deadline:
+            a = _t.perf_counter()
+            QApplication.processEvents()
+            if _t.perf_counter() - a < 0.005:
+                break
+            _t.sleep(0.001)
+
         t0 = _t.perf_counter()
         ov._apply_media({"title": "晴天", "artist": "周杰伦", "cover": None})
         deadline = _t.perf_counter() + 10
@@ -1807,6 +1829,10 @@ def async_fetch_ordering():
 
     finally:
         L.http_get, L.fetch_lyrics = real_http, real_fetch
+        L.COVER_CACHE_DIR = real_cover_dir
+        L._COVER_MEMORY_CACHE.clear()
+        L._COVER_MEMORY_CACHE.update(real_mem_cache)
+        shutil.rmtree(cover_tmp, ignore_errors=True)
 
     for w in fails:
         check("async fetch ordering", lambda w=w: (_ for _ in ()).throw(AssertionError(w)))
