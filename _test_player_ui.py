@@ -5,11 +5,13 @@ Run with the project build environment:
     .buildenv312\\Scripts\\python.exe _test_player_ui.py
 """
 import json
+import hashlib
 import os
 import socket
 import sys
 import tempfile
 import time
+import urllib.parse
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -324,6 +326,367 @@ check("QQ 短链导入线程可完成",
       and qq_thread_calls == [
           "https://c6.y.qq.com/base/fcgi-bin/u?__=6RTHDHu5qQ6d"],
       (qq_results, qq_failures, qq_thread_calls))
+
+
+# ---- Multi-platform playlist imports --------------------------------------
+platform_hosts = [
+    ("qq", "y.qq.com"),
+    ("netease", "music.163.com"),
+    ("netease", "y.music.163.com"),
+    ("netease", "163cn.tv"),
+    ("kugou", "m.kugou.com"),
+    ("kugou", "gateway.kugou.com"),
+    ("kuwo", "m.kuwo.cn"),
+    ("migu", "music.migu.cn"),
+    ("migu", "h5.nf.migu.cn"),
+]
+check("五个平台 host 判定",
+      all(V._playlist_platform_kind(host) == kind
+          for kind, host in platform_hosts)
+      and V._playlist_platform_kind("evil-kugou.com") == ""
+      and V._playlist_platform_kind("kugou.com.evil.example") == ""
+      and V._playlist_platform_kind("open.spotify.com") == ""
+      and V._playlist_is_platform_url("open.spotify.com"),
+      [(host, V._playlist_platform_kind(host))
+       for _kind, host in platform_hosts])
+
+netease_ids = [
+    ("hash 路由", "https://music.163.com/#/playlist?id=3778678"),
+    ("手机分享", "https://y.music.163.com/m/playlist?id=3778678&userid=1"),
+    ("路径形式", "https://music.163.com/playlist/3778678"),
+]
+check("网易云歌单 ID 支持三种分享路径",
+      all(V._netease_playlist_id_in_url(url) == "3778678"
+          for _name, url in netease_ids),
+      [(name, V._netease_playlist_id_in_url(url))
+       for name, url in netease_ids])
+
+kugou_ids = [
+    ("网页歌单", "https://www.kugou.com/yy/special/single/9126490.html"),
+    ("移动歌单", "https://m.kugou.com/plist/list/9126490?json=true"),
+    ("分享页", "https://www.kugou.com/share/abc?id=9126490"),
+]
+check("酷狗歌单 ID 支持三种分享路径",
+      all(V._kugou_playlist_id_in_url(url) == "9126490"
+          for _name, url in kugou_ids),
+      [(name, V._kugou_playlist_id_in_url(url))
+       for name, url in kugou_ids])
+check("酷狗 global_collection_id 优先复用",
+      V._kugou_global_id_in_url(
+          "https://m.kugou.com/plist/list/1?global_collection_id="
+          "collection_3_9126490_4_0")
+      == "collection_3_9126490_4_0")
+
+kuwo_ids = [
+    ("网页歌单", "https://www.kuwo.cn/playlist_detail/2952464073"),
+    ("移动歌单", "https://m.kuwo.cn/newh5app/playlist_detail/2952464073"),
+]
+check("酷我歌单 ID 支持两种分享路径",
+      all(V._kuwo_playlist_id_in_url(url) == "2952464073"
+          for _name, url in kuwo_ids),
+      [(name, V._kuwo_playlist_id_in_url(url))
+       for name, url in kuwo_ids])
+
+migu_ids = [
+    ("网页歌单", "https://music.migu.cn/v3/music/playlist/115481041"),
+    ("H5 分享", "https://h5.nf.migu.cn/music/playlist?playlistId=115481041"),
+]
+check("咪咕歌单 ID 支持两种分享路径",
+      all(V._migu_playlist_id_in_url(url) == "115481041"
+          for _name, url in migu_ids),
+      [(name, V._migu_playlist_id_in_url(url))
+       for name, url in migu_ids])
+
+netease_payload = {
+    "code": 200,
+    "playlist": {
+        "trackCount": 3,
+        "tracks": [
+            {"name": "晴天", "id": 186016, "ar": [{"name": "周杰伦"}],
+             "al": {"name": "叶惠美"}, "dt": 269000},
+            {"name": "晴天", "id": 186016, "ar": [{"name": "周杰伦"}],
+             "al": {"name": "叶惠美"}, "dt": 269000},
+            {"name": "七里香", "id": 185811,
+             "artists": [{"name": "周杰伦"}],
+             "album": {"name": "七里香"}, "dt": "299000"},
+        ],
+    },
+}
+netease_tracks = V._parse_netease_playlist_payload(netease_payload)
+check("网易云歌单只解析元数据并去重",
+      len(netease_tracks) == 2
+      and netease_tracks[0]["title"] == "晴天"
+      and netease_tracks[0]["artist"] == "周杰伦"
+      and netease_tracks[0]["duration"] == 269.0
+      and netease_tracks[0]["source"] == "netease:186016"
+      and netease_tracks[1]["duration"] == 299.0
+      and "audio_bytes" not in netease_tracks[0],
+      netease_tracks)
+check("网易云空歌单/错误响应不产出假曲目",
+      _raises_value(V._parse_netease_playlist_payload, {"code": 400})
+      and _raises_value(V._parse_netease_playlist_payload,
+                        {"code": 200, "playlist": {"tracks": []}})
+      and _raises_value(V._parse_netease_playlist_payload,
+                        {"code": 200, "playlist": {
+                            "trackCount": 1001, "tracks": [{"name": "A"}]}}))
+
+original_follow = V._platform_follow
+netease_api_urls = []
+
+
+def _fake_netease_follow(url, **kwargs):
+    netease_api_urls.append(url)
+    return url, json.dumps(netease_payload).encode("utf-8")
+
+
+V._platform_follow = _fake_netease_follow
+try:
+    netease_api_tracks = V._fetch_netease_playlist_tracks(
+        "https://music.163.com/#/playlist?id=3778678")
+finally:
+    V._platform_follow = original_follow
+check("网易云导入请求公开 API 且不取音频",
+      len(netease_api_tracks) == 2
+      and len(netease_api_urls) == 1
+      and "/api/v6/playlist/detail?id=3778678" in netease_api_urls[0]
+      and netease_api_urls[0].startswith("https://music.163.com/"),
+      netease_api_urls)
+
+kugou_signature = V._kugou_signature({"b": 2, "a": 1})
+expected_signature = hashlib.md5(
+    (V._KUGOU_SIGN_SALT + "a=1b=2" + V._KUGOU_SIGN_SALT).encode("utf-8")
+).hexdigest()
+check("酷狗签名按 MIT 文档的方案计算",
+      kugou_signature == expected_signature, kugou_signature)
+
+original_global_id = V._kugou_playlist_global_id
+original_kugou_payload = V._kugou_api_payload
+kugou_params = []
+
+
+def _fake_global_id(_url):
+    return "collection_3_9126490_4_0"
+
+
+def _fake_kugou_payload(params):
+    kugou_params.append(dict(params))
+    return {"error_code": 0, "data": {
+        "count": 2,
+        "songs": [
+            {"name": "周杰伦 - 晴天", "singerinfo": [{"name": "周杰伦"}],
+             "albuminfo": {"name": "叶惠美"}, "timelen": 269000,
+             "hash": "H1"},
+            {"name": "七里香", "singerinfo": [{"name": "周杰伦"}],
+             "albuminfo": {"name": "七里香"}, "timelength": "299000",
+             "hash": "H2"},
+        ],
+    }}
+
+
+V._kugou_playlist_global_id = _fake_global_id
+V._kugou_api_payload = _fake_kugou_payload
+try:
+    kugou_tracks = V._fetch_kugou_playlist_tracks(
+        "https://www.kugou.com/yy/special/single/9126490.html")
+finally:
+    V._kugou_playlist_global_id = original_global_id
+    V._kugou_api_payload = original_kugou_payload
+check("酷狗歌单按 global id 分页并解析元数据",
+      len(kugou_tracks) == 2
+      and kugou_tracks[0]["title"] == "晴天"
+      and kugou_tracks[0]["artist"] == "周杰伦"
+      and kugou_tracks[0]["duration"] == 269.0
+      and kugou_tracks[1]["title"] == "七里香"
+      and kugou_tracks[1]["duration"] == 299.0
+      and kugou_params[0]["begin_idx"] == 0
+      and kugou_params[0]["global_collection_id"]
+      == "collection_3_9126490_4_0",
+      (kugou_tracks, kugou_params))
+
+kugou_api_urls = []
+V._platform_follow = (
+    lambda url, **kwargs: (kugou_api_urls.append(url)
+                           or (url, b'{"error_code":0}'))
+)
+try:
+    V._kugou_api_payload({"begin_idx": 100,
+                          "global_collection_id":
+                          "collection_3_9126490_4_0"})
+finally:
+    V._platform_follow = original_follow
+_kugou_query = dict(urllib.parse.parse_qs(
+    urllib.parse.urlparse(kugou_api_urls[0]).query))
+check("酷狗 API 使用签名 gateway 且只取元数据",
+      "get_other_list_file_nofilt" in kugou_api_urls[0]
+      and _kugou_query.get("begin_idx") == ["100"]
+      and len(_kugou_query.get("signature", [""])[0]) == 32
+      and "mp3" not in kugou_api_urls[0].lower(),
+      kugou_api_urls)
+
+kuwo_payload = {
+    "code": 200,
+    "data": {
+        "total": 3,
+        "musicList": [
+            {"name": "晴天", "artist": "周杰伦", "duration": 269,
+             "album": "叶惠美", "musicrid": "MUSIC_1"},
+            {"name": "晴天", "artist": "周杰伦", "duration": 269,
+             "album": "叶惠美", "musicrid": "MUSIC_1"},
+            {"name": "七里香", "artist": "周杰伦", "duration": "299",
+             "album": "七里香", "musicrid": "MUSIC_2"},
+        ],
+    },
+}
+kuwo_api_urls = []
+
+
+def _fake_kuwo_follow(url, **kwargs):
+    kuwo_api_urls.append(url)
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+    if query.get("pn") == ["1"]:
+        return url, json.dumps(kuwo_payload).encode("utf-8")
+    return url, json.dumps(
+        {"code": 200, "data": {"total": 3, "musicList": []}}
+    ).encode("utf-8")
+
+
+V._platform_follow = _fake_kuwo_follow
+try:
+    kuwo_tracks = V._fetch_kuwo_playlist_tracks(
+        "https://www.kuwo.cn/playlist_detail/2952464073")
+finally:
+    V._platform_follow = original_follow
+check("酷我歌单解析元数据并去重",
+      len(kuwo_tracks) == 2
+      and kuwo_tracks[0]["title"] == "晴天"
+      and kuwo_tracks[0]["duration"] == 269.0
+      and kuwo_tracks[1]["album"] == "七里香"
+      and kuwo_tracks[1]["source"] == "kuwo:MUSIC_2"
+      and len(kuwo_api_urls) == 2
+      and "pid=2952464073" in kuwo_api_urls[0]
+      and "pn=1" in kuwo_api_urls[0]
+      and "rn=100" in kuwo_api_urls[0],
+      (kuwo_tracks, kuwo_api_urls))
+
+migu_payload = {
+    "code": "000000",
+    "data": {
+        "totalCount": 2,
+        "songList": [
+            {"songName": "晴天", "singerList": [{"name": "周杰伦"}],
+             "album": "叶惠美", "duration": 269, "contentId": "C1"},
+            {"songName": "七里香", "singerList": [{"name": "周杰伦"}],
+             "album": "七里香", "duration": "299", "contentId": "C2"},
+        ],
+    },
+}
+migu_api_urls = []
+V._platform_follow = (
+    lambda url, **kwargs: (migu_api_urls.append(url)
+                           or (url,
+                               json.dumps(migu_payload).encode("utf-8")))
+)
+try:
+    migu_tracks = V._fetch_migu_playlist_tracks(
+        "https://music.migu.cn/v3/music/playlist/115481041")
+finally:
+    V._platform_follow = original_follow
+check("咪咕歌单解析元数据并去重",
+      len(migu_tracks) == 2
+      and migu_tracks[0]["artist"] == "周杰伦"
+      and migu_tracks[1]["duration"] == 299.0
+      and migu_tracks[1]["source"] == "migu:C2"
+      and len(migu_api_urls) == 1
+      and "app.c.nf.migu.cn" in migu_api_urls[0]
+      and "playlistId=115481041" in migu_api_urls[0]
+      and "pageSize=50" in migu_api_urls[0],
+      (migu_tracks, migu_api_urls))
+
+check("平台适配器拒绝白名单外主机",
+      _raises_value(V._platform_request_once,
+                    "https://evil.example/playlist",
+                    host_check=V._kugou_playlist_host, headers={}))
+
+dispatch_calls = []
+_dispatch_names = ("_fetch_qq_playlist_tracks", "_fetch_netease_playlist_tracks",
+                   "_fetch_kugou_playlist_tracks", "_fetch_kuwo_playlist_tracks",
+                   "_fetch_migu_playlist_tracks")
+_dispatch_originals = {name: getattr(V, name) for name in _dispatch_names}
+for _name in _dispatch_names:
+    setattr(V, _name,
+            lambda url, _n=_name: dispatch_calls.append(_n)
+            or [{"title": _n, "artist": "", "duration": 0.0,
+                 "source": ""}])
+try:
+    for _kind, _host in (
+            ("qq", "y.qq.com"), ("netease", "music.163.com"),
+            ("kugou", "m.kugou.com"), ("kuwo", "m.kuwo.cn"),
+            ("migu", "music.migu.cn")):
+        V._load_playlist_tracks("https://%s/playlist" % _host)
+finally:
+    for _name, _func in _dispatch_originals.items():
+        setattr(V, _name, _func)
+check("歌单导入按平台分派到对应适配器",
+      len(dispatch_calls) == 5
+      and [name.split("_")[2] for name in dispatch_calls]
+      == ["qq", "netease", "kugou", "kuwo", "migu"],
+      dispatch_calls)
+
+
+class _FakeSignal:
+    def __init__(self):
+        self.slots = []
+
+    def connect(self, slot):
+        self.slots.append(slot)
+
+    def disconnect(self):
+        self.slots = []
+
+
+class _FakeFetchThread:
+    last = None
+
+    def __init__(self, url, parent=None):
+        self.url = url
+        self.completed = _FakeSignal()
+        self.failed = _FakeSignal()
+        _FakeFetchThread.last = self
+
+    def start(self):
+        pass
+
+
+original_thread = V.PlaylistFetchThread
+playlist_page = V.PlaylistPage(L._tr)
+V.PlaylistFetchThread = _FakeFetchThread
+try:
+    for _kind, _url in (
+            ("netease", "https://music.163.com/#/playlist?id=3778678"),
+            ("kugou", "https://www.kugou.com/yy/special/single/9126490.html"),
+            ("kuwo", "https://www.kuwo.cn/playlist_detail/2952464073"),
+            ("migu", "https://music.migu.cn/v3/music/playlist/115481041")):
+        playlist_page.url_input.setText(_url)
+        playlist_page._import_url()
+        check("歌单输入框放行 %s 平台链接" % _kind,
+              playlist_page._state == "loading"
+              and _FakeFetchThread.last.url == _url,
+              (playlist_page._state,
+               getattr(_FakeFetchThread.last, "url", None)))
+        playlist_page._cancel_import()
+    playlist_page.url_input.setText(
+        "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M")
+    playlist_page._import_url()
+    check("未支持平台给出导出提示且不起线程",
+          playlist_page._state == "error"
+          and "M3U/M3U8" in playlist_page.error.text()
+          and _FakeFetchThread.last.url
+          == "https://music.migu.cn/v3/music/playlist/115481041",
+          (playlist_page._state, playlist_page.error.text()))
+finally:
+    V.PlaylistFetchThread = original_thread
+    playlist_page.deleteLater()
+
 
 fetch_results = []
 fetch_failures = []
