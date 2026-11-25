@@ -227,6 +227,88 @@ check("重定向到私网被拒绝",
       and _RedirectConnection.requests == ["/redirect.m3u"],
       (redirect_failure, _RedirectConnection.requests))
 
+# ---- HTTPS playlist connections must wrap TLS over the pinned socket ------
+class _FakePinnedSocket:
+    def setsockopt(self, *args):
+        pass
+
+
+class _FakeTLSContext:
+    def __init__(self):
+        self.calls = []
+        self.wrapped = _FakePinnedSocket()
+
+    def wrap_socket(self, sock, server_hostname=None):
+        self.calls.append((sock, server_hostname))
+        return self.wrapped
+
+
+tls_context = _FakeTLSContext()
+https_conn = V._PinnedHTTPSConnection(
+    "raw.githubusercontent.com", 443, timeout=5.0, context=tls_context)
+https_conn.pinned_ip = "93.184.216.34"
+connect_targets = []
+https_conn._create_connection = (
+    lambda address, timeout=None, source_address=None:
+    connect_targets.append(address) or _FakePinnedSocket())
+https_conn.connect()
+check("HTTPS 连接 pin 到已校验 IP", connect_targets == [("93.184.216.34", 443)],
+      connect_targets)
+check("HTTPS 连接执行 TLS 包装",
+      len(tls_context.calls) == 1
+      and tls_context.calls[0][1] == "raw.githubusercontent.com",
+      tls_context.calls)
+check("HTTPS 连接使用 TLS socket", https_conn.sock is tls_context.wrapped,
+      type(getattr(https_conn, "sock", None)).__name__)
+
+
+class _PlaylistResponse:
+    status = 200
+
+    def getheader(self, name):
+        return None
+
+    def read(self, count=-1):
+        return b"#EXTM3U\n#EXTINF:90,Pinned - Track\nhttps://example.com/x.mp3\n"
+
+
+class _PlaylistHTTPSConnection:
+    instances = []
+
+    def __init__(self, host, port, timeout=None, context=None):
+        self.host = host
+        self.port = port
+        self.pinned_ip = ""
+        self.closed = False
+        _PlaylistHTTPSConnection.instances.append(self)
+
+    def request(self, method, path, headers=None):
+        self.request_path = path
+
+    def getresponse(self):
+        return _PlaylistResponse()
+
+    def close(self):
+        self.closed = True
+
+
+original_resolve = V._playlist_public_addresses
+original_https = V._PinnedHTTPSConnection
+_PlaylistHTTPSConnection.instances.clear()
+V._playlist_public_addresses = lambda host: [("93.184.216.34", 0)]
+V._PinnedHTTPSConnection = _PlaylistHTTPSConnection
+try:
+    fetched = V._fetch_playlist_bytes("https://example.com/list.m3u")
+finally:
+    V._playlist_public_addresses = original_resolve
+    V._PinnedHTTPSConnection = original_https
+fetched_conn = (_PlaylistHTTPSConnection.instances[0]
+                if _PlaylistHTTPSConnection.instances else None)
+check("https 歌单抓取走 TLS 连接并返回数据",
+      fetched.startswith(b"#EXTM3U") and fetched_conn is not None
+      and fetched_conn.pinned_ip == "93.184.216.34" and fetched_conn.closed,
+      (fetched[:14], getattr(fetched_conn, "pinned_ip", None)))
+
 # ---- Real main player construction ----------------------------------------
 ov = L.LyricOverlay(L.MediaWatcher())
 ov.song = {"title": "夜航西飞", "artist": "示例歌手", "source": "test",
@@ -473,6 +555,12 @@ check("切 en 后沉浸按钮", player.now.immersive_btn.text() == "Immersive ly
       player.now.immersive_btn.text())
 check("切 en 后舞台 eyebrow", player.now.source.text() == "Now playing",
       player.now.source.text())
+check("切 en 后最小化/最大化提示",
+      player.titlebar.b_min.toolTip() == "Minimize"
+      and player.titlebar.b_max.toolTip() == "Maximize"
+      and player.titlebar.b_min.accessibleName() == "Minimize"
+      and player.titlebar.b_max.accessibleName() == "Maximize",
+      (player.titlebar.b_min.toolTip(), player.titlebar.b_max.toolTip()))
 L.set_ui_lang("ja")
 player.retranslate_ui()
 app.processEvents()
@@ -480,6 +568,10 @@ check("切 ja 后沉浸按钮", player.now.immersive_btn.text() == "没入歌詞
       player.now.immersive_btn.text())
 check("切 ja 后舞台 eyebrow", player.now.source.text() == "再生中",
       player.now.source.text())
+check("切 ja 后最小化/最大化提示",
+      player.titlebar.b_min.toolTip() == "最小化"
+      and player.titlebar.b_max.toolTip() == "最大化",
+      (player.titlebar.b_min.toolTip(), player.titlebar.b_max.toolTip()))
 player.now.update_track({"title": "夜航西飞", "artist": "示例歌手",
                          "duration": 240.0}, None)
 L.set_ui_lang("en")
@@ -492,6 +584,48 @@ check("有曲目时切语言不覆盖歌名",
 L.set_ui_lang("zh-CN")
 player.retranslate_ui()
 app.processEvents()
+
+# ---- English plural forms and playlist success message ----------------------
+L.set_ui_lang("en")
+report = V.ReportPage(L._tr)
+report.set_stats({"total_seconds": 61, "month_tracks": 1,
+                  "streak": 1, "active_days": 1})
+check("en 单数: 1 track / 1 day / 1 day",
+      (report.track_count.text(), report.streak.value.text(),
+       report.active.value.text()) == ("1 track", "1 day", "1 day"),
+      (report.track_count.text(), report.streak.value.text(),
+       report.active.value.text()))
+report.set_stats({"total_seconds": 61, "month_tracks": 3,
+                  "streak": 2, "active_days": 4})
+check("en 复数: 3 tracks / 2 days / 4 days",
+      (report.track_count.text(), report.streak.value.text(),
+       report.active.value.text()) == ("3 tracks", "2 days", "4 days"),
+      (report.track_count.text(), report.streak.value.text(),
+       report.active.value.text()))
+report.deleteLater()
+row_single = V.HistoryRow({"title": "One", "artist": "A", "plays": 1}, L._tr)
+row_many = V.HistoryRow({"title": "Two", "artist": "B", "plays": 3}, L._tr)
+check("en 单数: 1 play", row_single.plays.text() == "1 play",
+      row_single.plays.text())
+check("en 复数: 3 plays", row_many.plays.text() == "3 plays",
+      row_many.plays.text())
+row_single.deleteLater()
+row_many.deleteLater()
+
+playlist_preview = V.PlaylistPage(L._tr)
+playlist_preview.set_tracks([
+    {"title": "One", "artist": "A", "duration": 90.0, "source": "local"}])
+check("en 成功态单数", playlist_preview.success.text() == "Imported 1 track",
+      playlist_preview.success.text())
+playlist_preview.set_tracks([
+    {"title": "One", "artist": "A", "duration": 90.0, "source": "local"},
+    {"title": "Two", "artist": "B", "duration": 90.0, "source": "local"},
+    {"title": "Three", "artist": "C", "duration": 90.0, "source": "local"}])
+check("en 成功态复数", playlist_preview.success.text() == "Imported 3 tracks",
+      playlist_preview.success.text())
+playlist_preview.deleteLater()
+app.processEvents()
+L.set_ui_lang("zh-CN")
 
 player.enter_mini()
 app.processEvents()

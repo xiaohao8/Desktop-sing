@@ -290,7 +290,11 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
 
 
 class _PinnedHTTPSConnection(_PinnedHTTPConnection, http.client.HTTPSConnection):
-    pass
+    def connect(self):
+        _PinnedHTTPConnection.connect(self)
+        server_hostname = self._tunnel_host or self.host
+        self.sock = self._context.wrap_socket(
+            self.sock, server_hostname=server_hostname)
 
 
 def _decode_playlist(data: bytes) -> str:
@@ -1627,11 +1631,20 @@ class ReportPage(QWidget):
         else:
             self.month_value.setText(str(int(s.get("month_seconds") or 0)))
             self.month_unit.setText(self._tr("秒"))
-        self.track_count.setText("%d %s" % (int(s.get("month_tracks") or 0), self._tr("首")))
+        month_tracks = int(s.get("month_tracks") or 0)
+        self.track_count.setText(
+            self._tr("1 首") if month_tracks == 1
+            else "%d %s" % (month_tracks, self._tr("首")))
         self.today.set_value(_format_duration(s.get("today_seconds", 0), self._tr))
         self.peak.set_value(str(s.get("peak_hour") or "--:--"))
-        self.streak.set_value("%d %s" % (int(s.get("streak") or 0), self._tr("天")))
-        self.active.set_value("%d %s" % (int(s.get("active_days") or 0), self._tr("天")))
+        streak_days = int(s.get("streak") or 0)
+        self.streak.set_value(
+            self._tr("1 天") if streak_days == 1
+            else "%d %s" % (streak_days, self._tr("天")))
+        active_days = int(s.get("active_days") or 0)
+        self.active.set_value(
+            self._tr("1 天") if active_days == 1
+            else "%d %s" % (active_days, self._tr("天")))
         self.spark.set_data(s.get("daily") or [])
         top = s.get("top_artists") or []
         if top:
@@ -1814,8 +1827,10 @@ class HistoryRow(QWidget):
                                               playback.get("playing", False)))
         self.last_played.setText(_format_last_played(self._track.get("last"),
                                                     self._tr))
-        self.plays.setText("%d %s" % (int(self._track.get("plays") or 0),
-                                      self._tr("次")))
+        plays = int(self._track.get("plays") or 0)
+        self.plays.setText(
+            self._tr("1 次") if plays == 1
+            else "%d %s" % (plays, self._tr("次")))
 
     def mousePressEvent(self, e):
         if self._current and e.button() == Qt.LeftButton:
