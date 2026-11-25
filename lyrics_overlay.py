@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
 
 import listening_store
 import lyrics_view
+import ui_theme
 
 # ---- SMTC 绑定：延迟导入 ----------------------------------------------------
 # 只 import winsdk 就要 ~155ms（它是一大坨 winrt 投影模块），启动关键路径上完全没必要
@@ -6876,6 +6877,11 @@ class LyricOverlay(QWidget):
         self._pos_actions = {}                                       # 摆放位置菜单项（托盘刷新用）
         self._a_pos_free = None
 
+        # Own the ThemeManager from overlay startup.  The tray menu and the
+        # standalone settings panel must not depend on MainPlayerWindow having
+        # been created; the player reuses this manager when it opens.
+        self.theme_manager = None
+        self._setup_theme_manager()
         self._resolve_accent()
 
         self._fill = 0.0
@@ -7216,7 +7222,7 @@ class LyricOverlay(QWidget):
         menu = QMenu()
 
         act_panel = QAction(make_menu_icon("gear"), _tr("设置面板…"), menu)
-        act_panel.triggered.connect(self._open_settings)
+        act_panel.triggered.connect(lambda *_: self._open_settings())
         act_player = QAction(_tr("打开播放器"), menu)
         act_player.triggered.connect(self._open_player)
         act_report = QAction(_tr("听歌报告"), menu)
@@ -7707,6 +7713,43 @@ class LyricOverlay(QWidget):
         except Exception:
             pass
 
+    def _setup_theme_manager(self):
+        """Create the process-wide theme source before any window exists."""
+        from shiboken6 import isValid
+
+        manager = getattr(self, "theme_manager", None)
+        if manager is not None and not isValid(manager):
+            manager = None
+        if manager is None:
+            theme_id = str(self.cfg.get("theme_id") or "ink")
+            appearance = str(self.cfg.get("appearance") or "system")
+            if theme_id not in ui_theme.THEMES:
+                theme_id = "ink"
+            if appearance not in ui_theme.APPEARANCES:
+                appearance = "system"
+            manager = ui_theme.ThemeManager(
+                theme_id,
+                appearance,
+                self,
+                reduce_motion=True if self.cfg.get("reduce_motion") else None,
+            )
+            manager.changed.connect(self._on_theme_changed)
+            self.theme_manager = manager
+        return manager
+
+    def _on_theme_changed(self, theme):
+        """Refresh chrome that exists without a player window."""
+        try:
+            self._tray_menu.setStyleSheet(menu_qss(self.accent1, theme))
+        except Exception:
+            pass
+        panel = getattr(self, "panel", None)
+        if panel is not None:
+            try:
+                panel.set_theme(theme)
+            except (RuntimeError, AttributeError):
+                pass
+
     def _current_theme(self):
         """Active ui_theme.Theme for chrome surfaces (menus/dialogs/panels).
 
@@ -7976,10 +8019,8 @@ class LyricOverlay(QWidget):
         elif act == "saver":
             self.open_saver()
 
-    def _open_panel(self):
-        """Backward-compatible mini-bar entry; the player page is preferred."""
-        if self._open_settings():
-            return
+    def _show_settings_panel(self) -> bool:
+        """Create and show the standalone settings window."""
         try:
             if self.panel is None:
                 self.panel = SettingsPanel(self)
@@ -7997,6 +8038,7 @@ class LyricOverlay(QWidget):
             # 覆盖 Qt 平台插件异步落窗的时序差异。
             for delay in (0, 120, 400):
                 QTimer.singleShot(delay, lambda p=panel: self._ensure_panel_visible(p))
+            return True
         except Exception:
             # Qt 槽函数里的异常不会传到主循环，只会被打印到 stderr——
             # 打包成 --noconsole 后 stderr 是空的，用户看到的就是「点了没反应」。
@@ -8005,12 +8047,22 @@ class LyricOverlay(QWidget):
             self.tray.showMessage(_tr("桌面歌词"),
                                   _tr("设置面板打开失败，详情见日志"),
                                   QSystemTrayIcon.Warning, 3000)
+            return False
+
+    def _open_panel(self):
+        """Backward-compatible mini-bar entry; the player page is preferred."""
+        if self._open_settings():
+            return
+        self._show_settings_panel()
 
     def _open_settings(self, standalone: bool = False) -> bool:
-        """Open settings inside the main player, creating the window if needed."""
+        """Open settings; standalone=True creates the independent panel."""
+        if standalone:
+            if self._show_settings_panel():
+                return True
+            # Safe fallback: the embedded settings page may still be usable.
+            return self._open_settings()
         try:
-            if standalone:
-                raise LookupError
             shell = getattr(self, "window_shell", None)
             if shell is not None:
                 player = shell.open_player()
@@ -10725,8 +10777,14 @@ class Segmented(QWidget):
         p.setBrush(QColor(0, 0, 0, 84))
         p.drawRoundedRect(QRectF(sx, pad + 1.5, pw, ph), pr, pr)
         pg = QLinearGradient(0, pad, 0, pad + ph)
-        pg.setColorAt(0.0, ac.lighter(124))
-        pg.setColorAt(1.0, ac.darker(106))
+        if theme is not None:
+            # Use the semantic accent pair instead of a lightened accent:
+            # on_accent is guaranteed >= 4.5:1 on both stops, including 12px.
+            pg.setColorAt(0.0, _qss_color(theme.accent_fill, ac))
+            pg.setColorAt(1.0, _qss_color(theme.accent_pressed, ac.darker(118)))
+        else:
+            pg.setColorAt(0.0, ac.lighter(124))
+            pg.setColorAt(1.0, ac.darker(106))
         p.setBrush(QBrush(pg))
         p.drawRoundedRect(QRectF(sx, pad, pw, ph), pr, pr)
         # 文字
@@ -11586,6 +11644,9 @@ class SettingsPanel(QWidget):
         self._fontrows = {}
         self._dl_ids = set()   # 正在下载的字体条目 id 集合（支持并发下载多个字体）
         self._build()
+        if self._theme is not None:
+            for seg in self._segs:
+                seg.set_theme(self._theme)
         self._apply_qss()
         self.refresh()
         self.font_prog.connect(self._on_font_prog)
