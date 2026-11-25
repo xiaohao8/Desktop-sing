@@ -250,33 +250,57 @@ def _fetch_playlist_bytes(url: str, *, timeout: float = 10.0,
         path = parsed.path or "/"
         if parsed.query:
             path += "?" + parsed.query
-        if parsed.scheme == "https":
-            connection = _PinnedHTTPSConnection(
-                host, port, timeout=timeout, context=ssl.create_default_context())
-        else:
-            connection = _PinnedHTTPConnection(host, port, timeout=timeout)
-        connection.pinned_ip = pinned_addresses[0][0]
-        try:
-            connection.request("GET", path, headers={
-                "User-Agent": "Desktop-sing-playlist/1.0",
-                "Accept": "audio/x-mpegurl,application/x-mpegurl,text/plain,*/*",
-            })
-            response = connection.getresponse()
-            if response.status in (301, 302, 303, 307, 308):
-                location = response.getheader("Location")
-                if not location:
-                    raise ValueError("playlist-redirect-missing")
-                current = urllib.parse.urljoin(current, location)
-                continue
-            if response.status != 200:
-                raise ValueError("playlist-http-error")
-            data = response.read(max_bytes + 1)
-            if len(data) > max_bytes:
-                raise ValueError("playlist-too-large")
-            return data
-        finally:
-            connection.close()
+        result = None
+        last_error = None
+        for address, _family in pinned_addresses:
+            try:
+                result = _playlist_request_once(
+                    parsed.scheme, host, port, path, timeout, address, max_bytes)
+                break
+            except (OSError, http.client.HTTPException) as exc:
+                last_error = exc
+        if result is None:
+            if last_error is not None:
+                raise last_error
+            raise ValueError("private-playlist-host")
+        status, location, data = result
+        if status in (301, 302, 303, 307, 308):
+            if not location:
+                raise ValueError("playlist-redirect-missing")
+            current = urllib.parse.urljoin(current, location)
+            continue
+        if status != 200:
+            raise ValueError("playlist-http-error")
+        if len(data) > max_bytes:
+            raise ValueError("playlist-too-large")
+        return data
     raise ValueError("playlist-too-many-redirects")
+
+
+def _playlist_request_once(scheme: str, host: str, port: int, path: str,
+                           timeout: float, pinned_ip: str,
+                           max_bytes: int) -> tuple[int, str | None, bytes]:
+    """Open one pinned connection and return (status, location, body)."""
+    if scheme == "https":
+        connection = _PinnedHTTPSConnection(
+            host, port, timeout=timeout, context=ssl.create_default_context())
+    else:
+        connection = _PinnedHTTPConnection(host, port, timeout=timeout)
+    connection.pinned_ip = pinned_ip
+    try:
+        connection.request("GET", path, headers={
+            "User-Agent": "Desktop-sing-playlist/1.0",
+            "Accept": "audio/x-mpegurl,application/x-mpegurl,text/plain,*/*",
+        })
+        response = connection.getresponse()
+        status = response.status
+        if status in (301, 302, 303, 307, 308):
+            return status, response.getheader("Location"), b""
+        if status != 200:
+            return status, None, b""
+        return status, None, response.read(max_bytes + 1)
+    finally:
+        connection.close()
 
 
 class _PinnedHTTPConnection(http.client.HTTPConnection):
