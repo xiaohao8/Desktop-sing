@@ -16,7 +16,8 @@ app = QApplication([])
 fails = []
 
 def ck(name, cond, extra=""):
-    print(("  ok  - " if cond else "  FAIL- ") + name + (" | " + extra if extra and not cond else ""))
+    print(("  ok  - " if cond else "  FAIL- ") + name
+          + (" | " + str(extra) if extra and not cond else ""))
     if not cond:
         fails.append(name)
 
@@ -65,6 +66,16 @@ m3 = ov.tray.contextMenu()
 texts3 = [a.text() for a in m3.actions() if a.text()]
 ck("切换后菜单 zh-CN", any("设置面板…" in t for t in texts3), str(texts3[:3]))
 ck("配置已存档", ov.cfg.get("ui_lang") == "zh-CN", str(ov.cfg.get("ui_lang")))
+
+empty_stats_key = "还没有足够的听歌记录。播放满 20 秒后才会开始统计。"
+for lang in ("zh-TW", "en", "ja"):
+    L.set_ui_lang(lang)
+    empty_stats_text = L._tr(empty_stats_key)
+    ck("报告空态有译文", empty_stats_text != empty_stats_key,
+       (lang, empty_stats_text))
+    ck("报告空态无简体回退", "记录" not in empty_stats_text
+       and "统计" not in empty_stats_text, (lang, empty_stats_text))
+L.set_ui_lang("zh-CN")
 
 # 5) 源健康/罗马音/繁简烟雾确认
 L._source_mark("qq", False); L._source_mark("qq", False)
