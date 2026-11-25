@@ -546,6 +546,26 @@ class NavButton(QPushButton):
         self.setIcon(_icon(self._icon_kind, color, 18))
 
 
+class _SizeGrip(QSizeGrip):
+    """Transparent grip with three dots, kept inside the rounded shell."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(18, 18)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setAutoFillBackground(False)
+        self.setStyleSheet("background: transparent; border: none;")
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(255, 255, 255, 92))
+        for x, y in ((11, 5), (5, 11), (11, 11)):
+            p.drawEllipse(QPointF(x, y), 1.6, 1.6)
+        p.end()
+
+
 class TitleBar(QWidget):
     minimize_requested = Signal()
     maximize_requested = Signal()
@@ -1019,6 +1039,15 @@ class LyricsCanvas(QWidget):
         p.restore()
         p.end()
 
+    def _translation_rect(self, y: float, w: float) -> QRectF:
+        """Keep the current-line translation clear of the next lyric box.
+
+        Non-current lines paint from ``y + 48`` (their box top is
+        ``next_y - 16`` with ``_line_h == 64``). The translation therefore has
+        to end at ``y + 46`` so there is a 2px visual gap.
+        """
+        return QRectF(24, y + 24, w - 48, 22)
+
     def _paint_current(self, p, text, idx, y, w):
         limit = max(160.0, w - 48)
         size = 34
@@ -1049,7 +1078,7 @@ class LyricsCanvas(QWidget):
             p.setFont(tf)
             p.setPen(QColor(215, 218, 224, 170))
             fm2 = QFontMetrics(tf)
-            p.drawText(QRectF(24, y + (36 if size >= 30 else 30), w - 48, 22),
+            p.drawText(self._translation_rect(y, w),
                        Qt.AlignLeft | Qt.AlignVCenter,
                        fm2.elidedText(tr, Qt.ElideRight, max(80, w - 48)))
 
@@ -1257,7 +1286,7 @@ class NowStage(QWidget):
             bar_h = 92
             self.bar.setGeometry(20, self.height() - bar_h - 18,
                                  self.width() - 40, bar_h)
-            self.slider.setGeometry(94, 68, max(80, self.bar.width() - 392), 18)
+            self.slider.setGeometry(20, 68, max(80, self.bar.width() - 40), 18)
             self.slider.raise_()
             return
         self.hero_cover.show()
@@ -1292,7 +1321,7 @@ class NowStage(QWidget):
         self.immersive_btn.move(self.width() - self.immersive_btn.width() - 24, 16)
         bar_h = 92
         self.bar.setGeometry(20, self.height() - bar_h - 18, self.width() - 40, bar_h)
-        self.slider.setGeometry(94, 68, max(80, self.bar.width() - 392), 18)
+        self.slider.setGeometry(20, 68, max(80, self.bar.width() - 40), 18)
         self.slider.raise_()
 
     def paintEvent(self, e):
@@ -1397,8 +1426,8 @@ class MiniSparkline(QWidget):
     def set_data(self, daily):
         # Plot seconds so a valid 20-second session does not collapse to 0.
         self.values = [max(0, int(d.get("seconds", d.get("minutes", 0)) or 0))
-                       for d in daily]
-        self.labels = [str(d.get("label") or "") for d in daily]
+                       for d in (daily or [])] or [0]
+        self.labels = [str(d.get("label") or "") for d in (daily or [])] or [""]
         self.update()
 
     def paintEvent(self, e):
@@ -1496,7 +1525,20 @@ class ReportPage(QWidget):
         super().__init__(parent)
         self._tr = tr
         self.setObjectName("reportPage")
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self.scroll = QScrollArea(self)
+        self.scroll.setObjectName("reportScroll")
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.report_body = QWidget()
+        self.report_body.setObjectName("reportBody")
+        self.report_body.setMinimumHeight(720)
+        self.scroll.setWidget(self.report_body)
+        outer.addWidget(self.scroll)
+        root = QVBoxLayout(self.report_body)
         root.setContentsMargins(28, 22, 28, 26)
         root.setSpacing(14)
         root.addSpacing(10)
@@ -1523,6 +1565,7 @@ class ReportPage(QWidget):
 
         hero = QFrame()
         hero.setObjectName("reportHero")
+        self.hero = hero
         hl = QVBoxLayout(hero)
         hl.setContentsMargins(22, 18, 22, 12)
         hl.setSpacing(4)
@@ -1570,7 +1613,7 @@ class ReportPage(QWidget):
         self.artist_big.setObjectName("artistBig")
         al.addWidget(self.artist_big)
         self.artist_meta = QLabel("")
-        self.artist_meta.setObjectName("muted")
+        self.artist_meta.setObjectName("artistMeta")
         al.addWidget(self.artist_meta)
         self.artist_list = QLabel("")
         self.artist_list.setObjectName("rankList")
@@ -2420,8 +2463,7 @@ class MainPlayerWindow(QWidget):
         bl.addWidget(self.stack, 1)
         sl.addWidget(body, 1)
 
-        self.grip = QSizeGrip(self.shell)
-        self.grip.setFixedSize(18, 18)
+        self.grip = _SizeGrip(self.shell)
         self.grip.raise_()
 
     def _apply_style(self):
@@ -2515,6 +2557,8 @@ class MainPlayerWindow(QWidget):
         QLabel#statCaption { color:#8f97a7; font-size:11px; }
         QLabel#cardHead { color:#9aa2b2; font-size:11px; font-weight:700; letter-spacing:1px; }
         QLabel#artistBig { color:#f5f1e9; font-size:24px; font-weight:800; }
+        QLabel#artistMeta { color:#ffb59d; font-size:12px; font-weight:700;
+                            font-feature-settings:"tnum" 1; }
         QLabel#muted { color:#949bab; font-size:12px; }
         QLabel#rankList, QLabel#trackRank { color:#c1c7d2; font-size:12px; line-height:1.7; }
         QLabel#reportEmpty { color:#949bab; background:rgba(255,255,255,6);
@@ -2522,6 +2566,7 @@ class MainPlayerWindow(QWidget):
                              font-size:13px; padding:24px; }
         QScrollArea { background:transparent; border:none; }
         QScrollArea > QWidget > QWidget { background:transparent; }
+        QWidget#reportBody { background:transparent; }
         QScrollBar:vertical { background:transparent; width:8px; margin:2px; }
         QScrollBar::handle:vertical { background:rgba(255,255,255,46); border-radius:4px;
                                       min-height:30px; }
@@ -2652,7 +2697,7 @@ class MainPlayerWindow(QWidget):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         if hasattr(self, "grip"):
-            self.grip.move(self.shell.width() - 20, self.shell.height() - 20)
+            self.grip.move(self.shell.width() - 28, self.shell.height() - 28)
             self.grip.raise_()
 
     def _toggle_max(self):
