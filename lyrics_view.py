@@ -919,7 +919,7 @@ class StageBackdrop(QWidget):
         if self._dark:
             alphas = (95, 120, 190)
         else:
-            alphas = (178, 208, 236)
+            alphas = (206, 226, 244)
         c.setAlpha(alphas[0])
         shade.setColorAt(0.0, c)
         c.setAlpha(alphas[1])
@@ -1353,12 +1353,25 @@ class NowStage(QWidget):
         self.backdrop.set_theme(theme)
         self.cover.set_theme(theme)
         self.hero_cover.set_theme(theme)
+        if theme.appearance == "light":
+            # The stage is a deep listening surface even in light mode, so its
+            # labels need on-dark colors rather than the light chrome tokens.
+            self.source.setStyleSheet("color: rgba(255,255,255,.58);")
+            self.track_title.setStyleSheet("color: #F6F5F1;")
+            self.track_artist.setStyleSheet("color: rgba(255,255,255,.68);")
+        else:
+            self.source.setStyleSheet("")
+            self.track_title.setStyleSheet("")
+            self.track_artist.setStyleSheet("")
         self.immersive_btn.setIcon(_icon("expand", self._icon_color(), 15))
         playing = self.b_toggle.toolTip() == self._tr("暂停")
         self.b_prev.setIcon(_icon("prev", self._on_accent_color(), 17))
         self.b_toggle.setIcon(_icon("pause" if playing else "play",
                                     self._on_accent_color(), 20))
         self.b_next.setIcon(_icon("next", self._on_accent_color(), 17))
+        # The lyric canvas is translucent: repaint it so it does not keep a
+        # stale copy of the previous backdrop baked into its backing store.
+        self.canvas.update()
         self.update()
 
     def _release_seek(self):
@@ -1612,6 +1625,12 @@ class SettingsPage(QWidget):
     def retranslate(self):
         self.appearance.retranslate()
 
+    def set_theme(self, theme):
+        # The embedded legacy panel builds its stylesheet once at construction;
+        # refresh it whenever the app theme changes.
+        self.appearance.refresh()
+        self.panel.update_accent(QColor(theme.accent_fill))
+
 
 class AppearanceSection(QFrame):
     """「外观」section: appearance mode (system/light/dark) + theme swatches.
@@ -1672,6 +1691,7 @@ class AppearanceSection(QFrame):
         self.motion_btn = QPushButton()
         self.motion_btn.setObjectName("appearanceSeg")
         self.motion_btn.setCheckable(True)
+        self.motion_btn.setMinimumHeight(32)
         self.motion_btn.setCursor(Qt.PointingHandCursor)
         self.motion_btn.clicked.connect(self._toggle_motion)
         motion_row.addWidget(self.motion_btn, 0)
@@ -1793,10 +1813,12 @@ class _ThemeSwatchButton(QPushButton):
         self._paint_dots()
 
     def _paint_dots(self):
+        theme = ui_theme.THEMES[self.theme_id][self._appearance]
         for key, dot in self._dots:
-            color = getattr(ui_theme.THEMES[self.theme_id][self._appearance], key)
+            color = getattr(theme, key)
             dot.setStyleSheet(
-                "QLabel#themeSwatchDots{background:%s;border-radius:9px;}" % color)
+                "QLabel#themeSwatchDots{background:%s;border:1px solid %s;"
+                "border-radius:9px;}" % (color, theme.border_strong))
 
     def retranslate(self):
         self.name.setText(self._tr(self._NAMES[self.theme_id]))
@@ -2802,7 +2824,8 @@ class MainPlayerWindow(QWidget):
         self._push_theme(theme)
 
     def _push_theme(self, theme):
-        for widget in (self.titlebar, self.sidebar, self.now, self.grip):
+        for widget in (self.titlebar, self.sidebar, self.now, self.grip,
+                       self.settings_page):
             setter = getattr(widget, "set_theme", None)
             if callable(setter):
                 setter(theme)

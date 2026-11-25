@@ -612,7 +612,7 @@ QLabel#appearanceTitle { color: $text; font-size: 16px; font-weight: 700; }
 QLabel#appearanceHint { color: $text_muted; font-size: 12px; }
 QPushButton#appearanceSeg { background: transparent; color: $text_muted;
                             border: 1px solid $border; border-radius: 12px;
-                            padding: 7px 0; font-size: 13px; font-weight: 600; }
+                            padding: 7px 14px; font-size: 13px; font-weight: 600; }
 QPushButton#appearanceSeg:hover { background: $surface_hover; color: $text; }
 QPushButton#appearanceSeg:checked { background: $accent_soft; color: $accent_text;
                                     border-color: $accent_fill; }
