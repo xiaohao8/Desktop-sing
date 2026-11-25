@@ -67,6 +67,18 @@ ck("切换后菜单 zh-CN", any("设置面板…" in t for t in texts3), str(tex
 ck("配置已存档", ov.cfg.get("ui_lang") == "zh-CN", str(ov.cfg.get("ui_lang")))
 
 # 5) 源健康/罗马音/繁简烟雾确认
+for lang in ("zh-CN", "zh-TW", "en", "ja"):
+    L.set_ui_lang(lang)
+    settings = L.SettingsPanel(ov)
+    rows = [(btn.text(), btn.fontMetrics().horizontalAdvance(btn.text()),
+             btn.minimumWidth())
+            for _eid, (btn, _name) in settings._fontrows.items()]
+    ck("字体按钮按语言度量取宽",
+      all(width >= 92 and width >= advance + 18
+          for _text, advance, width in rows),
+      (lang, rows))
+    settings.close()
+L.set_ui_lang("zh-CN")
 L._source_mark("qq", False); L._source_mark("qq", False)
 ck("源健康计数", L._SOURCE_HEALTH["qq"]["fail"] == 2)
 ck("score 罚分生效", L.score_lyrics([[0.0, "a"], [999999.0, "b"]], {}, [], 200.0) < 0)
