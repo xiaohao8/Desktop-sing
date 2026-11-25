@@ -22,8 +22,10 @@ _cfg_sandbox.begin(hotkeys=False, keepalive=False, idle_saver=False,
 _tmp = tempfile.TemporaryDirectory(prefix="desktop-sing-framework-test-")
 os.environ["DESKTOP_SING_LISTEN_PATH"] = os.path.join(_tmp.name, "listening.json")
 
-from PySide6.QtCore import QObject, Signal  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Signal  # noqa: E402
+from PySide6.QtGui import QColor  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
+from shiboken6 import isValid  # noqa: E402
 
 import lyrics_overlay as L  # noqa: E402
 from app.context import AppContext  # noqa: E402
@@ -138,6 +140,42 @@ check("窗口协调器可打开设置",
       player.stack.currentWidget() is player.settings_page and player.isVisible(),
       type(player.stack.currentWidget()).__name__)
 
+source = player.now.source
+needed_width = (source.fontMetrics().horizontalAdvance(source.text())
+                + player.now._SOURCE_TRACKING * max(0, len(source.text()) - 1) + 8)
+check("NOW PLAYING 首轮不被裁切", source.width() >= needed_width,
+      (source.width(), needed_width))
+
+theme_manager = player._theme_manager
+theme = theme_manager.current()
+player.now.update_progress(10.0, 100.0, True)
+first_icon_key = player.now.b_toggle.icon().cacheKey()
+player.now.update_progress(11.0, 100.0, True)
+check("播放图标跟随 on_accent 而非硬编码白色",
+      player.now._toggle_icon_key == (True, theme.on_accent),
+      player.now._toggle_icon_key)
+check("同状态 tick 不重建播放图标",
+      player.now.b_toggle.icon().cacheKey() == first_icon_key)
+
+settings_panel = player.settings_page.panel
+check("嵌入设置页无残留 opacity effect",
+      settings_panel.graphicsEffect() is None,
+      settings_panel.graphicsEffect())
+theme_manager.set_reduce_motion(True)
+check("Reduce Motion 下设置面板动画时长为 0",
+      settings_panel._fade_duration() == 0, settings_panel._fade_duration())
+theme_manager.set_reduce_motion(False)
+
+settings_panel.set_content_accent(QColor("#FF0000"))
+check("封面取色不覆盖主题 chrome",
+      settings_panel._chrome_accent.name() == theme.accent_fill.lower(),
+      (settings_panel._chrome_accent.name(), theme.accent_fill))
+check("封面取色进入内容通道",
+      settings_panel._content_accent.name() == "#ff0000",
+      settings_panel._content_accent.name())
+check("封面取色不重写面板 QSS",
+      "#ff0000" not in settings_panel.styleSheet().lower())
+
 runtime.shell.show_mini()
 app.processEvents()
 check("窗口协调器可切回迷你条",
@@ -147,6 +185,23 @@ if player is not None:
     player._timer.stop()
     player.close()
     app.processEvents()
+QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+stored_manager = getattr(runtime.overlay, "theme_manager", None)
+check("关闭播放器后主题管理器仍存活",
+      isValid(stored_manager),
+      "theme_manager=%s" % ("present but deleted" if stored_manager is not None else "missing"))
+reopened = runtime.shell.open_player()
+app.processEvents()
+check("播放器关闭后可再次打开",
+      reopened is not None and reopened.isVisible(),
+      type(reopened).__name__ if reopened is not None else None)
+if reopened is not None:
+    check("二次打开复用同一主题管理器",
+          reopened._theme_manager is runtime.overlay.theme_manager)
+    reopened._timer.stop()
+    reopened.close()
+    app.processEvents()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 runtime.overlay._timer.stop()
 for timer_name in ("_zorder_timer", "_idle_timer"):
     timer = getattr(runtime.overlay, timer_name, None)
