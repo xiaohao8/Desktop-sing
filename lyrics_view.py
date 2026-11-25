@@ -11,6 +11,7 @@ import math
 import os
 import time
 import http.client
+import hashlib
 import ipaddress
 import json
 import re
@@ -224,10 +225,10 @@ def _safe_playlist_url(url: str) -> urllib.parse.ParseResult:
 def _playlist_is_platform_url(host: str) -> bool:
     host = (host or "").strip().strip("[]").lower()
     platform_hosts = {
-        "b23.tv", "bilibili.com", "deezer.com", "joox.com", "kkbox.com",
-        "kugou.com", "kuwo.cn", "music.163.com", "music.apple.com",
-        "music.youtube.com", "open.spotify.com", "soundcloud.com",
-        "tidal.com", "y.qq.com",
+        "163cn.tv", "b23.tv", "bilibili.com", "deezer.com", "h5.nf.migu.cn",
+        "joox.com", "kkbox.com", "kugou.com", "kuwo.cn", "music.163.com",
+        "music.apple.com", "music.migu.cn", "music.youtube.com",
+        "open.spotify.com", "soundcloud.com", "tidal.com", "y.qq.com",
     }
     return any(host == item or host.endswith("." + item)
                for item in platform_hosts)
@@ -236,19 +237,80 @@ def _playlist_is_platform_url(host: str) -> bool:
 _QQ_PLAYLIST_HOSTS = (
     "y.qq.com", "i.y.qq.com", "c.y.qq.com", "u.y.qq.com", "c6.y.qq.com",
 )
+# Public playlist protocol references (metadata endpoints only):
+# - NetEase: api-enhanced (MIT), /api/v6/playlist/detail
+# - Kugou: MakcRe/KuGouMusicApi (MIT), gateway signature + pubsongs v2
+# - Kuwo: kuwoMusicApi (Apache-2.0), m.kuwo.cn newh5app wapi
+# - Migu: MiguMusicApi (protocol reference), MIGUM3.0 playlist songs
+_NETEASE_PLAYLIST_HOSTS = (
+    "music.163.com", "y.music.163.com", "163cn.tv",
+)
+_KUGOU_PLAYLIST_HOSTS = ("kugou.com",)
+_KUWO_PLAYLIST_HOSTS = ("kuwo.cn",)
+_MIGU_PLAYLIST_HOSTS = ("music.migu.cn", "h5.nf.migu.cn")
+_MIGU_API_HOSTS = ("app.c.nf.migu.cn",)
+_KUGOU_MOBILE_UA = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
+    "Mobile/15E148 Safari/604.1"
+)
+_KUGOU_APP_ID = 1005
+_KUGOU_CLIENT_VERSION = 20489
+_KUGOU_SIGN_SALT = "OIlwieks28dk2k092lksi2UIkp"
+_KUGOU_MID = os.urandom(16).hex()
+_KUGOU_ANDROID_UA = "Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi"
 _PLAYLIST_URL_RE = re.compile(
     r"https?://[^\s<>\"'，。！？、；：（）【】《》]+", re.IGNORECASE)
 
 
-def _qq_playlist_host(host: str) -> bool:
-    """Only official QQ Music share/API hosts may be fetched."""
+def _host_matches(host: str, suffixes: tuple[str, ...]) -> bool:
     host = (host or "").strip().strip("[]").lower()
     return any(host == item or host.endswith("." + item)
-               for item in _QQ_PLAYLIST_HOSTS)
+               for item in suffixes)
+
+
+def _qq_playlist_host(host: str) -> bool:
+    """Only official QQ Music share/API hosts may be fetched."""
+    return _host_matches(host, _QQ_PLAYLIST_HOSTS)
+
+
+def _netease_playlist_host(host: str) -> bool:
+    return _host_matches(host, _NETEASE_PLAYLIST_HOSTS)
+
+
+def _kugou_playlist_host(host: str) -> bool:
+    return _host_matches(host, _KUGOU_PLAYLIST_HOSTS)
+
+
+def _kuwo_playlist_host(host: str) -> bool:
+    return _host_matches(host, _KUWO_PLAYLIST_HOSTS)
+
+
+def _migu_playlist_host(host: str) -> bool:
+    return _host_matches(host, _MIGU_PLAYLIST_HOSTS)
+
+
+def _migu_api_host(host: str) -> bool:
+    return _host_matches(host, _MIGU_API_HOSTS)
+
+
+def _playlist_platform_kind(host: str) -> str:
+    """Return the supported platform id for a share host, else ''."""
+    if _qq_playlist_host(host):
+        return "qq"
+    if _netease_playlist_host(host):
+        return "netease"
+    if _kugou_playlist_host(host):
+        return "kugou"
+    if _kuwo_playlist_host(host):
+        return "kuwo"
+    if _migu_playlist_host(host):
+        return "migu"
+    return ""
 
 
 def _extract_playlist_url(text: str) -> str:
-    """Return the first URL in a share message, preferring a QQ link.
+    """Return the first URL in a share message, preferring a platform link.
 
     QQ Music's mobile share sheet copies a sentence, not a bare URL.  M3U
     links may also arrive with surrounding text, so both paths use this.
@@ -258,9 +320,95 @@ def _extract_playlist_url(text: str) -> str:
         return ""
     for candidate in urls:
         host = urllib.parse.urlparse(candidate).hostname or ""
-        if _qq_playlist_host(host):
+        if _playlist_platform_kind(host):
             return candidate.rstrip(".,;:!?)]}>\"'，。！？、；：）】》")
     return urls[0].rstrip(".,;:!?)]}>\"'，。！？、；：）】》")
+
+
+def _playlist_query(url: str) -> tuple[urllib.parse.ParseResult, dict]:
+    parsed = urllib.parse.urlparse((url or "").strip())
+    query = dict(urllib.parse.parse_qs(
+        parsed.query, keep_blank_values=False))
+    fragment = parsed.fragment or ""
+    if "?" in fragment:
+        query.update(urllib.parse.parse_qs(
+            fragment.split("?", 1)[1], keep_blank_values=False))
+    return parsed, query
+
+
+def _playlist_numeric_query_id(query: dict,
+                               keys: tuple[str, ...]) -> str:
+    for key in keys:
+        for value in query.get(key, []):
+            value = str(value).strip()
+            if value.isdigit() and len(value) >= 3:
+                return value
+    return ""
+
+
+def _netease_playlist_id_in_url(url: str) -> str:
+    parsed, query = _playlist_query(url)
+    playlist_id = _playlist_numeric_query_id(
+        query, ("id", "playlistId", "playlist_id"))
+    if playlist_id:
+        return playlist_id
+    match = re.search(r"/playlist(?:/detail)?/(\d{3,})",
+                      parsed.path, re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
+def _kugou_playlist_id_in_url(url: str) -> str:
+    parsed, query = _playlist_query(url)
+    if re.search(r"(?:special|plist|playlist|share)|\d{3,}",
+                 parsed.path, re.IGNORECASE):
+        playlist_id = _playlist_numeric_query_id(
+            query, ("id", "specialid", "specialId"))
+        if playlist_id:
+            return playlist_id
+    playlist_id = _playlist_numeric_query_id(
+        query, ("specialid", "specialId"))
+    if playlist_id:
+        return playlist_id
+    match = re.search(
+        r"/(?:special/single|plist/list)/(\d{3,})",
+        parsed.path, re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
+def _kugou_global_id_in_url(url: str) -> str:
+    _parsed, query = _playlist_query(url)
+    for key in ("global_collection_id", "global_specialid"):
+        for value in query.get(key, []):
+            value = str(value).strip()
+            if value.startswith("collection_"):
+                return value
+    return ""
+
+
+def _kuwo_playlist_id_in_url(url: str) -> str:
+    parsed, query = _playlist_query(url)
+    playlist_id = _playlist_numeric_query_id(
+        query, ("pid", "id", "playlistId"))
+    if playlist_id:
+        return playlist_id
+    match = re.search(r"/(?:playlist_detail|playlist)/(\d{3,})",
+                      parsed.path, re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
+def _migu_playlist_id_in_url(url: str) -> str:
+    parsed, query = _playlist_query(url)
+    playlist_id = _playlist_numeric_query_id(
+        query, ("playlistId", "id", "pid"))
+    if playlist_id:
+        return playlist_id
+    match = re.search(r"/playlist/(\d{3,})", parsed.path, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    segment = parsed.path.rstrip("/").split("/")[-1]
+    if segment.isdigit() and len(segment) >= 3:
+        return segment
+    return ""
 
 
 def _qq_playlist_id_in_url(url: str) -> str:
@@ -433,11 +581,498 @@ def _fetch_qq_playlist_tracks(url: str) -> list[dict]:
     return _parse_qq_playlist_payload(payload)
 
 
+def _platform_request_once(url: str, *, host_check, headers: dict,
+                           timeout: float = 10.0,
+                           max_bytes: int = 2 * 1024 * 1024
+                           ) -> tuple[int, str | None, bytes]:
+    """One pinned request to an allowlisted music-platform host."""
+    parsed = urllib.parse.urlparse((url or "").strip())
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("platform-playlist-host")
+    if not host_check(parsed.hostname):
+        raise ValueError("platform-playlist-host")
+    host = parsed.hostname
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    pinned_addresses = _playlist_public_addresses(host)
+    if not pinned_addresses:
+        raise ValueError("platform-playlist-host")
+    path = parsed.path or "/"
+    if parsed.query:
+        path += "?" + parsed.query
+    last_error = None
+    for address, _family in pinned_addresses:
+        try:
+            return _playlist_request_once(
+                parsed.scheme, host, port, path, timeout, address,
+                max_bytes, headers=headers)
+        except (OSError, http.client.HTTPException) as exc:
+            last_error = exc
+    if last_error is not None:
+        raise ValueError("platform-playlist-api") from last_error
+    raise ValueError("platform-playlist-host")
+
+
+def _platform_follow(url: str, *, host_check, headers: dict,
+                     max_bytes: int = 2 * 1024 * 1024,
+                     max_redirects: int = 5) -> tuple[str, bytes]:
+    """Follow redirects only inside one platform's host allowlist."""
+    current = (url or "").strip()
+    seen = set()
+    for _ in range(max_redirects + 1):
+        if current in seen:
+            raise ValueError("platform-playlist-api")
+        seen.add(current)
+        status, location, data = _platform_request_once(
+            current, host_check=host_check, headers=headers,
+            max_bytes=max_bytes)
+        if status in (301, 302, 303, 307, 308):
+            if not location:
+                raise ValueError("platform-playlist-api")
+            current = urllib.parse.urljoin(current, location)
+            continue
+        if status != 200:
+            raise ValueError("platform-playlist-api")
+        if len(data) > max_bytes:
+            raise ValueError("playlist-too-large")
+        return current, data
+    raise ValueError("platform-playlist-api")
+
+
+def _platform_playlist_id_from_url(
+        url: str, *, host_check, id_func, headers: dict,
+        patterns: tuple[str, ...] = (),
+        max_bytes: int = 512 * 1024) -> str:
+    """Extract an id, following share redirects inside the platform."""
+    parsed = urllib.parse.urlparse((url or "").strip())
+    if not host_check(parsed.hostname):
+        raise ValueError("platform-playlist-host")
+    playlist_id = id_func(url)
+    if playlist_id:
+        return playlist_id
+    final_url, data = _platform_follow(
+        url, host_check=host_check, headers=headers, max_bytes=max_bytes)
+    playlist_id = id_func(final_url)
+    if playlist_id:
+        return playlist_id
+    text = _decode_playlist(data)
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    raise ValueError("platform-playlist-id")
+
+
+def _parse_netease_playlist_payload(payload) -> list[dict]:
+    """Map NetEase Cloud Music's public playlist JSON to local tracks."""
+    if not isinstance(payload, dict) or str(payload.get("code")) != "200":
+        raise ValueError("platform-playlist-api")
+    playlist = payload.get("playlist")
+    if not isinstance(playlist, dict):
+        raise ValueError("platform-playlist-api")
+    try:
+        total = int(playlist.get("trackCount") or 0)
+    except (TypeError, ValueError):
+        total = 0
+    if total > _MAX_PLAYLIST_TRACKS:
+        raise ValueError("playlist-too-many-tracks")
+    songs = playlist.get("tracks") or []
+    if not isinstance(songs, list):
+        raise ValueError("platform-playlist-api")
+    tracks = []
+    seen = set()
+    for song in songs:
+        if not isinstance(song, dict):
+            continue
+        title = str(song.get("name") or "").strip()
+        if not title:
+            continue
+        artists = song.get("ar") or song.get("artists") or []
+        artist = " / ".join(
+            str(item.get("name") or "").strip()
+            for item in artists
+            if isinstance(item, dict) and str(item.get("name") or "").strip())
+        album = song.get("al") or song.get("album") or {}
+        album_name = str(
+            album.get("name") if isinstance(album, dict) else "").strip()
+        raw_duration = song.get("dt")
+        if raw_duration is None:
+            raw_duration = song.get("duration") or 0
+        try:
+            duration = max(0.0, float(raw_duration) / 1000.0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        key = (title.casefold(), artist.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        tracks.append({
+            "title": title,
+            "artist": artist,
+            "duration": duration,
+            "album": album_name,
+            "source": "netease:%s" % (song.get("id") or ""),
+        })
+    if not tracks:
+        raise ValueError("platform-playlist-empty")
+    return tracks
+
+
+def _fetch_netease_playlist_tracks(url: str) -> list[dict]:
+    """Read a public NetEase playlist's metadata; never fetch audio."""
+    headers = {"Accept": "application/json,text/html,*/*",
+               "Referer": "https://music.163.com/"}
+    playlist_id = _platform_playlist_id_from_url(
+        url, host_check=_netease_playlist_host,
+        id_func=_netease_playlist_id_in_url, headers=headers,
+        patterns=(r"[?&]id=(\d{3,})",
+                  r"playlistId[\"']?\s*[:=]\s*[\"']?(\d{3,})"))
+    api = (
+        "https://music.163.com/api/v6/playlist/detail?id=%s&n=1000"
+        % urllib.parse.quote(playlist_id, safe="")
+    )
+    _, data = _platform_follow(
+        api, host_check=_netease_playlist_host,
+        headers={"Accept": "application/json,text/plain,*/*",
+                 "Referer": "https://music.163.com/"},
+        max_bytes=6 * 1024 * 1024)
+    try:
+        payload = json.loads(_decode_playlist(data))
+    except (TypeError, ValueError):
+        raise ValueError("platform-playlist-api")
+    return _parse_netease_playlist_payload(payload)
+
+
+def _kugou_signature(params: dict) -> str:
+    """Kugou Android query signature.
+
+    Scheme documented by MakcRe/KuGouMusicApi (MIT):
+    MD5(salt + sorted key=value pairs + body + salt).
+    """
+    parts = []
+    for key in sorted(params):
+        value = params[key]
+        if isinstance(value, (dict, list)):
+            value = json.dumps(value, ensure_ascii=False,
+                               separators=(",", ":"))
+        parts.append("%s=%s" % (key, value))
+    body = "".join(parts)
+    return hashlib.md5(
+        (_KUGOU_SIGN_SALT + body + _KUGOU_SIGN_SALT).encode("utf-8")
+    ).hexdigest()
+
+
+def _kugou_api_payload(params: dict) -> dict:
+    query = {
+        "area_code": 1,
+        "plat": 1,
+        "type": 1,
+        "mode": 1,
+        "personal_switch": 1,
+        "extend_fields": "abtags,hot_cmt,popularization",
+        "pagesize": 100,
+        "dfid": "-",
+        "uuid": "-",
+        "appid": _KUGOU_APP_ID,
+        "clientver": _KUGOU_CLIENT_VERSION,
+        "clienttime": int(time.time()),
+        "mid": _KUGOU_MID,
+    }
+    query.update(params)
+    query["signature"] = _kugou_signature(query)
+    api = (
+        "https://gateway.kugou.com/pubsongs/v2/"
+        "get_other_list_file_nofilt?"
+        + urllib.parse.urlencode(query)
+    )
+    _, data = _platform_follow(
+        api, host_check=_kugou_playlist_host,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": _KUGOU_ANDROID_UA,
+            "dfid": "-",
+            "clienttime": str(query["clienttime"]),
+            "mid": _KUGOU_MID,
+            "kg-rc": "1",
+            "kg-thash": "5d816a0",
+            "kg-rec": "1",
+            "kg-rf": "B9EDA08A64250DEFFBCADDEE00F8F25F",
+        },
+        max_bytes=6 * 1024 * 1024)
+    try:
+        payload = json.loads(_decode_playlist(data))
+    except (TypeError, ValueError):
+        raise ValueError("platform-playlist-api")
+    if int(payload.get("error_code") or 0) != 0:
+        raise ValueError("platform-playlist-api")
+    return payload
+
+
+def _kugou_playlist_global_id(url: str) -> str:
+    global_id = _kugou_global_id_in_url(url)
+    if global_id:
+        return global_id
+    headers = {"Accept": "application/json,text/html,*/*",
+               "Referer": "https://m.kugou.com/",
+               "User-Agent": _KUGOU_MOBILE_UA}
+    special_id = _platform_playlist_id_from_url(
+        url, host_check=_kugou_playlist_host,
+        id_func=_kugou_playlist_id_in_url, headers=headers,
+        patterns=(r'"specialid"\s*:\s*"?(\d{3,})',
+                  r"specialid\s*[:=]\s*['\"]?(\d{3,})"),
+        max_bytes=1024 * 1024)
+    api = ("https://m.kugou.com/plist/list/%s?json=true"
+           % urllib.parse.quote(special_id, safe=""))
+    _, data = _platform_follow(
+        api, host_check=_kugou_playlist_host, headers=headers,
+        max_bytes=1024 * 1024)
+    try:
+        payload = json.loads(_decode_playlist(data))
+        info = (payload.get("info") or {}).get("list") or {}
+        global_id = (info.get("global_specialid")
+                     or info.get("global_collection_id"))
+    except (AttributeError, TypeError, ValueError):
+        global_id = ""
+    if not global_id:
+        raise ValueError("platform-playlist-id")
+    return str(global_id)
+
+
+def _fetch_kugou_playlist_tracks(url: str) -> list[dict]:
+    """Read a public Kugou playlist's metadata; never fetch audio."""
+    global_id = _kugou_playlist_global_id(url)
+    tracks = []
+    seen = set()
+    begin = 0
+    while begin < _MAX_PLAYLIST_TRACKS:
+        payload = _kugou_api_payload({
+            "begin_idx": begin,
+            "global_collection_id": global_id,
+        })
+        block = payload.get("data") or {}
+        try:
+            total = int(block.get("count") or 0)
+        except (TypeError, ValueError):
+            total = 0
+        if total > _MAX_PLAYLIST_TRACKS:
+            raise ValueError("playlist-too-many-tracks")
+        songs = block.get("songs") or []
+        if not isinstance(songs, list) or not songs:
+            break
+        for song in songs:
+            if not isinstance(song, dict):
+                continue
+            name = str(song.get("name") or "").strip()
+            title = name
+            if " - " in name:
+                title = name.split(" - ", 1)[1].strip()
+            if not title:
+                title = str(song.get("filename") or "").strip()
+            if not title:
+                continue
+            artist = " / ".join(
+                str(item.get("name") or "").strip()
+                for item in (song.get("singerinfo") or [])
+                if isinstance(item, dict)
+                and str(item.get("name") or "").strip())
+            if not artist and " - " in name:
+                artist = name.split(" - ", 1)[0].strip()
+            album = song.get("albuminfo") or {}
+            album_name = str(
+                album.get("name") if isinstance(album, dict) else "").strip()
+            raw_duration = (song.get("timelen")
+                            or song.get("timelength") or 0)
+            try:
+                duration = max(0.0, float(raw_duration) / 1000.0)
+            except (TypeError, ValueError):
+                duration = 0.0
+            key = (title.casefold(), artist.casefold())
+            if key in seen:
+                continue
+            seen.add(key)
+            tracks.append({
+                "title": title,
+                "artist": artist,
+                "duration": duration,
+                "album": album_name,
+                "source": "kugou:%s" % (
+                    song.get("hash") or song.get("audio_id") or ""),
+            })
+        begin += len(songs)
+        if total and len(tracks) >= total:
+            break
+        if len(songs) < 100:
+            break
+    if not tracks:
+        raise ValueError("platform-playlist-empty")
+    return tracks
+
+
+def _fetch_kuwo_playlist_tracks(url: str) -> list[dict]:
+    """Read a public Kuwo playlist's metadata; never fetch audio."""
+    headers = {"Accept": "application/json,text/html,*/*",
+               "Referer": "https://www.kuwo.cn/"}
+    playlist_id = _platform_playlist_id_from_url(
+        url, host_check=_kuwo_playlist_host,
+        id_func=_kuwo_playlist_id_in_url, headers=headers,
+        patterns=(r"playlist_detail/(\d{3,})",
+                  r"[\"']id[\"']\s*:\s*(\d{3,})"))
+    tracks = []
+    seen = set()
+    total = 0
+    page = 1
+    while page <= 10:
+        api = (
+            "https://m.kuwo.cn/newh5app/wapi/api/www/playlist/"
+            "playListInfo?pid=%s&pn=%d&rn=100"
+            % (urllib.parse.quote(playlist_id, safe=""), page)
+        )
+        _, data = _platform_follow(
+            api, host_check=_kuwo_playlist_host,
+            headers={"Accept": "application/json",
+                     "Referer": "https://m.kuwo.cn/newh5app/"
+                                "playlist_detail/%s" % playlist_id},
+            max_bytes=4 * 1024 * 1024)
+        try:
+            payload = json.loads(_decode_playlist(data))
+        except (TypeError, ValueError):
+            raise ValueError("platform-playlist-api")
+        if str(payload.get("code")) != "200":
+            raise ValueError("platform-playlist-api")
+        block = payload.get("data") or {}
+        try:
+            total = int(block.get("total") or 0)
+        except (TypeError, ValueError):
+            total = 0
+        if total > _MAX_PLAYLIST_TRACKS:
+            raise ValueError("playlist-too-many-tracks")
+        songs = block.get("musicList") or []
+        if not isinstance(songs, list) or not songs:
+            break
+        for song in songs:
+            if not isinstance(song, dict):
+                continue
+            title = str(song.get("name") or "").strip()
+            if not title:
+                continue
+            artist = str(song.get("artist") or "").strip()
+            try:
+                duration = max(0.0, float(song.get("duration") or 0.0))
+            except (TypeError, ValueError):
+                duration = 0.0
+            key = (title.casefold(), artist.casefold())
+            if key in seen:
+                continue
+            seen.add(key)
+            tracks.append({
+                "title": title,
+                "artist": artist,
+                "duration": duration,
+                "album": str(song.get("album") or "").strip(),
+                "source": "kuwo:%s" % (song.get("musicrid") or ""),
+            })
+        if total and len(tracks) >= total:
+            break
+        page += 1
+    if not tracks:
+        raise ValueError("platform-playlist-empty")
+    return tracks
+
+
+def _fetch_migu_playlist_tracks(url: str) -> list[dict]:
+    """Read a public Migu playlist's metadata; never fetch audio."""
+    headers = {"Accept": "application/json,text/html,*/*",
+               "Referer": "https://music.migu.cn/"}
+    playlist_id = _platform_playlist_id_from_url(
+        url, host_check=_migu_playlist_host,
+        id_func=_migu_playlist_id_in_url, headers=headers,
+        patterns=(r"playlist/(\d{3,})",
+                  r"playlistId[\"']?\s*[:=]\s*[\"']?(\d{3,})"))
+    tracks = []
+    seen = set()
+    total = 0
+    page = 1
+    while page <= 20:
+        api = (
+            "https://app.c.nf.migu.cn/MIGUM3.0/resource/playlist/"
+            "song/v2.0?pageNo=%d&pageSize=50&playlistId=%s"
+            % (page, urllib.parse.quote(playlist_id, safe=""))
+        )
+        _, data = _platform_follow(
+            api, host_check=_migu_api_host,
+            headers={
+                "Accept": "application/json, text/plain, */*",
+                "Origin": "https://h5.nf.migu.cn",
+                "Referer": "https://h5.nf.migu.cn/",
+                "ua": "Android_migu",
+                "version": "6.8.8",
+                "channel": "014021I",
+                "subchannel": "014021I",
+            },
+            max_bytes=4 * 1024 * 1024)
+        try:
+            payload = json.loads(_decode_playlist(data))
+        except (TypeError, ValueError):
+            raise ValueError("platform-playlist-api")
+        if str(payload.get("code")) != "000000":
+            raise ValueError("platform-playlist-api")
+        block = payload.get("data") or {}
+        try:
+            total = int(block.get("totalCount") or 0)
+        except (TypeError, ValueError):
+            total = 0
+        if total > _MAX_PLAYLIST_TRACKS:
+            raise ValueError("playlist-too-many-tracks")
+        songs = block.get("songList") or []
+        if not isinstance(songs, list) or not songs:
+            break
+        for song in songs:
+            if not isinstance(song, dict):
+                continue
+            title = str(song.get("songName") or "").strip()
+            if not title:
+                continue
+            artist = " / ".join(
+                str(item.get("name") or "").strip()
+                for item in (song.get("singerList") or [])
+                if isinstance(item, dict)
+                and str(item.get("name") or "").strip())
+            try:
+                duration = max(0.0, float(song.get("duration") or 0.0))
+            except (TypeError, ValueError):
+                duration = 0.0
+            key = (title.casefold(), artist.casefold())
+            if key in seen:
+                continue
+            seen.add(key)
+            tracks.append({
+                "title": title,
+                "artist": artist,
+                "duration": duration,
+                "album": str(song.get("album") or "").strip(),
+                "source": "migu:%s" % (song.get("contentId") or ""),
+            })
+        if total and len(tracks) >= total:
+            break
+        page += 1
+    if not tracks:
+        raise ValueError("platform-playlist-empty")
+    return tracks
+
+
 def _load_playlist_tracks(url: str) -> list[dict]:
-    """Dispatch a URL to the QQ Music adapter or the M3U parser."""
+    """Dispatch a URL to a supported platform adapter or the M3U parser."""
     host = urllib.parse.urlparse((url or "").strip()).hostname or ""
-    if _qq_playlist_host(host):
+    kind = _playlist_platform_kind(host)
+    if kind == "qq":
         return _fetch_qq_playlist_tracks(url)
+    if kind == "netease":
+        return _fetch_netease_playlist_tracks(url)
+    if kind == "kugou":
+        return _fetch_kugou_playlist_tracks(url)
+    if kind == "kuwo":
+        return _fetch_kuwo_playlist_tracks(url)
+    if kind == "migu":
+        return _fetch_migu_playlist_tracks(url)
     data = _fetch_playlist_bytes(url)
     return _parse_m3u(_decode_playlist(data))
 
@@ -613,8 +1248,16 @@ def _playlist_error_message(message: str, tr) -> str:
         return tr("这个 QQ 音乐歌单不存在、未公开或没有曲目。")
     if "qq-playlist-api" in message:
         return tr("QQ 音乐歌单读取失败，请稍后重试。")
+    if "platform-playlist-host" in message:
+        return tr("歌单链接跳转到了不受支持的地址，已停止读取。")
+    if "platform-playlist-id" in message:
+        return tr("没有从链接中找到歌单 ID，请粘贴完整的分享链接或分享文本。")
+    if "platform-playlist-api" in message:
+        return tr("歌单读取失败。请确认歌单已公开且网络可用，然后重试。")
+    if "platform-playlist-empty" in message:
+        return tr("这个歌单不存在、未公开或没有曲目。")
     if "platform-playlist-url" in message:
-        return tr("这是平台链接。目前只支持 QQ 音乐歌单链接，其他平台请导出 M3U/M3U8。")
+        return tr("这个平台链接暂不支持，目前支持 QQ 音乐 / 网易云 / 酷狗 / 酷我 / 咪咕 的公开歌单；其他平台请导出 M3U/M3U8。")
     if "private-playlist-host" in message:
         return tr("这个地址指向内网或本机，已拒绝。请使用公网 M3U/M3U8 链接。")
     if "playlist-too-large" in message:
@@ -622,7 +1265,7 @@ def _playlist_error_message(message: str, tr) -> str:
     if "playlist-too-many-tracks" in message:
         return tr("歌单曲目超过 1000 首，请精简后再导入。")
     if "unsupported-playlist-url" in message:
-        return tr("无法读取这个歌单。请使用 M3U/M3U8 或 QQ 音乐歌单链接。")
+        return tr("无法读取这个歌单。请使用 M3U/M3U8 或支持平台的公开歌单链接。")
     return tr("无法读取歌单，请检查网络或链接后重试。")
 
 
@@ -2678,7 +3321,7 @@ class PlaylistPage(QWidget):
         form.setSpacing(8)
         self.url_input = QLineEdit()
         self.url_input.setObjectName("playlistInput")
-        self.url_input.setPlaceholderText(tr("粘贴 M3U/M3U8 或 QQ 音乐歌单链接"))
+        self.url_input.setPlaceholderText(tr("粘贴歌单链接或 M3U/M3U8"))
         self.url_input.setAccessibleName(self.url_input.placeholderText())
         self.url_input.setAccessibleDescription(
             self.url_input.placeholderText())
@@ -2915,7 +3558,7 @@ class PlaylistPage(QWidget):
     def retranslate(self):
         self.title.setText(self._tr("歌单"))
         self.subtitle.setText(self._tr("导入歌单信息，选择曲目后进入歌词页。"))
-        self.url_input.setPlaceholderText(self._tr("粘贴 M3U/M3U8 或 QQ 音乐歌单链接"))
+        self.url_input.setPlaceholderText(self._tr("粘贴歌单链接或 M3U/M3U8"))
         self.url_input.setAccessibleName(self.url_input.placeholderText())
         self.url_input.setAccessibleDescription(self.url_input.placeholderText())
         self.import_btn.setText(self._tr("导入歌单"))
@@ -2943,18 +3586,18 @@ class PlaylistPage(QWidget):
             self.url_input.setText(url)
         if not url:
             self.set_error(self._tr(
-                "无法读取这个歌单。请使用 M3U/M3U8 或 QQ 音乐歌单链接。"))
+                "无法读取这个歌单。请使用 M3U/M3U8 或支持平台的公开歌单链接。"))
             return
         try:
             parsed = urllib.parse.urlparse(url)
         except ValueError:
             self.set_error(self._tr(
-                "无法读取这个歌单。请使用 M3U/M3U8 或 QQ 音乐歌单链接。"))
+                "无法读取这个歌单。请使用 M3U/M3U8 或支持平台的公开歌单链接。"))
             return
         host = parsed.hostname or ""
-        if _playlist_is_platform_url(host) and not _qq_playlist_host(host):
+        if _playlist_is_platform_url(host) and not _playlist_platform_kind(host):
             self.set_error(self._tr(
-                "这是平台链接。目前只支持 QQ 音乐歌单链接，其他平台请导出 M3U/M3U8。"))
+                "这个平台链接暂不支持，目前支持 QQ 音乐 / 网易云 / 酷狗 / 酷我 / 咪咕 的公开歌单；其他平台请导出 M3U/M3U8。"))
             return
         self._cancelled = False
         self._fetch_generation += 1
@@ -3002,7 +3645,7 @@ class PlaylistPage(QWidget):
             return
         if not tracks:
             self.set_error(self._tr(
-                "无法读取这个歌单。请使用 M3U/M3U8 或 QQ 音乐歌单链接。"))
+                "无法读取这个歌单。请使用 M3U/M3U8 或支持平台的公开歌单链接。"))
             return
         self.set_tracks(tracks)
 
