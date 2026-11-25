@@ -1101,6 +1101,8 @@ _I18N_TABLES["zh-TW"].update({
     "选择左侧歌曲，查看缓存在本机的歌词": "選擇左側歌曲，查看快取在本機的歌詞。",
     "这首歌的歌词没有缓存在本机。": "這首歌的歌詞沒有快取在本機。",
     "播放满 20 秒后，歌曲会出现在这里。": "播放滿 20 秒後，歌曲會出現在這裡。",
+    "还没有足够的听歌记录。播放满 20 秒后才会开始统计。":
+        "還沒有足夠的聽歌紀錄。播放滿 20 秒後才會開始統計。",
     "● 本地统计 · 不上传": "● 本機統計 · 不上傳",
     "仅本机记录": "僅本機記錄",
     "查看缓存歌词": "查看快取歌詞",
@@ -1167,6 +1169,8 @@ _I18N_TABLES["en"].update({
     "这首歌的歌词没有缓存在本机。": "Lyrics for this track are not cached locally.",
     "播放满 20 秒后，歌曲会出现在这里。":
         "Tracks appear here after 20 seconds of playback.",
+    "还没有足够的听歌记录。播放满 20 秒后才会开始统计。":
+        "There is not enough listening history yet. Statistics begin after 20 seconds of playback.",
     "● 本地统计 · 不上传": "● Local statistics · never uploaded",
     "仅本机记录": "Local history only",
     "查看缓存歌词": "View cached lyrics",
@@ -1233,6 +1237,8 @@ _I18N_TABLES["ja"].update({
     "这首歌的歌词没有缓存在本机。": "この曲の歌詞はローカルにありません。",
     "播放满 20 秒后，歌曲会出现在这里。":
         "20 秒以上再生すると、ここに曲が表示されます。",
+    "还没有足够的听歌记录。播放满 20 秒后才会开始统计。":
+        "まだ再生履歴が十分ではありません。20 秒再生すると集計が始まります。",
     "● 本地统计 · 不上传": "● ローカル統計 · アップロードなし",
     "仅本机记录": "ローカル記録のみ",
     "查看缓存歌词": "キャッシュ歌詞を表示",
@@ -10212,6 +10218,7 @@ class Switch(QWidget):
         self._knob = 1.0 if self._on else 0.0
         self._hover = False
         self.setFixedSize(self._w, self._h)
+        self.setFocusPolicy(Qt.StrongFocus)
         self.setCursor(Qt.PointingHandCursor)
         self.setAttribute(Qt.WA_Hover, True)
         self._anim = QVariantAnimation(self)
@@ -10254,6 +10261,13 @@ class Switch(QWidget):
         if e.button() == Qt.LeftButton and self.rect().contains(e.position().toPoint()):
             self.setChecked(not self._on, emit=True, animate=True)
 
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter):
+            event.accept()
+            self.setChecked(not self._on, emit=True, animate=True)
+            return
+        super().keyPressEvent(event)
+
     def enterEvent(self, e):
         self._hover = True
         self.update()
@@ -10293,6 +10307,10 @@ class Switch(QWidget):
         p.drawEllipse(QPointF(kx, r.center().y() + 1.0), kr, kr)
         p.setBrush(QColor(250, 252, 255))
         p.drawEllipse(QPointF(kx, r.center().y()), kr, kr)
+        if self.hasFocus():
+            p.setBrush(Qt.NoBrush)
+            p.setPen(QPen(self._accent, 2))
+            p.drawRoundedRect(QRectF(0.0, 0.0, self._w - 1, self._h - 1), rad, rad)
         p.end()
 
 
@@ -10308,6 +10326,7 @@ class Segmented(QWidget):
         self._h = int(h)
         self._accent = QColor(DEFAULT_ACCENT1)
         self.setFixedHeight(self._h)
+        self.setFocusPolicy(Qt.StrongFocus)
         self.setCursor(Qt.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._idx_anim = QVariantAnimation(self)
@@ -10393,6 +10412,29 @@ class Segmented(QWidget):
         if self._items[i][0] != self._cur:
             self.setValue(self._items[i][0], emit=True)
 
+    def keyPressEvent(self, event):
+        n = len(self._items)
+        if n:
+            key = event.key()
+            index = self._index_of(self._cur)
+            if key in (Qt.Key_Left, Qt.Key_Up):
+                event.accept()
+                self.setValue(self._items[(index - 1) % n][0], emit=True)
+                return
+            if key in (Qt.Key_Right, Qt.Key_Down):
+                event.accept()
+                self.setValue(self._items[(index + 1) % n][0], emit=True)
+                return
+            if key == Qt.Key_Home:
+                event.accept()
+                self.setValue(self._items[0][0], emit=True)
+                return
+            if key == Qt.Key_End:
+                event.accept()
+                self.setValue(self._items[n - 1][0], emit=True)
+                return
+        super().keyPressEvent(event)
+
     def mouseMoveEvent(self, e):
         n = max(1, len(self._items))
         i = min(n - 1, max(0, int(e.position().x() // (self.width() / n))))
@@ -10452,6 +10494,10 @@ class Segmented(QWidget):
                 p.setPen(QColor(178, 185, 198))
             p.drawText(QRectF(i * seg, 0, seg, h), Qt.AlignCenter,
                        fm.elidedText(label, Qt.ElideRight, max(8, int(seg) - 8)))
+        if self.hasFocus():
+            p.setBrush(Qt.NoBrush)
+            p.setPen(QPen(self._accent, 2))
+            p.drawRoundedRect(QRectF(1.0, 1.0, w - 2, h - 2), rad, rad)
         p.end()
 
 
@@ -10624,6 +10670,12 @@ def make_row(label: str, *widgets: QWidget, hint: str = "", expand: bool = False
     if not expand:
         h.addStretch(1)
     for w in widgets:
+        if not w.accessibleName():
+            w.setAccessibleName(label)
+        if hint and not w.accessibleDescription():
+            w.setAccessibleDescription(hint)
+        if w.focusPolicy() & Qt.TabFocus:
+            lb.setBuddy(w)
         h.addWidget(w, 1 if expand else 0)
     return row
 
@@ -11223,6 +11275,40 @@ class _WheelToScroll(QObject):
         return super().eventFilter(obj, ev)
 
 
+class SaverPreview(QLabel):
+    """Keyboard-operable screen-saver preview that keeps the QLabel look."""
+
+    activated = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._accent = QColor(DEFAULT_ACCENT1)
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def set_accent(self, color: QColor):
+        self._accent = QColor(color)
+        self.update()
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter):
+            event.accept()
+            self.activated.emit()
+            return
+        super().keyPressEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.hasFocus():
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(self._accent, 2))
+            painter.drawRoundedRect(
+                QRectF(1.0, 1.0, self.width() - 2, self.height() - 2),
+                UI_R_PREVIEW, UI_R_PREVIEW)
+            painter.end()
+
+
 class SettingsPanel(QWidget):
     """设置面板：卡片式现代 UI（开关 / 分段选择器 / 字体库 / 屏保 / 系统）"""
 
@@ -11610,13 +11696,17 @@ class SettingsPanel(QWidget):
         self._segs.append(self.saver_seg)
         l5.addWidget(make_row(_tr("屏保风格"), self.saver_seg, expand=True))
         # 当前风格的实时预览缩略图（点击可立即进入屏保）——给切换一个即时可见的反馈
-        self.saver_preview = QLabel()
+        self.saver_preview = SaverPreview()
         self.saver_preview.setObjectName("saverpreview")
         self.saver_preview.setFixedSize(252, 142)
         self.saver_preview.setAlignment(Qt.AlignCenter)
         self.saver_preview.setStyleSheet(f"border-radius:{UI_R_PREVIEW}px;background:#000;")
         self.saver_preview.setCursor(Qt.PointingHandCursor)
         self.saver_preview.setToolTip(_tr("当前选择的屏保风格预览（点击可立即进入屏保）"))
+        self.saver_preview.setAccessibleName(
+            _tr("当前选择的屏保风格预览（点击可立即进入屏保）"))
+        self.saver_preview.set_accent(self._accent)
+        self.saver_preview.activated.connect(ov.open_saver)
         self.saver_preview.mousePressEvent = lambda _e: ov.open_saver()
         l5.addWidget(self.saver_preview)
         h5 = QLabel(_tr("3D 粒子 = 星云随乐缓缓流转；极简 = 纯黑 + 大时钟；"
@@ -12130,6 +12220,8 @@ class SettingsPanel(QWidget):
             sw.set_accent(self._accent)
         for sg in self._segs:
             sg.set_accent(self._accent)
+        if getattr(self, "saver_preview", None) is not None:
+            self.saver_preview.set_accent(self._accent)
         self._apply_qss()
         # 屏保缩略图是用当时的主色现渲的，换主题 / 换歌后不改就会一直显示旧配色
         self._update_saver_preview()
@@ -12163,10 +12255,10 @@ class SettingsPanel(QWidget):
                         border: 1px solid rgba(255,255,255,26); border-radius: 8px; }
         QLabel#song  { color: #98a0b2; font-size: 12px; }
         QLabel#hint  { color: #79808f; font-size: 12px; }
-        QLabel#footer { color: #6b7280; font-size: 11px; padding: 4px 0 2px 0; }
+        QLabel#footer { color: #79808f; font-size: 11px; padding: 4px 0 2px 0; }
         QLabel#value { color: #cfd6e4; font-size: 12px; }
         QLabel#rowlabel { color: #c6cddb; font-size: 13px; }
-        QLabel#rowhint { color: #6f7787; font-size: 11px; }
+        QLabel#rowhint { color: #838a99; font-size: 11px; }
         /* 分区标题：主色文字 + 左侧 3px 主色小竖条。比单纯染色更容易一眼定位分区，
            竖条也把标题和卡片左内边距对齐成一条视觉轴。 */
         QLabel#cardtitle { color: __A__; font-size: 12px; font-weight: 700;
