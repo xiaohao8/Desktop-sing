@@ -1,13 +1,14 @@
 {
-  "version": "2.0.9",
-  "name": "Desktop-sing v2.0.9",
-  "url": "https://github.com/xiaohao8/Desktop-sing/releases/download/v2.0.9/Desktop-sing-v2.0.9-setup.exe",
+  "version": "2.0.10",
+  "name": "Desktop-sing v2.0.10",
+  "url": "https://github.com/xiaohao8/Desktop-sing/releases/download/v2.0.10/Desktop-sing-v2.0.10-setup.exe",
   "lanzou_status": "pending",
-  "lanzou_note": "2.0.9 暂无蓝奏云镜像，更新弹窗会回落到 GitHub 直链。",
+  "lanzou_note": "2.0.10 暂无蓝奏云镜像，更新弹窗会回落到 GitHub 直链。",
   "notes": [
-    "【修复】封面与背景不显示、加载慢：迟到的专辑封面现在能正确回填到播放器与沉浸背景，并增加封面缓存、并发去重与离线回退",
-    "【修复】日文界面下字体下载按钮文字被截断，按钮宽度改为按译文自适应",
-    "【优化】无障碍：设置页开关、分段控件与屏保预览支持键盘操作与可见焦点框",
-    "【优化】补齐报告空态等缺失译文，四种语言不再出现简体回退"
+    "【新增】播放器歌单页：导入 M3U/M3U8 链接或文件，选择曲目后回到歌词页",
+    "【新增】外观主题：深色 / 浅色 / 跟随系统，墨与青瓷两套配色，设置面板即时切换",
+    "【优化】切换界面语言后，播放器标题、侧栏、沉浸按钮与 NowStage 立即刷新，无需重开窗口",
+    "【修复】歌单 HTTPS 链接兼容、多 IP 回退与曲目状态列宽度；补齐英文单复数和缺失译文",
+    "【修复】窄屏听歌报告、译文重叠、进度滑块与窗口缩放手柄的显示"
   ]
 }
