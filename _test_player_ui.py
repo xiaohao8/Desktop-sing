@@ -26,6 +26,7 @@ import lyrics_view as V  # noqa: E402
 from app.lyrics_service import LyricsService  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtGui import QFontMetrics  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 
 
@@ -187,6 +188,50 @@ check("歌单 URL 导入线程可完成",
       fetch_results == [playlist_tracks]
       and not fetch_failures,
       (fetch_results, fetch_failures))
+
+
+# ---- Playlist status column must fit localized text ------------------------
+status_width_rows = []
+status_clip_rows = []
+for status_lang in ("zh-CN", "zh-TW", "en", "ja"):
+    L.set_ui_lang(status_lang)
+    row = V.PlaylistRowButton(
+        {"title": "示例曲目", "artist": "示例歌手", "duration": 225.0}, L._tr)
+    row.setStyleSheet(
+        "QLabel#playlistStatus { font-size:12px; font-weight:500; }")
+    row.resize(760, 56)
+    row.show()
+    app.processEvents()
+    for status_matched in (False, True):
+        row._has_local_lyrics = lambda value=status_matched: value
+        row._update_status_state()
+        app.processEvents()
+        status_metrics = QFontMetrics(row.status.font())
+        status_needed = status_metrics.horizontalAdvance(row.status.text())
+        status_width_rows.append((status_lang, status_matched, status_needed,
+                                  row.status.width(),
+                                  row.status.minimumWidth(),
+                                  row.status.toolTip(),
+                                  row.accessibleName()))
+        status_tooltip_ok = row.status.toolTip() == row.status.text()
+        status_access_ok = row.status.text() in row.accessibleName()
+        if (row.status.width() < status_needed
+                or row.status.minimumWidth() < status_needed
+                or not status_tooltip_ok or not status_access_ok):
+            status_clip_rows.append(
+                (status_lang, status_matched, status_needed,
+                 row.status.width(), row.status.minimumWidth(),
+                 status_tooltip_ok, status_access_ok))
+    row.close()
+    row.deleteLater()
+L.set_ui_lang("zh-CN")
+check("歌单状态列四语言不被裁切（含 tooltip/accessibleName）",
+      not status_clip_rows, status_clip_rows)
+ja_unmatched_needed = next(
+    needed for lang, matched, needed, *_ in status_width_rows
+    if lang == "ja" and not matched)
+check("ja unmatched 文本宽度超过旧 112px 硬编码（旧布局必裁）",
+      ja_unmatched_needed > 112, ja_unmatched_needed)
 
 class _RedirectResponse:
     def __init__(self, status, headers):
