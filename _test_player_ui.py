@@ -761,6 +761,11 @@ player.toggle_immersive()
 app.processEvents()
 check("进入沉浸模式", player._immersive and not player.sidebar.isVisible(),
       player._immersive)
+check("沉浸入口只在舞台区一处",
+      set(player.titlebar.quick_buttons) == {"mini"}
+      and player.now.immersive_btn.text() == "退出沉浸",
+      (sorted(player.titlebar.quick_buttons),
+       player.now.immersive_btn.text()))
 player.toggle_immersive()
 app.processEvents()
 check("退出沉浸模式", not player._immersive and player.sidebar.isVisible(),
@@ -799,6 +804,9 @@ check("切 en 后侧栏品牌", player.sidebar.brand_name.text() == "Desktop-sin
       player.sidebar.brand_name.text())
 check("切 en 后沉浸按钮", player.now.immersive_btn.text() == "Immersive lyrics",
       player.now.immersive_btn.text())
+check("切 en 后迷你模式按钮",
+      player.titlebar.quick_buttons["mini"].text() == "Mini mode",
+      player.titlebar.quick_buttons["mini"].text())
 check("切 en 后舞台 eyebrow", player.now.source.text() == "Now playing",
       player.now.source.text())
 check("切 en 后最小化/最大化提示",

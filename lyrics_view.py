@@ -612,7 +612,6 @@ class TitleBar(QWidget):
     report_requested = Signal()
     settings_requested = Signal()
     mini_requested = Signal()
-    immersive_requested = Signal()
 
     def __init__(self, tr, parent=None):
         super().__init__(parent)
@@ -632,18 +631,14 @@ class TitleBar(QWidget):
 
         self.quick_buttons = {}
 
-        for text, icon_name, sig in (
-                (tr("迷你模式"), "mini", self.mini_requested),
-                (tr("沉浸"), "expand", self.immersive_requested)):
-            key = "mini" if icon_name == "mini" else "immersive"
-            b = IconButton(text)
-            b.setObjectName("quick")
-            b.setCursor(Qt.PointingHandCursor)
-            b.setIcon(_icon(icon_name, self._quick_color(), 16))
-            b.setIconSize(QSize(16, 16))
-            b.clicked.connect(sig.emit)
-            lay.addWidget(b)
-            self.quick_buttons[key] = b
+        b = IconButton(tr("迷你模式"))
+        b.setObjectName("quick")
+        b.setCursor(Qt.PointingHandCursor)
+        b.setIcon(_icon("mini", self._quick_color(), 16))
+        b.setIconSize(QSize(16, 16))
+        b.clicked.connect(self.mini_requested.emit)
+        lay.addWidget(b)
+        self.quick_buttons["mini"] = b
 
         lay.addSpacing(8)
         self.b_min = self._win_button("min")
@@ -672,16 +667,14 @@ class TitleBar(QWidget):
 
     def set_theme(self, theme):
         self._theme = theme
-        for key, icon_name in (("mini", "mini"), ("immersive", "expand")):
-            self.quick_buttons[key].setIcon(
-                _icon(icon_name, self._quick_color(), 16))
+        self.quick_buttons["mini"].setIcon(
+            _icon("mini", self._quick_color(), 16))
         for b in (self.b_min, self.b_max, self.b_close):
             b.update()
 
     def retranslate(self):
         self.page_label.setText(self._tr("正在播放"))
         self.quick_buttons["mini"].setText(self._tr("迷你模式"))
-        self.quick_buttons["immersive"].setText(self._tr("沉浸"))
         self._win_button_labels()
 
     def _win_button_labels(self):
@@ -2866,7 +2859,6 @@ class MainPlayerWindow(QWidget):
         self.titlebar.maximize_requested.connect(self._toggle_max)
         self.titlebar.close_requested.connect(self.close)
         self.titlebar.mini_requested.connect(self.enter_mini)
-        self.titlebar.immersive_requested.connect(self.toggle_immersive)
         sl.addWidget(self.titlebar)
 
         body = QWidget()
