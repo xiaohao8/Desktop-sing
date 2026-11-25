@@ -17,14 +17,27 @@ sys.path.insert(0, ROOT)
 import _cfg_sandbox  # noqa: E402
 
 _cfg_sandbox.begin(hotkeys=False, keepalive=False, idle_saver=False,
-                   open_player_on_start=False)
+                   open_player_on_start=False,
+                   theme_id="celadon", appearance="light")
 
 _tmp = tempfile.TemporaryDirectory(prefix="desktop-sing-framework-test-")
 os.environ["DESKTOP_SING_LISTEN_PATH"] = os.path.join(_tmp.name, "listening.json")
 
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, Signal  # noqa: E402
+from PySide6.QtCore import (  # noqa: E402
+    QCoreApplication,
+    QEvent,
+    QObject,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import QColor  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import (  # noqa: E402
+    QApplication,
+    QSlider,
+    QStyle,
+    QStyleOptionSlider,
+    QWidget,
+)
 from shiboken6 import isValid  # noqa: E402
 
 import lyrics_overlay as L  # noqa: E402
@@ -69,6 +82,89 @@ def _icon_worst_contrast(icon, background):
                 continue
             worst = min(worst, _ratio(color, background))
     return worst
+
+
+def _segmented_selected_contrast(theme):
+    """Real pixel contrast between the selected label and its pill."""
+    seg = L.Segmented([("a", "AAAA"), ("b", "BBBB")], current="a", h=32)
+    seg.set_theme(theme)
+    seg.set_accent(QColor(theme.accent_fill))
+    seg.resize(260, 32)
+    seg.show()
+    app.processEvents()
+    image = seg.grab().toImage()
+    target = QColor(theme.on_accent)
+    best = None
+    best_distance = 10 ** 9
+    for y in range(3, 29):
+        for x in range(3, 127):
+            pixel = image.pixelColor(x, y)
+            distance = (
+                (pixel.red() - target.red()) ** 2
+                + (pixel.green() - target.green()) ** 2
+                + (pixel.blue() - target.blue()) ** 2
+            )
+            if distance < best_distance:
+                best = pixel
+                best_distance = distance
+    backgrounds = [
+        image.pixelColor(x, y)
+        for x in (15, 22, 29)
+        for y in range(8, 25)
+    ]
+    ratio = min(_ratio(best, color) for color in backgrounds)
+    seg.close()
+    seg.deleteLater()
+    app.processEvents()
+    return ratio
+
+
+def _slider_focus_probe(theme, value):
+    """Render a focused progress slider and sample ring/track/background."""
+    host = QWidget()
+    host.resize(460, 60)
+    host.setObjectName("p1Host")
+    host.setStyleSheet(
+        "QWidget#p1Host { background: %s; }" % theme.surface_raised
+    )
+    slider = QSlider(Qt.Horizontal, host)
+    slider.setObjectName("progress")
+    slider.setRange(0, 1000)
+    slider.setValue(value)
+    slider.setGeometry(20, 20, 420, 18)
+    slider.setStyleSheet(UT.build_qss(theme, "main"))
+    slider.setFocusPolicy(Qt.StrongFocus)
+    host.show()
+    host.activateWindow()
+    slider.setFocus(Qt.OtherFocusReason)
+    app.processEvents()
+    image = host.grab().toImage()
+    option = QStyleOptionSlider()
+    slider.initStyleOption(option)
+    rect = slider.style().subControlRect(
+        QStyle.CC_Slider, option, QStyle.SC_SliderHandle, slider
+    )
+    cx = 20 + rect.center().x()
+    cy = 20 + rect.center().y()
+    ring = image.pixelColor(cx, 20 + rect.top() + 1)
+    track = None
+    if value > 0:
+        track = image.pixelColor(max(0, 20 + rect.left() - 14), cy)
+    background = image.pixelColor(
+        min(image.width() - 1, 20 + rect.right() + 14), cy
+    )
+    result = {
+        "focused": slider.hasFocus(),
+        "ring": ring,
+        "track": track,
+        "background": background,
+        "ring_track": _ratio(ring, track) if track is not None else None,
+        "ring_background": _ratio(ring, background),
+    }
+    host.close()
+    host.deleteLater()
+    app.processEvents()
+    return result
 
 
 class FakeWatcher(QObject):
@@ -129,6 +225,49 @@ check("悬浮层获得窗口协调器", runtime.overlay.window_shell is runtime.
 runtime.start()
 check("运行时启动媒体并显示迷你条",
       runtime.media.started and runtime.overlay.isVisible())
+
+# ---- Theme P1: startup theme + Ctrl+Alt+S standalone panel ----------------
+startup_theme = runtime.overlay._current_theme()
+check("启动即持有主题管理器（无需主播放器）",
+      runtime.overlay.theme_manager is not None
+      and startup_theme is not None
+      and (startup_theme.id, startup_theme.appearance) == ("celadon", "light"),
+      (getattr(startup_theme, "id", None),
+       getattr(startup_theme, "appearance", None)))
+check("启动阶段确实没有创建主播放器", runtime.overlay.main_player is None)
+tray_qss = runtime.overlay._tray_menu.styleSheet().lower()
+check("托盘菜单使用 celadon light 语义 token",
+      startup_theme.surface_raised.lower() in tray_qss
+      and startup_theme.text.lower() in tray_qss
+      and "#15181f" not in tray_qss,
+      (startup_theme.surface_raised, startup_theme.text))
+
+standalone_returned = runtime.overlay._open_settings(standalone=True)
+runtime.overlay._on_hotkey("panel")
+app.processEvents()
+standalone_panel = runtime.overlay.panel
+check("Ctrl+Alt+S 动作创建并显示独立设置面板",
+      bool(standalone_returned)
+      and standalone_panel is not None
+      and standalone_panel.isVisible(),
+      (standalone_returned, standalone_panel is not None,
+       standalone_panel.isVisible() if standalone_panel is not None else None))
+if standalone_panel is not None:
+    standalone_panel._fade.stop()
+    standalone_panel._clear_fade()
+    panel_qss = standalone_panel.styleSheet().lower()
+    check("独立设置面板使用 celadon light token",
+          startup_theme.bg.lower() in panel_qss
+          and "#0c0f15" not in panel_qss,
+          startup_theme.bg)
+    check("独立设置面板 Segmented 收到完整 theme",
+          all(getattr(seg, "_theme", None) is startup_theme
+              for seg in standalone_panel._segs))
+    standalone_panel._rt.stop()
+    standalone_panel.hide()
+    standalone_panel.deleteLater()
+    runtime.overlay.panel = None
+    app.processEvents()
 
 service = LyricsService(L)
 lines, trans = service.load_cached("不存在的测试歌曲", "不存在")
@@ -228,11 +367,47 @@ check("设置页播放图标使用主题 on_accent", uses_on_accent, on_accent.n
 
 probe_seg = L.Segmented([("a", "A"), ("b", "B")])
 probe_seg.set_theme(light_theme)
+probe_seg.set_accent(QColor(light_theme.accent_fill))
 probe_seg.resize(240, 32)
 seg_img = probe_seg.grab().toImage()
 track_color = seg_img.pixelColor(234, 16)
 check("分段控件浅色主题轨道不再是黑槽",
       _rel_lum(track_color) > 0.5, track_color.name())
+
+# ---- Theme P1: Segmented selected label and slider focus contrast --------
+for theme_id in ("ink", "celadon"):
+    for appearance in ("dark", "light"):
+        item = UT.THEMES[theme_id][appearance]
+        ratio = _segmented_selected_contrast(item)
+        check(f"Segmented {theme_id}/{appearance} 选中文字 >= 4.5:1",
+              ratio >= 4.5, round(ratio, 3))
+check("负向探针: Segmented 低对比 on_accent 会被拒绝",
+      _ratio(QColor("#F15226"),
+             QColor(UT.THEMES["ink"]["light"].accent_fill)) < 4.5)
+
+for theme_id in ("ink", "celadon"):
+    for appearance in ("dark", "light"):
+        item = UT.THEMES[theme_id][appearance]
+        expected_ring = item.control_handle_focus.lower()
+        for value in (0, 500, 1000):
+            result = _slider_focus_probe(item, value)
+            label = f"slider {theme_id}/{appearance}/{value}"
+            check(f"{label} 焦点态生效", result["focused"])
+            check(f"{label} 外环颜色正确",
+                  result["ring"].name().lower() == expected_ring,
+                  (result["ring"].name(), expected_ring))
+            check(f"{label} 焦点环/背景 >= 3.0",
+                  result["ring_background"] >= 3.0,
+                  round(result["ring_background"], 3))
+            if value > 0:
+                check(f"{label} 焦点环/filled track >= 3.0",
+                      result["ring_track"] >= 3.0,
+                      round(result["ring_track"], 3))
+check("负向探针: 单色 focus 环在 filled track 上不可靠",
+      _ratio(QColor(UT.THEMES["celadon"]["dark"].focus),
+             QColor(UT.THEMES["celadon"]["dark"].accent_fill)) < 3.0,
+      round(_ratio(QColor(UT.THEMES["celadon"]["dark"].focus),
+                   QColor(UT.THEMES["celadon"]["dark"].accent_fill)), 3))
 settings_panel.set_theme(theme)
 
 runtime.shell.show_mini()

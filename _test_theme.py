@@ -152,6 +152,24 @@ for theme in themes:
         ratio >= 3.0,
         round(ratio, 2),
     )
+    if theme.id in T.RELEASED_THEME_IDS:
+        ratio = contrast(theme.control_handle_focus, theme.accent_fill)
+        ck(
+            f"{theme.id}/{theme.appearance}: focus ring/"
+            f"accent_fill >= 3.0",
+            ratio >= 3.0,
+            round(ratio, 2),
+        )
+        for background_name in ("surface_sunken", "surface_raised", "bg"):
+            ratio = contrast(
+                theme.control_handle_focus, getattr(theme, background_name)
+            )
+            ck(
+                f"{theme.id}/{theme.appearance}: focus ring/"
+                f"{background_name} >= 3.0",
+                ratio >= 3.0,
+                round(ratio, 2),
+            )
 
     for background_name in ("bg", "surface"):
         ratio = contrast(theme.focus, getattr(theme, background_name))
@@ -169,6 +187,16 @@ for theme in themes:
     ratio = contrast(theme.on_accent, theme.accent_fill)
     ck(
         f"{theme.id}/{theme.appearance}: on_accent/accent_fill >= 4.5",
+        ratio >= 4.5,
+        round(ratio, 2),
+    )
+    ratio = min(
+        contrast(theme.on_accent, theme.accent_fill),
+        contrast(theme.on_accent, theme.accent_pressed),
+    )
+    ck(
+        f"{theme.id}/{theme.appearance}: segmented on_accent/"
+        f"accent gradient >= 4.5",
         ratio >= 4.5,
         round(ratio, 2),
     )
@@ -218,6 +246,14 @@ ck(
     "negative probe: white grip dot on light detected",
     contrast(bad_grip.grip_dot, bad_grip.surface) < 3.0,
     round(contrast(bad_grip.grip_dot, bad_grip.surface), 2),
+)
+bad_ring = dataclasses.replace(
+    T.THEMES["celadon"]["dark"], control_handle_focus="#5FD0A0"
+)
+ck(
+    "negative probe: focus-colour-only ring on filled track detected",
+    contrast(bad_ring.control_handle_focus, bad_ring.accent_fill) < 3.0,
+    round(contrast(bad_ring.control_handle_focus, bad_ring.accent_fill), 2),
 )
 
 sample = " ".join("{" + field + "}" for field in theme_fields)
@@ -294,7 +330,10 @@ for theme in themes:
     ck(f"{theme.id}/{theme.appearance}: main qss has no 11px text",
        "font-size: 11px" not in qss)
     ck(f"{theme.id}/{theme.appearance}: main qss uses dual handle tokens",
-       theme.control_handle_fill in qss and theme.control_handle_outline in qss)
+       theme.control_handle_fill in qss and theme.control_handle_outline in qss
+       and theme.control_handle_focus in qss)
+    ck(f"{theme.id}/{theme.appearance}: main qss focus ring is layered",
+       "qradialgradient(" in qss and "control_handle_focus" not in qss)
     ov = T.build_qss(theme, "overlay")
     ck(f"{theme.id}/{theme.appearance}: overlay qss no placeholders",
        not placeholder_re.findall(ov),

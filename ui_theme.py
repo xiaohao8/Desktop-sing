@@ -52,6 +52,7 @@ class Theme:
     grip_dot: str
     control_handle_fill: str
     control_handle_outline: str
+    control_handle_focus: str
     font_display: str
     font_text: str
     font_cjk: str
@@ -114,6 +115,7 @@ def _theme(
     grip_dot: str,
     control_handle_fill: str | None = None,
     control_handle_outline: str | None = None,
+    control_handle_focus: str | None = None,
 ) -> Theme:
     return Theme(
         id=theme_id,
@@ -150,6 +152,10 @@ def _theme(
         grip_dot=grip_dot,
         control_handle_fill=control_handle_fill or on_accent,
         control_handle_outline=control_handle_outline or text,
+        control_handle_focus=(
+            control_handle_focus
+            or ("#FFFFFF" if appearance == "dark" else "#000000")
+        ),
         font_display='"Segoe UI Variable Display", "Segoe UI", "MiSans", "Microsoft YaHei UI"',
         font_text='"Segoe UI Variable Text", "Segoe UI", "MiSans", "Microsoft YaHei UI"',
         font_cjk='"MiSans", "Microsoft YaHei UI", sans-serif',
@@ -616,11 +622,29 @@ QSlider#progress::handle:horizontal { width: 12px; height: 12px; margin: -4px 0;
                                      border-radius: 6px;
                                      background: $control_handle_fill;
                                      border: 2px solid $control_handle_outline; }
-QSlider#progress::handle:horizontal:focus { border-color: $focus; }
 QSlider#progress::handle:horizontal:hover { width: 12px; height: 12px; margin: -5px 0;
                                             border-radius: 7px;
                                             background: $control_handle_fill;
                                             border: 2px solid $control_handle_outline; }
+/* Focus keeps the dual-colour handle but adds an independent high-contrast
+   outer ring plus a focus-colour band.  A single $focus border disappears
+   into the filled track (1.0-1.76:1), so the outer ring is near-white on
+   dark themes and near-black on light themes (>=3:1 against both the
+   filled track and the groove/background). */
+QSlider#progress::handle:horizontal:focus { width: 18px; height: 18px; margin: -7px 0;
+                                            border-radius: 9px;
+                                            border: 2px solid $control_handle_focus;
+                                            background: qradialgradient(
+                                                cx:0.5, cy:0.5, radius:0.5,
+                                                fx:0.5, fy:0.5,
+                                                stop:0    $control_handle_fill,
+                                                stop:0.42 $control_handle_fill,
+                                                stop:0.43 $control_handle_outline,
+                                                stop:0.60 $control_handle_outline,
+                                                stop:0.61 $focus,
+                                                stop:0.78 $focus,
+                                                stop:0.79 $control_handle_focus,
+                                                stop:1    $control_handle_focus); }
 QFrame#appearanceCard { background: $surface_raised;
                         border: 1px solid $border;
                         border-radius: 16px; }
