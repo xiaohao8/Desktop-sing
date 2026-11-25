@@ -5583,7 +5583,7 @@ def char_transform(cx: float, y: float, ch_w: float,
         tr.translate(-px, 0)
     return tr
 
-APP_VERSION = "2.0.8"
+APP_VERSION = "2.0.9"
 
 # LRCLIB 的 User-Agent：Desktop-sing/<版本>，随 APP_VERSION 走（隐私声明里
 # 描述为「自己的名称标识 + 版本号」，改版本不用再动声明）。

@@ -1,4 +1,4 @@
-Desktop-sing 2.0.8 Privacy Statement
+Desktop-sing 2.0.9 Privacy Statement
 (Last updated: 2026-11-24)
 
 We understand how important your personal information is to you. Desktop-sing is a local
