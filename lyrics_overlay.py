@@ -105,7 +105,7 @@ def cache_size() -> tuple:
     n, total = 0, 0
     try:
         for name in os.listdir(CACHE_DIR):
-            if not name.endswith(".json"):
+            if not (name.endswith(".json") or name.startswith("cover-")):
                 continue
             try:
                 total += os.path.getsize(os.path.join(CACHE_DIR, name))
@@ -128,7 +128,8 @@ def prune_cache(force: bool = False):
         if force:
             # 分多轮：有些文件第一次删不掉（正被占用），过一会儿可能就松了
             for _round in range(3):
-                names = [n for n in os.listdir(CACHE_DIR) if n.endswith(".json")]
+                names = [n for n in os.listdir(CACHE_DIR)
+                         if n.endswith(".json") or n.startswith("cover-")]
                 if not names:
                     break
                 stuck = 0
@@ -150,7 +151,7 @@ def prune_cache(force: bool = False):
             return failed
         entries = []
         for name in os.listdir(CACHE_DIR):
-            if not name.endswith(".json"):
+            if not (name.endswith(".json") or name.startswith("cover-")):
                 continue
             p = os.path.join(CACHE_DIR, name)
             try:
@@ -2027,6 +2028,80 @@ def http_post(url: str, data: bytes, headers=None, timeout: float = 8.0) -> byte
             if first_err is None:
                 first_err = e
     raise first_err
+
+
+COVER_CACHE_DIR = CACHE_DIR
+_COVER_MAX_BYTES = 12 * 1024 * 1024
+_COVER_MEMORY_MAX = 24
+_COVER_MEMORY_CACHE = {}
+_COVER_CACHE_LOCK = threading.Lock()
+_COVER_DOWNLOAD_LOCKS = {}
+
+
+def _cover_cache_path(url: str) -> str:
+    digest = hashlib.sha256(url.encode("utf-8", "surrogatepass")).hexdigest()
+    return os.path.join(COVER_CACHE_DIR, "cover-" + digest + ".bytes")
+
+
+def fetch_cover_image(url: str, timeout: float = 5.0):
+    """按 URL 读取封面字节；内存/磁盘命中时不重复发起网络请求。"""
+    if not url:
+        return None
+    with _COVER_CACHE_LOCK:
+        data = _COVER_MEMORY_CACHE.get(url)
+    if data is not None:
+        return data
+
+    cp = _cover_cache_path(url)
+    try:
+        if os.path.getsize(cp) <= _COVER_MAX_BYTES:
+            with open(cp, "rb") as f:
+                data = f.read()
+            if data:
+                with _COVER_CACHE_LOCK:
+                    _COVER_MEMORY_CACHE[url] = data
+                return data
+    except OSError:
+        pass
+
+    with _COVER_CACHE_LOCK:
+        download_lock = _COVER_DOWNLOAD_LOCKS.setdefault(url, threading.Lock())
+    with download_lock:
+        with _COVER_CACHE_LOCK:
+            data = _COVER_MEMORY_CACHE.get(url)
+        if data is not None:
+            return data
+        try:
+            if os.path.getsize(cp) <= _COVER_MAX_BYTES:
+                with open(cp, "rb") as f:
+                    data = f.read()
+                if data:
+                    with _COVER_CACHE_LOCK:
+                        _COVER_MEMORY_CACHE[url] = data
+                    return data
+        except OSError:
+            pass
+
+        data = http_get(url, timeout=timeout)
+        if not data or len(data) > _COVER_MAX_BYTES:
+            raise ValueError("cover response is empty or too large")
+        os.makedirs(COVER_CACHE_DIR, exist_ok=True)
+        tmp = cp + (".tmp-%d-%d" % (os.getpid(), threading.get_ident()))
+        try:
+            with open(tmp, "wb") as f:
+                f.write(data)
+            os.replace(tmp, cp)
+        except OSError:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+        with _COVER_CACHE_LOCK:
+            if len(_COVER_MEMORY_CACHE) >= _COVER_MEMORY_MAX:
+                oldest = next(iter(_COVER_MEMORY_CACHE))
+                _COVER_MEMORY_CACHE.pop(oldest, None)
+            _COVER_MEMORY_CACHE[url] = data
+    return data
 
 
 # ======================================================================
@@ -8098,7 +8173,8 @@ class LyricOverlay(QWidget):
             # req_id 也一并校验：切歌后旧封面没必要再下。
             if cover_url and self._req_id == req_id and self.cover_pix is None:
                 try:
-                    self.cover_ready.emit((req_id, http_get(cover_url, timeout=5)))
+                    self.cover_ready.emit(
+                        (req_id, fetch_cover_image(cover_url, timeout=5)))
                 except Exception:
                     log("cover download failed: " + traceback.format_exc())
 
