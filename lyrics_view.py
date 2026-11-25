@@ -2735,7 +2735,11 @@ class MainPlayerWindow(QWidget):
         self._timer.start()
 
     def _setup_theme_manager(self):
+        from shiboken6 import isValid
+
         manager = getattr(self.ov, "theme_manager", None)
+        if manager is not None and not isValid(manager):
+            manager = None
         reduce_motion = True if self.ov.cfg.get("reduce_motion") else None
         if manager is None:
             theme_id = str(self.ov.cfg.get("theme_id") or "ink")
@@ -2744,8 +2748,11 @@ class MainPlayerWindow(QWidget):
                 theme_id = "ink"
             if appearance not in ui_theme.APPEARANCES:
                 appearance = "system"
+            # The overlay outlives the player window, so it owns the manager.
+            # Parenting to the window makes overlay.theme_manager a dangling
+            # wrapper after close/deleteLater, breaking the next open.
             manager = ui_theme.ThemeManager(
-                theme_id, appearance, self, reduce_motion=reduce_motion)
+                theme_id, appearance, self.ov, reduce_motion=reduce_motion)
             self.ov.theme_manager = manager
         else:
             manager.set_reduce_motion(reduce_motion)

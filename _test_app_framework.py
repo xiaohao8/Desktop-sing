@@ -22,8 +22,9 @@ _cfg_sandbox.begin(hotkeys=False, keepalive=False, idle_saver=False,
 _tmp = tempfile.TemporaryDirectory(prefix="desktop-sing-framework-test-")
 os.environ["DESKTOP_SING_LISTEN_PATH"] = os.path.join(_tmp.name, "listening.json")
 
-from PySide6.QtCore import QObject, Signal  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Signal  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
+from shiboken6 import isValid  # noqa: E402
 
 import lyrics_overlay as L  # noqa: E402
 from app.context import AppContext  # noqa: E402
@@ -147,6 +148,23 @@ if player is not None:
     player._timer.stop()
     player.close()
     app.processEvents()
+QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+stored_manager = getattr(runtime.overlay, "theme_manager", None)
+check("关闭播放器后主题管理器仍存活",
+      isValid(stored_manager),
+      "theme_manager=%s" % ("present but deleted" if stored_manager is not None else "missing"))
+reopened = runtime.shell.open_player()
+app.processEvents()
+check("播放器关闭后可再次打开",
+      reopened is not None and reopened.isVisible(),
+      type(reopened).__name__ if reopened is not None else None)
+if reopened is not None:
+    check("二次打开复用同一主题管理器",
+          reopened._theme_manager is runtime.overlay.theme_manager)
+    reopened._timer.stop()
+    reopened.close()
+    app.processEvents()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 runtime.overlay._timer.stop()
 for timer_name in ("_zorder_timer", "_idle_timer"):
     timer = getattr(runtime.overlay, timer_name, None)
