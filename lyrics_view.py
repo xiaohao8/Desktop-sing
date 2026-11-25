@@ -19,7 +19,7 @@ from collections import OrderedDict
 from datetime import datetime
 
 from PySide6.QtCore import (
-    QPoint, QPointF, QRectF, QSize, Qt, QThread, QTimer, Signal
+    QEvent, QPoint, QPointF, QRectF, QSize, Qt, QThread, QTimer, Signal
 )
 from PySide6.QtGui import (
     QColor, QFont, QFontMetrics, QIcon, QLinearGradient, QPainter,
@@ -1947,11 +1947,21 @@ class PlaylistRowButton(QPushButton):
         self.status.setObjectName("playlistStatus")
         self.status.setProperty("matched", "1" if self._has_local_lyrics()
                                 else "0")
-        self.status.setFixedWidth(112)
         self.status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.status.setToolTip(self.status.text())
         root.addWidget(self.status)
+        self._apply_status_width()
         self._set_cover()
         self._set_accessible_name()
+
+    def _status_width_texts(self):
+        return ("✓ " + self._tr("歌词已就绪"), self._tr("未找到本地歌词"))
+
+    def _apply_status_width(self):
+        metrics = QFontMetrics(self.status.font())
+        widest = max(metrics.horizontalAdvance(text)
+                     for text in self._status_width_texts())
+        self.status.setMinimumWidth(widest + 8)
 
     def _update_metadata_elide(self):
         for label, full in ((self.title, self._full_title),
@@ -1962,7 +1972,13 @@ class PlaylistRowButton(QPushButton):
 
     def showEvent(self, event):
         super().showEvent(event)
+        self._apply_status_width()
         self._update_metadata_elide()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.FontChange:
+            self._apply_status_width()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -2010,6 +2026,9 @@ class PlaylistRowButton(QPushButton):
         self.status.style().unpolish(self.status)
         self.status.style().polish(self.status)
         self.status.setText(self._status_text())
+        self.status.setToolTip(self.status.text())
+        self._apply_status_width()
+        self._set_accessible_name()
 
     def _set_accessible_name(self):
         self.setAccessibleName("%s，%s，%s，%s" % (
