@@ -355,11 +355,27 @@ check("进度条与播放条相交",
       (player.now.slider.geometry(), player.now.bar.rect()))
 check("进度值已更新", player.now.slider.value() == 300,
       player.now.slider.value())
+check("播放条滑轨左右对称",
+      player.now.slider.x() == 20
+      and player.now.bar.width() - player.now.slider.geometry().right() - 1 == 20,
+      (player.now.slider.x(), player.now.slider.geometry().right(),
+       player.now.bar.width()))
+check("QSizeGrip 透明且收在圆角内",
+      isinstance(player.grip, V._SizeGrip)
+      and player.grip.testAttribute(Qt.WA_TranslucentBackground)
+      and player.grip.geometry().right() < player.shell.width() - 6
+      and player.grip.geometry().bottom() < player.shell.height() - 6,
+      (player.grip.geometry(), player.shell.size()))
 player._timer.start()
 
 player.navigate("report")
 app.processEvents()
 check("听歌报告入口可用", player.stack.currentWidget() is player.report)
+check("榜首时长使用强调色",
+      player.report.artist_meta.objectName() == "artistMeta"
+      and "QLabel#artistMeta" in player.shell.styleSheet(),
+      (player.report.artist_meta.objectName(),
+       "QLabel#artistMeta" in player.shell.styleSheet()))
 check("报告空态给出明确的 20 秒规则",
       player.report.empty.isVisible()
       and "20" in player.report.empty.text(), player.report.empty.text())
@@ -369,6 +385,35 @@ check("报告空态隐藏零值图表",
       and not player.report.today.isVisible(),
       (player.report.spark.isVisible(), player.report.artist_card.isVisible(),
        player.report.today.isVisible()))
+
+narrow_report = V.ReportPage(L._tr)
+narrow_report.resize(884, 620)
+narrow_report.set_stats({
+    "total_seconds": 7200, "month_tracks": 12, "month_minutes": 120,
+    "streak": 4, "active_days": 9, "daily": [],
+    "top_artists": [{"name": "Demo", "seconds": 3200}],
+    "top_tracks": [{"title": "Track", "artist": "Demo", "seconds": 3200}],
+})
+narrow_report.show()
+app.processEvents()
+check("报告页窄高可滚动",
+      narrow_report.scroll.verticalScrollBar().maximum() > 0,
+      narrow_report.scroll.verticalScrollBar().maximum())
+check("报告页 spark 不越出 hero",
+      narrow_report.spark.geometry().bottom()
+      <= narrow_report.hero.contentsRect().bottom(),
+      (narrow_report.spark.geometry(),
+       narrow_report.hero.contentsRect()))
+
+canvas_metrics = V.LyricsCanvas(L._tr)
+translation_rect = canvas_metrics._translation_rect(100.0, 600.0)
+next_line_top = 100.0 + canvas_metrics._line_h - 16.0
+check("当前句译文与下一句保持 2px 间隙",
+      translation_rect.bottom() <= next_line_top - 2.0,
+      (translation_rect, next_line_top))
+narrow_report.deleteLater()
+canvas_metrics.deleteLater()
+
 player.navigate("history")
 app.processEvents()
 player.playlist.refresh()
