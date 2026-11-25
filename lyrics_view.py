@@ -2833,6 +2833,14 @@ class MainPlayerWindow(QWidget):
     def _apply_theme(self, theme):
         self._apply_style()
         self._refresh_now(force=True)
+        # The standalone overlay settings window is a separate top-level
+        # widget; refresh it too if it is currently open.
+        panel = getattr(self.ov, "panel", None)
+        if panel is not None:
+            try:
+                panel.update_accent(QColor(theme.accent_fill))
+            except (RuntimeError, AttributeError):
+                pass
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
