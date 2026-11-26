@@ -1251,7 +1251,7 @@ def parallel_fetch():
     def run(plan, artist="a", budget_note=""):
         """plan: {源: (延迟秒, 候选或 None)}
         返回 (耗时, lines, words, trans, used, by_src, singer_ok)"""
-        def fake(src, query, tc, ac):
+        def fake(src, query, tc, ac, duration=0.0, vtags=None):
             delay, cand = plan.get(src, (0.0, None))
             if delay:
                 time.sleep(delay)
@@ -1353,7 +1353,7 @@ def singer_mismatch_guard():
         return {"lines": [[i * 3.0, "第%d句" % i] for i in range(n)],
                 "words": {i: [[i * 3.0, 0.5, "字"]] for i in range(w)},
                 "trans": [], "cover": None, "singer": singer}
-    def fake(src, query, tc, ac):
+    def fake(src, query, tc, ac, duration=0.0, vtags=None):
         delay, cand = {"qq": (0.01, mk(40, 40, "杨坤")),      # 错配但逐字齐全
                         "kugou": (0.02, mk(30, 0, "杨千嬅"))
                        }.get(src, (0.0, None))                # 歌手对但只有行级
@@ -1376,7 +1376,7 @@ def singer_mismatch_guard():
                 "trans": [], "cover": None, "singer": singer}
 
     def probe(plan, artist, title="无所谓"):
-        def fake2(src, query, tc, ac):
+        def fake2(src, query, tc, ac, duration=0.0, vtags=None):
             delay, cand = plan.get(src, (0.0, None))
             if delay:
                 time.sleep(delay)
@@ -1540,15 +1540,15 @@ def stale_fetch_guard():
     ck(len(ov.lines) == 0, "停止后旧歌词被回填: %r" % (ov.lines,))
     ck(ov.song is None, "停止后 song 应仍为 None")
 
-    # --- 2) 停止后错配结果不得弹气泡
+    # --- 2) 停止后错配结果不得通知用户
     ov2 = _mk_overlay()
     got = []
-    ov2.tray.showMessage = lambda *a, **k: got.append(a)
+    ov2._notify = lambda title, message, *a, **k: got.append((title, message))
     ov2._apply_media({"title": "无所谓", "artist": "杨千嬅", "cover": None})
     mid2 = ov2._req_id
     ov2._apply_media(None)
     ov2._on_fetched((mid2, [[1.0, "随便啦"]], {}, None, [], False))   # 错配
-    ck(not got, "停止后仍弹托盘气泡打扰用户: %r" % (got[:1],))
+    ck(not got, "停止后仍通知用户: %r" % (got[:1],))
 
     # --- 3) 停止后播新歌，旧歌词不得覆盖新歌
     ov3 = _mk_overlay()
@@ -1562,15 +1562,15 @@ def stale_fetch_guard():
     ck("旧歌残留" not in texts, "旧歌词覆盖了新歌: %r" % (texts,))
 
     # --- 4) 气泡文案在 song 为 None 时不得退化（回归二次 bug）
-    #      修好作废逻辑后这条自然不该触发；这里直接验证渲染文案的前置条件：
-    #      有 song 时文案含真实歌手/歌名，不含占位符。
+    #      2.0.11 起错配提示改成「静默通知」（log + 托盘 tooltip，不弹系统
+    #      气泡，避免提示音），所以这里断言 _notify 被调用一次且文案完整。
     ov4 = _mk_overlay()
     got4 = []
-    ov4.tray.showMessage = lambda *a, **k: got4.append(a)
+    ov4._notify = lambda title, message, *a, **k: got4.append((title, message))
     ov4._apply_media({"title": "无所谓", "artist": "杨千嬅", "cover": None})
     rid = ov4._req_id
     ov4._on_fetched((rid, [[1.0, "随便啦"]], {}, None, [], False))
-    ck(len(got4) == 1, "在途错配应弹一次气泡: %r" % (got4[:1],))
+    ck(len(got4) == 1, "在途错配应通知一次: %r" % (got4[:1],))
     if got4:
         msg = got4[0][1]
         ck("杨千嬅" in msg, "气泡缺歌手名: %r" % msg)
@@ -2214,6 +2214,9 @@ def ui_polish():
     # 注意用 grab() 而不是 render()：本环境下 QWidget.render(pixmap) 画不出任何东西
     # （全透明），grab() 才真的走一遍 paintEvent。早先测试 [16] 里的 render() 就是空转。
     seg = L.Segmented([("a", "甲"), ("b", "乙")], "a", h=30)
+    from ui_theme import THEMES as _THEMES
+    dark = _THEMES["ink"]["dark"]
+    seg.set_theme(dark)                          # 轨道色现在来自主题令牌
     seg.resize(200, 30)
     simg = seg.grab().toImage()
 
@@ -2222,7 +2225,7 @@ def ui_polish():
 
     track = simg.pixelColor(180, 15)               # 右半段未选中，露出的应是轨道
     pill = simg.pixelColor(60, 15)                 # 左半段是选中滑块（主色）
-    card_deep = QColor("#14171e")                  # 卡片渐变的最深处
+    card_deep = QColor(dark.surface_raised)         # 卡片底（暗色 raised 面）
     assert track.alpha() == 255, "轨道没画出来（采样全透明说明 grab 失败）"
     assert lum(track) < lum(card_deep) - 4, \
         "分段轨道不够深，会糊在卡片里（轨道 %.1f vs 卡片 %.1f）" % (lum(track), lum(card_deep))
@@ -2243,15 +2246,92 @@ def ui_polish():
 check("ui polish", ui_polish)
 
 
+print("[28b] 浅色对比度门禁：歌词 / 译文 / 强调色 / 迷你按钮 / 分段轨道")
+def light_contrast_gate():
+    """把「浅色可读」变成可断言的数字。
+
+    这些坑都是同一类：深色写死的透明度/颜色被浅色外观原样继承。
+    2.0.13 曾经出现迷你模式按钮 1.10:1、非当前歌词 1.49:1、译文 1.05:1、
+    封面强调色 2.59:1 —— 肉眼能发现，但拦不住下一次回归。
+    """
+    import ui_theme as T
+    import lyrics_view as V
+
+    def _lum(c):
+        r, g, b = T.rgb_of(c)
+        return 0.299 * r + 0.587 * g + 0.114 * b
+
+    light = T.THEMES["ink"]["light"]
+    bg = light.bg
+    canvas = V.LyricsCanvas(lambda s: s)
+    canvas.set_theme(light)
+
+    # ---- 非当前歌词行：大字号 >= 3:1（远到第 5 行也不能掉下去）----
+    for dist in range(1, 6):
+        ratio = T.contrast_ratio(
+            T.blend(light.text, bg, canvas._dim_alpha(dist) / 255.0), bg)
+        assert ratio >= 3.0, \
+            "浅色第 %d 行歌词只有 %.2f:1（应 >= 3:1）" % (dist, ratio)
+
+    # ---- 当前行「未唱部分」也要看得见 ----
+    ghost = T.blend(light.text, bg, canvas._ghost_ink().alpha() / 255.0)
+    assert T.contrast_ratio(ghost, bg) >= 3.0, "当前行未唱部分 < 3:1"
+
+    # ---- 译文（13px 小字）：>= 4.5:1 ----
+    tr = canvas._trans_ink(150)
+    ratio = T.contrast_ratio(
+        T.blend(light.text_secondary, bg, tr.alpha() / 255.0), bg)
+    assert ratio >= 4.5, "译文只有 %.2f:1（应 >= 4.5:1）" % ratio
+
+    # ---- 封面取色的强调色：任意浅色封面都要压到 4.5:1 ----
+    for hexc in ("#EF704D", "#F7A8B8", "#F2C14E", "#C9E4DE", "#FFFFFF"):
+        out = T.readable_on(hexc, bg, 4.5)
+        ratio = T.contrast_ratio(out, bg)
+        assert ratio >= 4.45, "封面色 %s 压暗后只有 %.2f:1" % (hexc, ratio)
+
+    # ---- 凹槽必须比卡片更深：深浅两套外观都要成立 ----
+    for theme in (T.THEMES["ink"]["dark"], T.THEMES["ink"]["light"],
+                  T.THEMES["celadon"]["dark"], T.THEMES["celadon"]["light"]):
+        assert _lum(theme.surface_sunken) < _lum(theme.surface_raised) - 4, \
+            "%s/%s 的凹槽不比卡片深（分段控件会浮在卡片上）" % (
+                theme.id, theme.appearance)
+
+    # ---- 迷你模式按钮必须拿到主题，且文字可读 ----
+    bar = V.TitleBar(lambda s: s)
+    bar.set_theme(light)
+    mini = bar.quick_buttons["mini"]
+    assert mini._theme is light, "标题栏没把主题传给迷你模式按钮"
+    pal = mini._palette()
+    assert T.contrast_ratio(pal["text"], light.surface_raised) >= 4.5, \
+        "迷你按钮文字 %.2f:1（应 >= 4.5:1）" % T.contrast_ratio(
+            pal["text"], light.surface_raised)
+
+    # ---- 分段控件：选中文字压在选中底上，未选文字压在轨道上 ----
+    for theme in (light, T.THEMES["ink"]["dark"]):
+        seg = V.ui_glass.GlassButton("甲", variant=V.ui_glass.SEGMENT)
+        seg.set_theme(theme)
+        pal = seg._palette()
+        seg.setChecked(True)
+        assert T.contrast_ratio(pal["text"], pal["surface"]) >= 4.5, \
+            "%s 选中段文字对比不足" % theme.appearance
+        assert T.contrast_ratio(pal["text_muted"], pal["track"]) >= 3.0, \
+            "%s 未选段文字对比不足" % theme.appearance
+check("light contrast gate", light_contrast_gate)
+
+
 print("[29] 菜单 / 弹层皮肤：右键菜单、托盘菜单、下拉弹层、对话框都不能漏成原生白底")
 def popup_skin():
     from PySide6.QtWidgets import QMenu, QComboBox, QMessageBox
 
     DARK = "#15181f"
+    theme = ov._current_theme()
+    # 菜单/弹层现在跟随主题（浅色外观下就该是浅底），所以判据改成
+    # 「底色等于当前主题的 raised 面」，而不是写死某个深色十六进制。
+    SKIN = theme.surface_raised if theme is not None else DARK
 
     def is_skinned(m):
         """同一个判据在断言和变异自检里复用，避免"检测逻辑本身失效"。"""
-        return DARK in (m.styleSheet() or "")
+        return SKIN in (m.styleSheet() or "")
 
     # ---- 右键菜单必须套深色皮肤 ----
     # 历史 bug：_show_menu 里漏了 setStyleSheet，于是弹出的是系统原生白底菜单，
@@ -2398,8 +2478,12 @@ def ui_texture():
     # ---- 质感令牌：面板 QSS 必须真的引用了令牌，且不能有占位符残留 ----
     ov._open_panel()
     qss = _settings_panel(ov).styleSheet()
+    theme = ov._current_theme()
     assert ("border-radius: %dpx" % L.UI_R_CARD) in qss, "卡片圆角没走 UI_R_CARD 令牌"
-    assert L.UI_GROOVE in qss, "凹槽底色没走 UI_GROOVE 令牌"
+    # 凹槽已从写死的 UI_GROOVE 换成主题令牌：断言凹槽色确实来自当前主题，
+    # 而不是又退回某个硬编码十六进制。
+    assert theme.surface_sunken in qss, \
+        "凹槽底色没走主题 surface_sunken（当前主题 %s）" % theme.id
     for ph in ("__A__", "__AL__", "__R_CARD__", "__R_CTRL__", "__R_ICON__",
                "__HI__", "__LO__", "__MID__", "__ARROW__", "__CARD_TOP__",
                "__CARD_BODY__", "__CARD_BOT__", "__CTRL_TOP__", "__CTRL_BOT__",
@@ -2790,6 +2874,10 @@ def first_line_slot():
     纯音乐占位、第一句缩在下一行小字里"的状态 —— 用户会当成"第一行歌词不
     显示"（纯音乐占位更是误导，明明有歌词）。"""
     fake_song()
+    # 前面的用例动过「歌词偏移」滑块；这个用例按绝对时间断言行号，
+    # 必须把偏移归零，否则 9.0s 会被偏移拉回第一句（真正的用例泄漏）。
+    saved_offset = ov.offset
+    ov.offset = 0.0
     ov.lines = [[5.0, "第一句歌词"], [8.0, "第二句歌词"]]
     ov.words = {}
     ov.trans = []
@@ -2834,7 +2922,10 @@ def first_line_slot():
         ov.anchor_pos = 9.0
         ov.anchor_ts = time.monotonic()
         ov._on_frame()
-        assert ov._current_text == "第二句歌词", ov._current_text
+        assert ov._current_text == "第二句歌词", (
+            ov._current_text, "pos=%.2f" % ov._lyric_pos(),
+            "offset=%r" % ov.offset, "idx=%r" % ov.cur_idx,
+            "lines=%r" % (ov.lines,), "status=%r" % ov.status)
         assert ov._line_anim.state() == QVariantAnimation.Running, "切行必须带入场动画"
 
         # 变异自检：把前奏回退换回旧行为（当前行空、第一句压在下一行），上面的
@@ -2853,6 +2944,7 @@ def first_line_slot():
     finally:
         del ov._draw_karaoke
         del ov._draw_plain
+        ov.offset = saved_offset
     ov._reset_line_state()
 check("首句入场落点", first_line_slot)
 
@@ -3276,6 +3368,77 @@ def watchdog_integration():
         assert p2 == 0, "释放后不应再探测到实例"
         L._close_handle(p2)
 check("原生守护进程接入", watchdog_integration)
+
+
+def video_site_filter():
+    """浏览器里的抖音/B 站等视频页不得进入听歌统计；真实歌曲照常记录。"""
+    import listening_store
+    blocked = [
+        {"title": "抖音精选电脑版 - 抖音旗下优质视频平台", "artist": "",
+         "source": "chrome.exe"},
+        {"title": "鬼畜循环", "artist": "",
+         "source": "MicrosoftEdge_8wekyb3d8bbwe!"},
+        {"title": "某视频 - 哔哩哔哩", "artist": "", "source": "firefox.exe"},
+    ]
+    for info in blocked:
+        assert listening_store.is_video_site_media(info), \
+            "视频网站媒体应被拦截: %r" % (info,)
+    allowed = [
+        {"title": "最后一页 (Live)", "artist": "王赫野/姚晓棠",
+         "source": "QQMusic.exe"},
+        {"title": "Song", "artist": "Artist", "source": "chrome.exe"},
+    ]
+    for info in allowed:
+        assert not listening_store.is_video_site_media(info), \
+            "真实歌曲不应被拦截: %r" % (info,)
+    tmp = tempfile.mkdtemp(prefix="desktop-sing-smoke-listen-")
+    try:
+        store = listening_store.ListeningStore(
+            os.path.join(tmp, "listening.json"))
+        tracker = listening_store.ListeningTracker(store)
+        tracker.on_media(blocked[0])
+        tracker._seconds = 120.0
+        tracker.flush(final=True)
+        assert not store.data["sessions"], "视频网站媒体不应写入听歌统计"
+        tracker.on_media(allowed[0])
+        tracker._seconds = 120.0
+        tracker.flush(final=True)
+        rows = [r for r in store.data["sessions"]
+                if r.get("t") == "最后一页 (Live)"]
+        assert len(rows) == 1, "真实歌曲应写入听歌统计"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def demo_data_purged():
+    """预设演示数据不得出现在听歌统计里。"""
+    import listening_store
+    tmp = tempfile.mkdtemp(prefix="desktop-sing-smoke-demo-")
+    try:
+        path = os.path.join(tmp, "listening.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"v": 1, "sessions": [
+                {"d": "2026-01-01", "k": "夜航西飞\x1f演示歌手",
+                 "t": "夜航西飞", "a": "演示歌手", "s": 8760.0, "n": 72,
+                 "h": 19, "last": time.time()},
+                {"d": "2026-01-02", "k": "抖音精选\x1f",
+                 "t": "抖音精选电脑版 - 抖音旗下优质视频平台", "a": "",
+                 "s": 476.0, "n": 5, "h": 19, "last": time.time()},
+                {"d": "2026-01-03", "k": "江南\x1f林俊杰", "t": "江南",
+                 "a": "林俊杰", "s": 269.0, "n": 1, "h": 19, "last": time.time()},
+            ]}, f, ensure_ascii=False)
+        store = listening_store.ListeningStore(path)
+        titles = [r.get("t") for r in store.data["sessions"]]
+        assert "夜航西飞" not in titles, "预设演示数据应被清除"
+        assert not any("抖音" in (t or "") for t in titles), \
+            "视频网站条目应被清除"
+        assert "江南" in titles, "真实歌曲应保留"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+check("视频网站不进听歌统计", video_site_filter)
+check("预设演示数据自动清除", demo_data_purged)
 
 
 # ---- 收尾：注销热键、还原配置 ----

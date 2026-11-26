@@ -8,7 +8,7 @@ from string import Template
 import winreg
 
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QColor, QGuiApplication
 
 
 APPEARANCES = ("system", "dark", "light")
@@ -78,6 +78,11 @@ class Theme:
     m_base: int
     m_slow: int
     easing: str
+    glass_fill: str = "rgba(255,255,255,.07)"
+    glass_border: str = "rgba(255,255,255,.18)"
+    glass_hover: str = "rgba(255,255,255,.13)"
+    glass_highlight: str = "rgba(255,255,255,.30)"
+    glass_shadow: str = "rgba(0,0,0,.32)"
 
 
 def _theme(
@@ -156,27 +161,37 @@ def _theme(
             control_handle_focus
             or ("#FFFFFF" if appearance == "dark" else "#000000")
         ),
+        glass_fill=("rgba(255,255,255,.07)" if appearance == "dark"
+                    else "rgba(255,255,255,.72)"),
+        glass_border=("rgba(255,255,255,.20)" if appearance == "dark"
+                      else "rgba(20,20,24,.12)"),
+        glass_hover=("rgba(255,255,255,.13)" if appearance == "dark"
+                     else "rgba(255,255,255,.92)"),
+        glass_highlight=("rgba(255,255,255,.34)" if appearance == "dark"
+                         else "rgba(255,255,255,.95)"),
+        glass_shadow=("rgba(0,0,0,.42)" if appearance == "dark"
+                      else "rgba(20,20,24,.22)"),
         font_display='"Segoe UI Variable Display", "Segoe UI", "MiSans", "Microsoft YaHei UI"',
         font_text='"Segoe UI Variable Text", "Segoe UI", "MiSans", "Microsoft YaHei UI"',
         font_cjk='"MiSans", "Microsoft YaHei UI", sans-serif',
-        fs_display=30,
+        fs_display=34,
         fs_title=22,
-        fs_heading=16,
-        fs_body=13,
-        fs_small=12,
+        fs_heading=17,
+        fs_body=14,
+        fs_small=13,
         fs_caption=12,
         fs_eyebrow=12,
-        lh_body=20,
+        lh_body=21,
         s1=4,
         s2=8,
         s3=12,
-        s4=16,
+        s4=18,
         s5=24,
         s6=32,
-        r_control=8,
-        r_row=12,
-        r_card=16,
-        r_window=22,
+        r_control=12,
+        r_row=14,
+        r_card=20,
+        r_window=26,
         m_fast=120,
         m_base=180,
         m_slow=240,
@@ -188,8 +203,8 @@ THEMES: dict[str, dict[str, Theme]] = {
     "ink": {
         "dark": _theme(
             "ink", "墨", "dark",
-            "#0B0B0C", "#141416", "#1B1B1E", "#08080A", "#202024",
-            "#F3F0E9", "#A8A49B", "#8B877F", "#6E6B65",
+            "#000000", "#1C1C1E", "#1C1C1E", "#0D0D0F", "#2C2C2E",
+            "#F3F0E9", "#B0ADA5", "#A6A6AB", "#8A8A8F",
             "rgba(255,255,255,.08)", "rgba(255,255,255,.36)", "rgba(255,255,255,.12)",
             "#C94322", "#F06A4A", "#B93C1D", "#A9341A", "#FFF8F0",
             "rgba(201,67,34,.16)", "#63C79A", "rgba(99,199,154,.16)",
@@ -200,9 +215,9 @@ THEMES: dict[str, dict[str, Theme]] = {
         ),
         "light": _theme(
             "ink", "墨", "light",
-            "#F2EFE8", "#FAF8F2", "#FFFFFF", "#E9E5DC", "#FFFFFF",
+            "#F2F2F7", "#FFFFFF", "#FFFFFF", "#E5E5EA", "#EFEFF4",
             "#1B1A18", "#4F4B44", "#625D55", "#837E74",
-            "rgba(27,26,24,.12)", "rgba(27,26,24,.50)", "rgba(27,26,24,.18)",
+            "rgba(60,60,67,.10)", "rgba(60,60,67,.64)", "rgba(60,60,67,.12)",
             "#C2421F", "#A93618", "#A9341A", "#8F2B16", "#FFF8EF",
             "rgba(194,66,31,.12)", "#176349", "rgba(23,99,73,.14)",
             "#8A5200", "rgba(138,82,0,.14)", "#B3261E", "rgba(179,38,30,.12)",
@@ -213,8 +228,8 @@ THEMES: dict[str, dict[str, Theme]] = {
     "celadon": {
         "dark": _theme(
             "celadon", "青瓷", "dark",
-            "#0A1210", "#121B18", "#19251F", "#060C0A", "#1F2C25",
-            "#EDF2EC", "#A2B0A7", "#84958B", "#6B7B72",
+            "#000000", "#1A2620", "#1A2620", "#0C1712", "#243029",
+            "#EDF2EC", "#B4C2B8", "#ADBCB2", "#93A79B",
             "rgba(255,255,255,.09)", "rgba(255,255,255,.36)", "rgba(255,255,255,.13)",
             "#2E9E78", "#5FD0A0", "#35B287", "#2A906E", "#06140F",
             "rgba(46,158,120,.18)", "#63C79A", "rgba(99,199,154,.16)",
@@ -224,7 +239,7 @@ THEMES: dict[str, dict[str, Theme]] = {
         ),
         "light": _theme(
             "celadon", "青瓷", "light",
-            "#EFF3EE", "#F8FAF6", "#FFFFFF", "#E2E8E1", "#FFFFFF",
+            "#F2F7F3", "#FFFFFF", "#FFFFFF", "#E4EDE7", "#EDF3EF",
             "#14201A", "#46554C", "#55645B", "#707E75",
             "rgba(20,32,26,.13)", "rgba(20,32,26,.52)", "rgba(20,32,26,.20)",
             "#1F7A5A", "#176349", "#1A6A4E", "#155A42", "#F7FFFB",
@@ -415,33 +430,33 @@ def qss_tokens(theme: Theme) -> dict[str, str]:
 _MAIN_QSS = Template(r"""
 * { font-family: $font_text; }
 QFrame#shell { background: $bg;
-               border: 1px solid $border; border-radius: 26px; }
+               border: 1px solid $border; border-radius: 28px; }
 QWidget#body { background: transparent; }
-QWidget#titlebar { background: $surface; }
+QWidget#titlebar { background: $bg; }
 QLabel#pagecrumb { color: $text; font-size: 14px; font-weight: 750; }
-QPushButton#quick { background: $surface_raised; color: $text_muted;
-                    border: 1px solid $border; border-radius: 13px;
+QPushButton#quick { background: $glass_fill; color: $text_muted;
+                    border: 1px solid $glass_border; border-radius: 12px;
                     padding: 6px 11px; font-size: 12px; font-weight: 650; }
-QPushButton#quick:hover { background: $surface_hover; color: $text;
-                          border-color: $border_strong; }
-QPushButton#quick:pressed { background: $surface_sunken; }
+QPushButton#quick:hover { background: $glass_hover; color: $text;
+                          border-color: $glass_highlight; }
+QPushButton#quick:pressed { background: $glass_fill; }
 QPushButton#winbtn, QPushButton#winclose { background: transparent; border: none; }
-QWidget#sidebar { background: $surface;
+QWidget#sidebar { background: $bg;
                    border-right: 1px solid $divider; }
 QLabel#brandmark { background: $accent_fill; color: $on_accent;
                    border-radius: 13px; font-size: 19px; font-weight: 700; }
 QLabel#brandname { color: $text; font-size: 17px; font-weight: 800; }
 QLabel#brandsub { color: $text_muted; font-size: $fs_captionpx; letter-spacing: 2px; }
 QLabel#sidestatus { color: $text_muted; font-size: 12px; padding: 2px 4px; }
-QLabel#sidestatus[live="1"] { color: $success; }
-QPushButton#nav { text-align: left; padding: 0 11px;
+QLabel#sidestatus[live="1"] { color: $success; }QPushButton#nav { text-align: left; padding: 0 11px;
                   border: 2px solid transparent; border-left: 3px solid transparent;
                   border-radius: 10px;
                   color: $text_muted; font-size: 13px; font-weight: 650; }
-QPushButton#nav:hover { background: $surface_hover; color: $text; }
-QPushButton#nav:pressed { background: $surface_sunken; color: $text; }
-QPushButton#nav:checked { background: $surface_raised; color: $text;
-                          border-left: 3px solid $accent_fill; }
+QPushButton#nav:hover { background: $glass_hover; color: $text;
+                        border-color: $glass_border; border-left-color: $accent_fill; }
+QPushButton#nav:pressed { background: $glass_fill; color: $text; }
+QPushButton#nav:checked { background: $accent_soft; color: $text;
+                          border-left: 3px solid transparent; }
 QLabel#sidehead { color: $text_muted; font-size: $fs_eyebrowpx; font-weight: 700;
                   letter-spacing: 1px; }
 QLabel#sidecount { color: $text_muted; font-size: $fs_smallpx; }
@@ -460,20 +475,18 @@ QLabel#stageeyebrow { color: $text_muted; font-size: $fs_eyebrowpx;
                       letter-spacing: 2px; font-weight: 700; }
 QLabel#stagetrack { color: $text; font-size: 26px; font-weight: 800; }
 QLabel#stageartist { color: $text_secondary; font-size: 13px; }
-QPushButton#stageghost { background: $surface_raised; color: $text_secondary;
-                         border: 1px solid $border; border-radius: 12px;
+QPushButton#stageghost { background: $glass_fill; color: $text_secondary;
+                         border: 1px solid $glass_border; border-radius: 12px;
                          padding: 5px 10px; font-size: 12px; }
-QPushButton#stageghost:hover { background: $surface_hover; color: $text; }
+QPushButton#stageghost:hover { background: $glass_hover; color: $text;
+                              border-color: $glass_highlight; }
 QWidget#reportPage, QWidget#historyPage { background: $bg; }
 QWidget#reportScroll { background: $bg; border: none; }
 QWidget#reportBody { background: transparent; }
 QWidget#settingsPage { background: $bg; }
 QLabel#reportTitle { color: $text; font-size: 26px; font-weight: 800; }
 QLabel#reportSub { color: $text_muted; font-size: 13px; }
-QLabel#privacyChip { color: $success; background: $success_soft;
-                     border: 1px solid $success; border-radius: 12px;
-                     padding: 5px 9px; font-size: 12px; }
-QPushButton#dangerGhost { background: transparent; color: $danger;
+QPushButton#dangerGhost { background: $glass_fill; color: $danger;
                           border: 1px solid $danger; border-radius: 12px;
                           padding: 6px 10px; font-size: 12px; }
 QPushButton#dangerGhost:hover { background: $danger; color: $bg; }
@@ -498,9 +511,11 @@ QLabel#artistMeta { color: $accent_text; font-size: 12px; font-weight: 700;
                     font-feature-settings: "tnum" 1; }
 QLabel#muted { color: $text_muted; font-size: 12px; }
 QLabel#rankList, QLabel#trackRank { color: $text_secondary; font-size: 12px; }
-QLabel#reportEmpty { color: $text_muted; background: $surface;
-                     border: 1px dashed $border_strong; border-radius: 20px;
-                     font-size: 13px; padding: 24px; }
+QFrame#reportEmptyCard { background: $surface_raised;
+                         border: 1px solid $border; border-top-color: $border_strong;
+                         border-radius: 24px; }
+QLabel#reportEmptyTitle { color: $text; font-size: 22px; font-weight: 800; }
+QLabel#reportEmptyHint { color: $text_muted; font-size: 13px; }
 QScrollArea { background: transparent; border: none; }
 QScrollArea > QWidget > QWidget { background: transparent; }
 QScrollBar:vertical { background: transparent; width: 8px; margin: 2px; }
@@ -525,20 +540,20 @@ QLabel#historyArtist { color: $text_muted; font-size: 12px; font-weight: 400; }
 QLabel#historyMeta { color: $text_muted; font-size: 12px; font-weight: 400;
                      font-feature-settings: "tnum" 1; }
 QWidget#playlistPage { background: $bg; }
-QLabel#playlistPageTitle { color: $text; font-size: 26px; font-weight: 800; }
+QLabel#playlistPageTitle { color: $text; font-size: 32px; font-weight: 800; }
 QLabel#playlistSubtitle { color: $text_muted; font-size: 13px; font-weight: 400; }
 QFrame#playlistPanel { background: $surface_raised;
                        border: 1px solid $border;
-                       border-radius: 16px; }
+                       border-radius: 20px; }
 QLineEdit#playlistInput { background: $surface_sunken; color: $text;
-                          border: 1px solid $border;
-                          border-radius: 10px; padding: 8px 12px;
+                          border: none;
+                          border-radius: 12px; padding: 10px 14px;
                           font-size: 13px; font-weight: 600; }
 QLineEdit#playlistInput:hover { border-color: $border_strong; }
 QLineEdit#playlistInput:focus { border: 2px solid $focus; }
 QLineEdit#playlistInput[error="1"] { border: 2px solid $danger; }
 QPushButton#primary { background: $accent_fill; color: $on_accent;
-                      border: none; border-radius: 10px;
+                      border: 1px solid $glass_highlight; border-radius: 10px;
                       padding: 8px 16px; font-size: 13px; font-weight: 600; }
 QPushButton#primary:hover { background: $accent_hover; }
 QPushButton#primary:pressed { background: $accent_pressed; }
@@ -552,7 +567,7 @@ QLabel#playlistCount { color: $text_muted; font-size: 12px; font-weight: 500; }
 QPushButton#playlistRow { background: transparent;
                           border: none;
                           border-bottom: 1px solid $divider;
-                          border-radius: 12px; text-align: left; }
+                          border-radius: 14px; text-align: left; }
 QPushButton#playlistRow:hover { background: $surface_hover; }
 QPushButton#playlistRow:pressed { background: $accent_soft; }
 QPushButton#playlistRow:checked { background: $accent_soft;
@@ -572,7 +587,7 @@ QLabel#playlistSkeletonCover { background: $surface_raised; border-radius: 8px; 
 QLabel#playlistSkeletonLine { background: $surface_raised; border-radius: 6px; }
 QFrame#playlistEmpty { background: $surface_raised;
                        border: 1px solid $border;
-                       border-radius: 16px; }
+                       border-radius: 20px; }
 QLabel#playlistEmptyIcon { color: $text_muted; font-size: 48px; font-weight: 400; }
 QLabel#playlistEmptyTitle { color: $text; font-size: 20px; font-weight: 600; }
 QLabel#playlistEmptyDesc { color: $text_muted; font-size: 13px; font-weight: 400; }
@@ -584,14 +599,16 @@ QFrame#historySkeleton { background: $surface;
 QLabel#historySkeletonCover { background: $surface_raised; border-radius: 8px; }
 QLabel#historySkeletonLine { background: $surface_raised; border-radius: 6px; }
 QPushButton#historyAction { background: $accent_fill; color: $on_accent;
-                            border: none; border-radius: 14px; }
+                            border: 1px solid $glass_highlight;
+                            border-radius: 14px; }
 QPushButton#historyAction:hover { background: $accent_hover; }
 QPushButton#historyAction:focus { border: 2px solid $focus; }
-QPushButton#ghost { background: transparent; color: $text;
-                    border: 1px solid $border_strong;
+QPushButton#ghost { background: $glass_fill; color: $text;
+                    border: 1px solid $glass_border;
                     border-radius: 18px; padding: 6px 16px;
                     font-size: 13px; font-weight: 400; }
-QPushButton#ghost:hover { background: $surface_hover; }
+QPushButton#ghost:hover { background: $glass_hover;
+                          border-color: $glass_highlight; }
 QPushButton#nav:focus { border-color: $focus; }
 QPushButton#nav:checked:focus { border-color: $focus; }
 QPushButton#recent:focus { background: $surface_hover; color: $text;
@@ -601,69 +618,58 @@ QPushButton#dangerGhost:focus, QPushButton#ghost:focus {
     border: 2px solid $focus; }
 QPushButton#historyRow:focus { border-color: $focus; }
 QFrame#playbar { background: $surface_raised;
-                 border: 1px solid $border; border-radius: 26px; }
-QPushButton#playprimary { background: $accent_fill; border: none; border-radius: 23px; }
+                 border: none; border-radius: 24px; }
+QPushButton#playprimary { background: $accent_fill; border: 1px solid $glass_highlight;
+                         border-radius: 23px; }
 QPushButton#playprimary:hover { background: $accent_hover; }
 QPushButton#playprimary:pressed { background: $accent_pressed; }
 QPushButton#playprimary:focus { border: 2px solid $focus; }
-QPushButton#playround { background: $surface_hover; border: 1px solid $border;
+QPushButton#playround { background: $glass_fill; border: 1px solid $glass_border;
                         border-radius: 19px; }
-QPushButton#playround:hover { background: $surface_sunken; }
-QPushButton#playround:pressed { background: $surface_sunken; }
+QPushButton#playround:hover { background: $glass_hover;
+                              border-color: $glass_highlight; }
+QPushButton#playround:pressed { background: $glass_fill; }
 QPushButton#playround:focus { border: 2px solid $focus; }
 QLabel#bartitle { color: $text; font-size: 14px; font-weight: 700; }
 QLabel#barartist { color: $text_secondary; font-size: 12px; }
 QLabel#bartime { color: $text_muted; font-size: 12px;
                  font-feature-settings: "tnum" 1; }
-QSlider#progress::groove:horizontal { height: 4px; background: $surface_sunken;
+QSlider#progress::groove:horizontal { height: 3px; background: $surface_sunken;
                                       border-radius: 2px; }
 QSlider#progress::sub-page:horizontal { background: $accent_fill; border-radius: 2px; }
-QSlider#progress::handle:horizontal { width: 12px; height: 12px; margin: -4px 0;
-                                     border-radius: 6px;
-                                     background: $control_handle_fill;
-                                     border: 2px solid $control_handle_outline; }
-QSlider#progress::handle:horizontal:hover { width: 12px; height: 12px; margin: -5px 0;
-                                            border-radius: 7px;
-                                            background: $control_handle_fill;
-                                            border: 2px solid $control_handle_outline; }
-/* Focus keeps the dual-colour handle but adds an independent high-contrast
-   outer ring plus a focus-colour band.  A single $focus border disappears
-   into the filled track (1.0-1.76:1), so the outer ring is near-white on
-   dark themes and near-black on light themes (>=3:1 against both the
-   filled track and the groove/background). */
-QSlider#progress::handle:horizontal:focus { width: 18px; height: 18px; margin: -7px 0;
-                                            border-radius: 9px;
+QSlider#progress::handle:horizontal { width: 5px; height: 15px; margin: -6px 0;
+                                     border-radius: 3px;
+                                     background: $text; }
+QSlider#progress::handle:horizontal:hover { width: 7px; height: 17px; margin: -7px 0;
+                                            border-radius: 4px;
+                                            background: $text; }
+QSlider#progress::handle:horizontal:focus { width: 7px; height: 17px; margin: -7px 0;
+                                            border-radius: 4px;
                                             border: 2px solid $control_handle_focus;
-                                            background: qradialgradient(
-                                                cx:0.5, cy:0.5, radius:0.5,
-                                                fx:0.5, fy:0.5,
-                                                stop:0    $control_handle_fill,
-                                                stop:0.42 $control_handle_fill,
-                                                stop:0.43 $control_handle_outline,
-                                                stop:0.60 $control_handle_outline,
-                                                stop:0.61 $focus,
-                                                stop:0.78 $focus,
-                                                stop:0.79 $control_handle_focus,
-                                                stop:1    $control_handle_focus); }
+                                            background: $text; }
 QFrame#appearanceCard { background: $surface_raised;
                         border: 1px solid $border;
-                        border-radius: 16px; }
-QLabel#appearanceTitle { color: $text; font-size: 16px; font-weight: 700; }
+                        border-radius: 20px; }
+QLabel#appearanceTitle { color: $text; font-size: 17px; font-weight: 800; }
+QFrame#sectionBar { background: $accent_fill; border-radius: 1.5px; }
 QLabel#appearanceHint { color: $text_muted; font-size: 12px; }
-QPushButton#appearanceSeg { background: transparent; color: $text_muted;
-                            border: 1px solid $border; border-radius: 12px;
+QWidget#divider { background: $divider; max-height: 1px; }
+QPushButton#appearanceSeg { background: $glass_fill; color: $text_muted;
+                            border: 1px solid $glass_border; border-radius: 12px;
                             padding: 7px 14px; font-size: 13px; font-weight: 600; }
-QPushButton#appearanceSeg:hover { background: $surface_hover; color: $text; }
+QPushButton#appearanceSeg:hover { background: $glass_hover; color: $text;
+                                  border-color: $glass_highlight; }
 QPushButton#appearanceSeg:checked { background: $accent_soft; color: $accent_text;
                                     border-color: $accent_fill; }
 QPushButton#appearanceSeg:focus { border: 2px solid $focus; }
-QPushButton#themeSwatch { background: $surface; border: 2px solid $border;
-                          border-radius: 12px; text-align: left;
-                          padding: 10px 12px; }
+QPushButton#themeSwatch { background: $surface; border: 1px solid $border;
+                          border-radius: 16px; text-align: left;
+                          min-height: 96px; padding: 12px 14px; }
 QLabel#themeSwatchName { color: $text; font-size: 13px; font-weight: 650; }
-QLabel#themeSwatchDots { border-radius: 9px; }
+QLabel#themeSwatchCheck { color: $text; font-size: 13px; font-weight: 700; }
 QPushButton#themeSwatch:hover { border-color: $border_strong; }
-QPushButton#themeSwatch:checked { border: 2px solid $focus; }
+QPushButton#themeSwatch:checked { border: 2px solid $border_strong;
+                                  background: $surface_raised; }
 QPushButton#themeSwatch:focus { border: 2px solid $focus; }
 """)
 
@@ -674,20 +680,21 @@ QDialog, QMessageBox, QMenu { background: $surface_raised; color: $text; }
 QLabel { color: $text; font-size: $fs_bodypx; background: transparent; }
 QLabel#wdtitle { color: $text; font-size: 17px; font-weight: 600; }
 QLabel#wdbody { color: $text_secondary; font-size: 13px; }
-QPushButton { background: $surface; color: $text;
-              border: 1px solid $border; border-radius: $r_controlpx;
+QPushButton { background: $glass_fill; color: $text;
+              border: 1px solid $glass_border; border-radius: $r_controlpx;
               padding: 6px 18px; min-width: 60px; }
-QPushButton:hover { border-color: $focus; }
+QPushButton:hover { background: $glass_hover; border-color: $glass_highlight; }
 QPushButton:default { background: $accent_fill; color: $on_accent;
-                      border: none; font-weight: 700; }
+                      border: 1px solid $glass_highlight; font-weight: 700; }
 QPushButton:default:hover { background: $accent_hover; }
-QPushButton#wdgo { background: $accent_fill; color: $on_accent; border: none;
+QPushButton#wdgo { background: $accent_fill; color: $on_accent;
+                   border: 1px solid $glass_highlight;
                    border-radius: $r_controlpx; padding: 8px 18px; font-weight: 600; }
 QPushButton#wdgo:hover { background: $accent_hover; }
-QPushButton#wdghost { background: transparent; color: $text_muted;
-                      border: 1px solid $border_strong;
+QPushButton#wdghost { background: $glass_fill; color: $text_muted;
+                      border: 1px solid $glass_border;
                       border-radius: $r_controlpx; padding: 8px 16px; }
-QPushButton#wdghost:hover { color: $text; border-color: $focus; }
+QPushButton#wdghost:hover { color: $text; border-color: $glass_highlight; }
 QPushButton:focus { border: 2px solid $focus; }
 QPushButton:hover:focus { border-color: $focus; }
 QPushButton:default:focus { border: 2px solid $focus; }
@@ -715,6 +722,69 @@ QWidget#overlaySunken { background: $surface_sunken; color: $text; }
 
 
 _PLACEHOLDER_RE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*")
+
+
+# ---- contrast helpers ---------------------------------------------------
+# 浅色外观最容易出问题的是「把深色写死的透明度/颜色原样继承」：白底上的
+# 46/255 墨色只有 1.5:1，等于隐形。这些函数把「可读」变成可计算、可断言
+# 的量，界面与冒烟测试共用同一套判据。
+
+_NEAR_BLACK = (24, 24, 24)
+
+
+def rgb_of(color) -> tuple[int, int, int]:
+    """RGB tuple for ``#RRGGBB`` / QColor. Alpha-bearing tokens are rejected."""
+    if isinstance(color, QColor):
+        return color.red(), color.green(), color.blue()
+    text = str(color).strip()
+    if len(text) == 7 and text.startswith("#"):
+        return int(text[1:3], 16), int(text[3:5], 16), int(text[5:7], 16)
+    raise ValueError("expected #RRGGBB or QColor, got %r" % (color,))
+
+
+def luminance(color) -> float:
+    """WCAG 2.x relative luminance (0 = black, 1 = white)."""
+    def channel(v: int) -> float:
+        s = v / 255.0
+        return s / 12.92 if s <= 0.03928 else ((s + 0.055) / 1.055) ** 2.4
+
+    r, g, b = rgb_of(color)
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+
+def contrast_ratio(fg, bg) -> float:
+    """WCAG contrast ratio, 1.0 (identical) … 21.0 (black on white)."""
+    a, b = luminance(fg), luminance(bg)
+    hi, lo = max(a, b), min(a, b)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def blend(fg, bg, alpha: float) -> QColor:
+    """Composite ``fg`` over ``bg`` at ``alpha`` (0…1), returning an opaque colour."""
+    fr, fg_, fb = rgb_of(fg)
+    br, bg_, bb = rgb_of(bg)
+    a = max(0.0, min(1.0, float(alpha)))
+    return QColor(int(round(fr * a + br * (1 - a))),
+                  int(round(fg_ * a + bg_ * (1 - a))),
+                  int(round(fb * a + bb * (1 - a))))
+
+
+def readable_on(fg, bg, target: float = 4.5) -> QColor:
+    """Darken ``fg`` towards near-black until it reaches ``target`` on ``bg``.
+
+    Used for cover-derived accents on the light stage: a pastel cover colour
+    can sit at 2.6:1 on a pale wash, which makes the karaoke line unreadable.
+    Dark themes skip this because a bright accent on black is already legible.
+    """
+    r, g, b = rgb_of(fg)
+    for step in range(0, 71):
+        t = step / 100.0
+        candidate = QColor(int(round(r * (1 - t) + _NEAR_BLACK[0] * t)),
+                           int(round(g * (1 - t) + _NEAR_BLACK[1] * t)),
+                           int(round(b * (1 - t) + _NEAR_BLACK[2] * t)))
+        if contrast_ratio(candidate, bg) >= target:
+            return candidate
+    return QColor(*_NEAR_BLACK)
 
 
 def build_qss(theme: Theme, scope: str = "main") -> str:

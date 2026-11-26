@@ -23,6 +23,79 @@ MIN_PLAY_SECONDS = 20.0
 MAX_ENTRIES = 5000
 RETENTION_DAYS = 365
 
+# ---------------------------------------------------------------------------
+# Media filtering
+#
+# A browser publishes every HTML5 <video> as a media session, so a Douyin or
+# Bilibili clip arrives with the page title ("抖音精选电脑版 - 抖音旗下优质视
+# 频平台") and no artist. Those are video pages, not songs, and must never
+# reach the listening report.
+# ---------------------------------------------------------------------------
+
+_VIDEO_SITE_MARKERS = (
+    "抖音", "douyin",
+    "哔哩哔哩", "bilibili", "b23.tv", "b站",
+    "快手", "kuaishou",
+    "西瓜视频", "ixigua",
+    "腾讯视频", "v.qq.com",
+    "爱奇艺", "iqiyi",
+    "优酷", "youku",
+    "芒果tv", "芒果视频", "mgtv",
+    "youtube", "youtu.be",
+    "小红书", "xiaohongshu",
+    "acfun", "acfun.cn",
+    "全民k歌", "全民K歌",
+)
+
+_BROWSER_SOURCES = (
+    "chrome.exe", "msedge.exe", "firefox.exe", "browserhost.exe",
+    "msedgewebview2.exe", "opera.exe", "brave.exe", "vivaldi.exe",
+    "360se.exe", "360chrome.exe", "qqbrowser.exe", "ucbrowser.exe",
+    "maxthon.exe", "liebao.exe", "chromium.exe", "safari.exe",
+    "chrome", "msedge", "microsoftedge", "firefox", "browserhost",
+)
+
+# Rows written by the demo/screenshot helpers are not real listening and must
+# never show up in the report.
+_DEMO_ARTISTS = frozenset((
+    "演示歌手", "示範歌手", "demo artist", "デモアーティスト",
+))
+
+
+def _has_video_site_marker(text: str) -> bool:
+    blob = (text or "").lower()
+    return any(marker in blob for marker in _VIDEO_SITE_MARKERS)
+
+
+def _is_browser_source(source: str) -> bool:
+    src = (source or "").strip().lower()
+    if not src:
+        return False
+    return any(token in src for token in _BROWSER_SOURCES)
+
+
+def is_video_site_media(info: dict | None) -> bool:
+    """Whether a media session is a browser video page instead of a song."""
+    if not info:
+        return False
+    title = str(info.get("title") or "")
+    artist = str(info.get("artist") or "")
+    if _has_video_site_marker("%s %s" % (title, artist)):
+        return True
+    # A page video exposes the page title but no artist metadata.
+    if _is_browser_source(str(info.get("source") or "")) and not artist.strip():
+        return True
+    return False
+
+
+def is_demo_session(session: dict) -> bool:
+    """Whether a stored row is demo/preset data rather than real playback."""
+    row = session or {}
+    artist = str(row.get("a") or "").strip().lower()
+    if artist in _DEMO_ARTISTS:
+        return True
+    return _has_video_site_marker("%s %s" % (row.get("t") or "", row.get("a") or ""))
+
 
 def default_path() -> str:
     override = (os.environ.get("DESKTOP_SING_LISTEN_PATH") or "").strip()
@@ -62,8 +135,16 @@ class ListeningStore:
             with open(self.path, encoding="utf-8") as f:
                 raw = json.load(f)
             if isinstance(raw, dict) and isinstance(raw.get("sessions"), list):
-                return {"v": 1, "sessions": [s for s in raw["sessions"]
-                                             if isinstance(s, dict)]}
+                rows = [s for s in raw["sessions"] if isinstance(s, dict)]
+                # Demo/preset rows and browser video pages are not real
+                # listening: drop them here so a stale file cannot resurface
+                # them in the report.
+                kept = [s for s in rows if not is_demo_session(s)]
+                if len(kept) != len(rows):
+                    self.data = {"v": 1, "sessions": kept}
+                    self.save()
+                    return self.data
+                return {"v": 1, "sessions": rows}
         except (OSError, ValueError, TypeError):
             pass
         return {"v": 1, "sessions": []}
@@ -271,10 +352,11 @@ class ListeningTracker:
     once. Short previews (< 20 s) are ignored entirely.
     """
 
-    def __init__(self, store: ListeningStore, enabled=None):
+    def __init__(self, store: ListeningStore, enabled=None, logger=None):
         self.store = store
         self._enabled = enabled or (lambda: True)
         self._enabled_default = enabled is None
+        self._logger = logger
         self._song = None
         self._song_key = None
         self._status = ""
@@ -284,7 +366,20 @@ class ListeningTracker:
         self._play_counted = False
         self._started_at = None
 
+    def _log(self, message: str):
+        if self._logger is None:
+            return
+        try:
+            self._logger(message)
+        except Exception:
+            pass
+
     def on_media(self, info):
+        if info and is_video_site_media(info):
+            # Browser video pages (Douyin, Bilibili, ...) are not songs:
+            # close the current session and keep them out of the report.
+            self._log("听歌统计跳过视频网站媒体: %r" % (info.get("title"),))
+            info = None
         incoming_key = None
         if info and (info.get("title") or "").strip():
             incoming_key = (_track_key(info.get("title", ""), info.get("artist", "")),

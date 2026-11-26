@@ -93,7 +93,7 @@ def _segmented_selected_contrast(theme):
     seg.show()
     app.processEvents()
     image = seg.grab().toImage()
-    target = QColor(theme.on_accent)
+    target = QColor(theme.text)
     best = None
     best_distance = 10 ** 9
     for y in range(3, 29):
@@ -432,6 +432,36 @@ check("播放器关闭后可再次打开",
 if reopened is not None:
     check("二次打开复用同一主题管理器",
           reopened._theme_manager is runtime.overlay.theme_manager)
+
+    def _seg_theme_bad(page):
+        current = reopened._theme_manager.current()
+        return [s for s in page.panel._segs
+                if getattr(s, "_theme", None) is None
+                or s._theme.id != current.id
+                or s._theme.appearance != current.appearance]
+
+    page = reopened.settings_page
+    check("celadon/light 嵌入页首次构造 Segmented 全部拿到主题",
+          not _seg_theme_bad(page), len(_seg_theme_bad(page)))
+    page.rebuild()
+    app.processEvents()
+    check("celadon/light 嵌入页 rebuild 后 Segmented 仍拿到主题",
+          not _seg_theme_bad(page), len(_seg_theme_bad(page)))
+    reopened._theme_manager.set_theme("ink")
+    reopened._theme_manager.set_appearance("dark")
+    app.processEvents()
+    page.rebuild()
+    app.processEvents()
+    check("ink/dark 嵌入页 rebuild 后 Segmented 仍拿到主题",
+          not _seg_theme_bad(page), len(_seg_theme_bad(page)))
+    reopened._theme_manager.set_theme("celadon")
+    reopened._theme_manager.set_appearance("light")
+    app.processEvents()
+    page.rebuild()
+    app.processEvents()
+    check("恢复 celadon/light 后 Segmented 仍拿到主题",
+          not _seg_theme_bad(page), len(_seg_theme_bad(page)))
+
     reopened._timer.stop()
     reopened.close()
     app.processEvents()

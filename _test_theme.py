@@ -329,11 +329,19 @@ for theme in themes:
        theme.scrollbar_handle in qss, theme.scrollbar_handle)
     ck(f"{theme.id}/{theme.appearance}: main qss has no 11px text",
        "font-size: 11px" not in qss)
-    ck(f"{theme.id}/{theme.appearance}: main qss uses dual handle tokens",
-       theme.control_handle_fill in qss and theme.control_handle_outline in qss
-       and theme.control_handle_focus in qss)
-    ck(f"{theme.id}/{theme.appearance}: main qss focus ring is layered",
-       "qradialgradient(" in qss and "control_handle_focus" not in qss)
+    slider_qss = qss.split("QSlider#progress::groove:horizontal", 1)[-1]
+    slider_qss = slider_qss.split("QFrame#appearanceCard", 1)[0]
+    ck(f"{theme.id}/{theme.appearance}: main qss slider uses slim 3px track",
+       "height: 3px" in slider_qss and "qradialgradient(" not in slider_qss)
+    ck(f"{theme.id}/{theme.appearance}: main qss slider focus uses contrast ring",
+       "handle:horizontal:focus" in slider_qss
+       and theme.control_handle_focus in slider_qss)
+    ck(f"{theme.id}/{theme.appearance}: appearanceTitle shares card title rule",
+       "QLabel#appearanceTitle" in qss
+       and "border-left: 3px solid " + theme.accent_fill in qss)
+    ck(f"{theme.id}/{theme.appearance}: theme swatch preview/check/divider selectors",
+       "QLabel#themeSwatchCheck" in qss and "QWidget#divider" in qss
+       and "min-height: 72px" in qss)
     ov = T.build_qss(theme, "overlay")
     ck(f"{theme.id}/{theme.appearance}: overlay qss no placeholders",
        not placeholder_re.findall(ov),

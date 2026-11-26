@@ -1396,6 +1396,49 @@ with open(L.CONFIG_PATH, encoding="utf-8") as f:
 check("重新开启听歌统计会持久化", saved.get("listen_stats") is True,
       saved.get("listen_stats"))
 
+# ---- Settings page structure (embedded vs standalone) ---------------------
+from PySide6.QtWidgets import QLabel  # noqa: E402
+
+page = player.settings_page
+check("嵌入设置页 embedded=True", page.panel.embedded is True)
+check("嵌入设置页 head 卡不可见", not page.panel._head.isVisibleTo(page.panel))
+check("嵌入设置页无播放控制按钮",
+      all(not getattr(page.panel, name).isVisibleTo(page.panel)
+          for name in ("b_prev", "b_toggle", "b_next", "b_saver")))
+check("嵌入设置页隐藏打开播放器",
+      not page.panel.open_player_btn.isVisibleTo(page.panel))
+check("嵌入设置页同步卡包含校准进度",
+      page.panel._sync_card.isAncestorOf(page.panel.b_calib))
+check("嵌入设置页同步卡包含重新获取歌词",
+      page.panel._sync_card.isAncestorOf(page.panel.b_refetch))
+check("独立设置面板保留 head 卡", panel._head.isVisibleTo(panel))
+check("独立设置面板保留播放控制", panel.b_prev.isVisibleTo(panel))
+check("独立设置面板保留打开播放器", panel.open_player_btn.isVisibleTo(panel))
+check("独立设置面板同步卡不含歌词工具",
+      not panel._sync_card.isAncestorOf(panel.b_calib))
+card_titles = [lb.text() for lb in page.panel.findChildren(QLabel)
+               if lb.objectName() == "cardtitle"]
+check("设置页恰好一个「歌词外观」标题",
+      card_titles.count(L._tr("歌词外观")) == 1 and L._tr("外观") not in card_titles,
+      card_titles)
+check("设置页只有一个「应用主题」标题",
+      page.appearance.title.text() == L._tr("应用主题") and L._tr("外观") not in
+      [lb.text() for lb in page.findChildren(QLabel)
+       if lb.objectName() == "appearanceTitle"],
+      page.appearance.title.text())
+
+rows = L._queue_rows_from_elements([
+    ("播放队列", 50020, [20, 33, 64, 21]),
+    ("共821首歌曲", 50020, [20, 107, 65, 15]),
+    ("千千阕歌", 50020, [69, 230, 53, 18]),
+    ("力", 50020, [128, 232, 21, 12]),
+    ("陈慧娴", 50020, [69, 252, 36, 16]),
+    ("", 50033, [0, 0, 448, 373]),
+])
+check("QQ 队列按歌名列解析",
+      len(rows) == 1 and rows[0]["title"] == "千千阕歌"
+      and rows[0]["artist"] == "陈慧娴", rows)
+
 player._timer.stop()
 player.hide()
 player.deleteLater()

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import os
+import threading
 import time
 import http.client
 import hashlib
@@ -38,6 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import ui_glass
 import ui_theme
 
 
@@ -81,24 +83,6 @@ def reset_ui_font_cache():
 
 def _identity(s: str) -> str:
     return s
-
-
-class IconButton(QPushButton):
-    """Button that gets a soft lift on hover without shifting its layout."""
-
-    def __init__(self, text: str = "", parent=None):
-        super().__init__(text, parent)
-        self._shadow = None
-
-    def enterEvent(self, e):
-        if self._shadow is None:
-            shadow = QGraphicsDropShadowEffect(self)
-            shadow.setBlurRadius(22)
-            shadow.setOffset(0, 7)
-            shadow.setColor(QColor(0, 0, 0, 130))
-            self.setGraphicsEffect(shadow)
-            self._shadow = shadow
-        super().enterEvent(e)
 
 
 def _pick_ui_font(px: int, bold: bool = False, serif: bool = False) -> QFont:
@@ -1361,14 +1345,15 @@ def _draw_icon(p: QPainter, kind: str, r: QRectF, color: QColor):
         p.setPen(Qt.NoPen)
         p.drawPath(path)
     elif kind == "report":
-        p.drawLine(QPoint(int(x + w * 0.20), int(y + h * 0.78)),
-                   QPoint(int(x + w * 0.20), int(y + h * 0.48)))
-        p.drawLine(QPoint(int(x + w * 0.44), int(y + h * 0.78)),
-                   QPoint(int(x + w * 0.44), int(y + h * 0.24)))
-        p.drawLine(QPoint(int(x + w * 0.68), int(y + h * 0.78)),
-                   QPoint(int(x + w * 0.68), int(y + h * 0.40)))
-        p.drawLine(QPoint(int(x + w * 0.14), int(y + h * 0.84)),
-                   QPoint(int(x + w * 0.80), int(y + h * 0.84)))
+        # 三根等宽圆头柱，不带基线：带基线时三条竖线在小尺寸下会被读成「山」。
+        bar_w = w * 0.16
+        for cx, top in ((0.22, 0.34), (0.42, 0.16), (0.62, 0.26)):
+            p.setPen(Qt.NoPen)
+            p.setBrush(color)
+            p.drawRoundedRect(
+                QRectF(x + w * cx, y + h * top,
+                       bar_w, y + h * 0.80 - (y + h * top)),
+                bar_w / 2.0, bar_w / 2.0)
     elif kind == "history":
         p.drawEllipse(QRectF(x + w * 0.18, y + h * 0.18, w * 0.64, h * 0.64))
         p.drawLine(QPoint(int(x + w * 0.50), int(y + h * 0.32)),
@@ -1376,13 +1361,17 @@ def _draw_icon(p: QPainter, kind: str, r: QRectF, color: QColor):
         p.drawLine(QPoint(int(x + w * 0.50), int(y + h * 0.52)),
                    QPoint(int(x + w * 0.65), int(y + h * 0.62)))
     elif kind == "settings":
-        p.drawEllipse(QRectF(x + w * 0.33, y + h * 0.33, w * 0.34, h * 0.34))
-        for i in range(6):
-            a = i * math.pi / 3.0
-            p.drawLine(QPoint(int(x + w * 0.50 + math.cos(a) * w * 0.30),
-                              int(y + h * 0.50 + math.sin(a) * h * 0.30)),
-                       QPoint(int(x + w * 0.50 + math.cos(a) * w * 0.42),
-                              int(y + h * 0.50 + math.sin(a) * h * 0.42)))
+        # 三档推子：齿轮的辐条在 18px 下会被读成太阳，推子没有歧义。
+        knob = w * 0.075
+        for yy, xx in ((0.30, 0.38), (0.50, 0.64), (0.70, 0.46)):
+            p.drawLine(QPointF(x + w * 0.16, y + h * yy),
+                       QPointF(x + w * 0.84, y + h * yy))
+            p.setPen(Qt.NoPen)
+            p.setBrush(color)
+            p.drawEllipse(QPointF(x + w * xx, y + h * yy), knob, knob)
+            p.setPen(QPen(color, max(1.4, w * 0.085),
+                          Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            p.setBrush(Qt.NoBrush)
     elif kind == "mini":
         p.drawRoundedRect(QRectF(x + w * 0.16, y + h * 0.28, w * 0.68, h * 0.44), 3, 3)
         p.drawLine(QPoint(int(x + w * 0.50), int(y + h * 0.82)),
@@ -1406,6 +1395,8 @@ def _draw_icon(p: QPainter, kind: str, r: QRectF, color: QColor):
 
 
 def _icon(kind: str, color: str = INK, size: int = 18) -> QIcon:
+    # 2x 位图交给 Qt 自己缩：声明 devicePixelRatio(2) 后 QIcon.paint 只取到
+    # 左上角一块，播放/上一首的图形会被裁掉半个（2.0.13 实测）。
     pm = QPixmap(size * 2, size * 2)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
@@ -1431,16 +1422,6 @@ class NavButton(QPushButton):
         self._icon_color = theme.text_muted
         self._icon_color_checked = theme.text
         self._update_icon()
-
-    def enterEvent(self, e):
-        if self._shadow is None:
-            shadow = QGraphicsDropShadowEffect(self)
-            shadow.setBlurRadius(24)
-            shadow.setOffset(0, 7)
-            shadow.setColor(QColor(0, 0, 0, 140))
-            self.setGraphicsEffect(shadow)
-            self._shadow = shadow
-        super().enterEvent(e)
 
     def _update_icon(self):
         color = self._icon_color_checked if self.isChecked() else self._icon_color
@@ -1498,7 +1479,7 @@ class TitleBar(QWidget):
 
         self.quick_buttons = {}
 
-        b = IconButton(tr("迷你模式"))
+        b = ui_glass.GlassButton(tr("迷你模式"), variant=ui_glass.GLASS)
         b.setObjectName("quick")
         b.setCursor(Qt.PointingHandCursor)
         b.setIcon(_icon("mini", self._quick_color(), 16))
@@ -1518,7 +1499,7 @@ class TitleBar(QWidget):
             lay.addWidget(b)
 
     def _win_button(self, kind: str) -> QPushButton:
-        b = IconButton()
+        b = ui_glass.GlassButton(variant=ui_glass.GHOST)
         b.setObjectName("winclose" if kind == "close" else "winbtn")
         b.setFixedSize(34, 28)
         b.setCursor(Qt.PointingHandCursor)
@@ -1526,7 +1507,6 @@ class TitleBar(QWidget):
         label = {"min": "最小化", "max": "最大化", "close": "关闭"}.get(kind, kind)
         b.setToolTip(self._tr(label))
         b.setAccessibleName(self._tr(label))
-        b.paintEvent = lambda e, w=b: self._paint_win(w)
         return b
 
     def _quick_color(self) -> str:
@@ -1534,9 +1514,14 @@ class TitleBar(QWidget):
 
     def set_theme(self, theme):
         self._theme = theme
+        # 迷你模式按钮和窗口按钮一样必须跟着主题走：它默认是深色调色板
+        # (文字 #F3F0E9)，浅色玻璃底 rgba(255,255,255,.72) 上就是白上白。
+        self.quick_buttons["mini"].set_theme(theme)
         self.quick_buttons["mini"].setIcon(
             _icon("mini", self._quick_color(), 16))
+        self.quick_buttons["mini"].update()
         for b in (self.b_min, self.b_max, self.b_close):
+            b.set_theme(theme)
             b.update()
 
     def retranslate(self):
@@ -1550,35 +1535,6 @@ class TitleBar(QWidget):
                              ("close", self.b_close)):
             button.setToolTip(self._tr(labels[kind]))
             button.setAccessibleName(self._tr(labels[kind]))
-
-    def _paint_win(self, b: QPushButton):
-        p = QPainter(b)
-        p.setRenderHint(QPainter.Antialiasing)
-        theme = self._theme
-        if b.underMouse():
-            if b.objectName() == "winclose":
-                p.setBrush(QColor(theme.danger if theme is not None else "#e45858"))
-            else:
-                p.setBrush(QColor(theme.surface_hover if theme is not None
-                                  else "rgba(28,32,38,18)"))
-            p.setPen(Qt.NoPen)
-            p.drawRoundedRect(b.rect().adjusted(1, 1, -1, -1), 7, 7)
-        if b.underMouse() and b.objectName() == "winclose":
-            col = QColor("#ffffff")
-        else:
-            col = QColor(theme.text_secondary if theme is not None else "#b6bcc7")
-        p.setPen(QPen(col, 1.35, Qt.SolidLine, Qt.RoundCap))
-        r = b.rect()
-        cx, cy = r.center().x(), r.center().y()
-        g = b.property("glyph")
-        if g == "min":
-            p.drawLine(cx - 5, cy + 3, cx + 5, cy + 3)
-        elif g == "max":
-            p.drawRoundedRect(QRectF(cx - 5, cy - 5, 10, 10), 1.5, 1.5)
-        else:
-            p.drawLine(cx - 5, cy - 5, cx + 5, cy + 5)
-            p.drawLine(cx + 5, cy - 5, cx - 5, cy + 5)
-        p.end()
 
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
@@ -1643,7 +1599,7 @@ class Sidebar(QWidget):
         for key, text, icon_name in (
                 ("now", tr("正在播放"), "play"),
                 ("report", tr("听歌报告"), "report"),
-                ("history", tr("歌单"), "history"),
+                # ("history", tr("歌单"), "history"),
                 ("settings", tr("桌面歌词设置"), "settings")):
             b = NavButton(text, icon_name)
             b.clicked.connect(lambda _=False, k=key: self.nav_requested.emit(k))
@@ -1672,12 +1628,6 @@ class Sidebar(QWidget):
         self.recent_host.hide()
         root.addWidget(self.recent_host)
         root.addStretch(1)
-
-        tip = QLabel(tr("听歌数据只保存在本机\n不会上传，也不会关联账号"))
-        tip.setObjectName("sidetip")
-        tip.setWordWrap(True)
-        root.addWidget(tip)
-        self.tip = tip
         self.set_active("now")
 
     def set_theme(self, theme):
@@ -1686,12 +1636,12 @@ class Sidebar(QWidget):
 
     def retranslate(self):
         labels = {"now": "正在播放", "report": "听歌报告",
-                  "history": "歌单", "settings": "桌面歌词设置"}
+                  "settings": "桌面歌词设置"}
         for key, label in labels.items():
-            self.buttons[key].setText(self._tr(label))
+            button = self.buttons.get(key)
+            if button is not None:
+                button.setText(self._tr(label))
         self.brand_name.setText(self._tr("桌面歌词"))
-        self.tip.setText(self._tr(
-            "听歌数据只保存在本机\n不会上传，也不会关联账号"))
         self._apply_status()
 
     def _apply_status(self):
@@ -1757,9 +1707,11 @@ class StageBackdrop(QWidget):
         self._base = QColor(theme.bg)
         dark = theme.appearance != "light"
         self._dark = dark
-        # The lyric stage stays a deep listening surface in both appearances;
-        # white lyric text needs a near-opaque scrim to clear 4.5:1.
-        self._scrim = QColor(theme.surface_sunken if dark else theme.text)
+        # Light themes keep the stage on the app palette instead of forcing a
+        # deep listening surface; lyric text switches to theme colours.
+        # Dark keeps the listening surface (sunken is the groove token and
+        # deliberately deeper than the card now, which would flatten the stage).
+        self._scrim = QColor(theme.surface if dark else theme.bg)
         self.update()
 
     def set_cover(self, cover):
@@ -1786,7 +1738,7 @@ class StageBackdrop(QWidget):
             scaled = self._cover_cache_pix
             src = QRectF((scaled.width() - w) / 2.0,
                          (scaled.height() - h) / 2.0, w, h)
-            p.setOpacity(0.22)
+            p.setOpacity(0.22 if self._dark else 0.10)
             p.drawPixmap(QRectF(0, 0, w, h), scaled, src)
             p.setOpacity(1.0)
         wash = QRadialGradient(QPoint(int(w * 0.38), int(h * 0.42)),
@@ -1803,7 +1755,7 @@ class StageBackdrop(QWidget):
         if self._dark:
             alphas = (95, 120, 190)
         else:
-            alphas = (206, 226, 244)
+            alphas = (40, 64, 90)
         c.setAlpha(alphas[0])
         shade.setColorAt(0.0, c)
         c.setAlpha(alphas[1])
@@ -1855,10 +1807,81 @@ class LyricsCanvas(QWidget):
         self._font_family = ""
         self._font_cache = {}
         self._content_rect = None
+        self._immersive = False
+        self._dark = True
+        self._bg = QColor("#14171e")
+        self._text = QColor(238, 239, 242)
+        self._text2 = QColor(215, 218, 224)
 
     def set_content_rect(self, x, y, w, h):
         self._content_rect = (int(x), int(y), max(1, int(w)), max(1, int(h)))
         self.update()
+
+    def set_immersive(self, on: bool):
+        on = bool(on)
+        if on == getattr(self, "_immersive", False):
+            return
+        self._immersive = on
+        self._line_h = 96.0 if on else 64.0
+        self.update()
+
+    def set_theme(self, theme):
+        self._dark = theme.appearance != "light"
+        self._bg = QColor(theme.bg)
+        self._text = QColor(theme.text)
+        self._text2 = QColor(theme.text_secondary)
+        self.accent = QColor(theme.accent_fill if self._dark
+                             else theme.accent_text)
+        self.update()
+
+    def _readable_accent(self, color: QColor) -> QColor:
+        """Cover-derived accent must stay legible on the light stage.
+
+        A pastel album cover can hand us #EF704D, which only reaches 2.6:1 on
+        the pale pink wash — the karaoke line then reads as a ghost. Dark
+        appearances keep the raw colour because a bright accent on near-black
+        is already above 6:1.
+        """
+        if self._dark:
+            return QColor(color)
+        return ui_theme.readable_on(color, self._bg, 4.5)
+
+    def _dim_alpha(self, dist: int) -> int:
+        """Opacity for a non-current lyric line.
+
+        Dark keeps the 150→46 falloff that fades lines into the stage. Light
+        needs a much higher floor: 46/255 of dark ink on a pale wash is
+        ~1.5:1, i.e. invisible. The light curve stays above 3:1 for five
+        lines out.
+        """
+        if self._dark:
+            return max(46, 150 - abs(dist) * 20)
+        return max(126, 148 - abs(dist) * 10)
+
+    def _ghost_ink(self) -> QColor:
+        """Un-sung part of the current line: 3:1-ish, never dimmer than the wash."""
+        return self._lyric_ink(72 if self._dark else 150)
+
+    def _trans_ink(self, alpha: int) -> QColor:
+        """Translation colour for the current appearance.
+
+        Was a hard-coded light grey (206,209,215), which is invisible on a
+        light stage (1.05–1.11:1). Light now uses the secondary text token
+        and never drops below 200/255.
+        """
+        if self._dark:
+            return QColor(206, 209, 215, max(38, alpha - 60))
+        color = QColor(self._text2)
+        color.setAlpha(min(255, max(210, alpha + 40)))
+        return color
+
+    def _lyric_ink(self, alpha=255, secondary=False):
+        if self._dark:
+            color = QColor(215, 218, 224) if secondary else QColor(238, 239, 242)
+        else:
+            color = QColor(self._text2 if secondary else self._text)
+        color.setAlpha(int(alpha))
+        return color
 
     def set_lyrics(self, lines, trans, song=None, *, empty_message_key=None,
                    empty_description_key=None):
@@ -1879,7 +1902,7 @@ class LyricsCanvas(QWidget):
         self.cur_idx = int(cur_idx)
         self.playing = bool(playing)
         if accent is not None:
-            self.accent = QColor(accent)
+            self.accent = self._readable_accent(QColor(accent))
         if cover is not None:
             self.cover = cover
             self._cover_cache_key = None
@@ -1954,7 +1977,8 @@ class LyricsCanvas(QWidget):
 
         # The now-playing layout puts the active line near the upper quarter,
         # like a desktop player's lyric pane, not in the vertical centre.
-        base = h * 0.20 + self._manual
+        # Immersive mode is the opposite: centre the block and scale it up.
+        base = h * (0.42 if self._immersive else 0.20) + self._manual
 
         first = max(0, self.cur_idx - 2)
         last = min(len(self.lines), self.cur_idx + 6)
@@ -1969,11 +1993,29 @@ class LyricsCanvas(QWidget):
             current = (i == self.cur_idx)
             if current:
                 self._paint_current(p, text, i, y, w)
+            elif self._immersive:
+                alpha = self._dim_alpha(dist)
+                f = self._font(26 if abs(dist) <= 2 else 21, bold=False)
+                p.setFont(f)
+                p.setPen(self._lyric_ink(alpha))
+                fm = QFontMetrics(f)
+                p.drawText(QRectF(0, y - 22, w, 44),
+                           Qt.AlignHCenter | Qt.AlignVCenter,
+                           fm.elidedText(text, Qt.ElideRight, max(120, w - 80)))
+                tr = self.trans.get(i, "")
+                if tr and abs(dist) <= 1:
+                    tf = self._font(16)
+                    p.setFont(tf)
+                    p.setPen(self._trans_ink(alpha))
+                    fm2 = QFontMetrics(tf)
+                    p.drawText(QRectF(0, y + 26, w, 24),
+                               Qt.AlignHCenter | Qt.AlignVCenter,
+                               fm2.elidedText(tr, Qt.ElideRight, max(120, w - 80)))
             else:
-                alpha = max(46, 150 - abs(dist) * 20)
+                alpha = self._dim_alpha(dist)
                 f = self._font(20 if abs(dist) <= 2 else 17, bold=False)
                 p.setFont(f)
-                p.setPen(QColor(238, 239, 242, alpha))
+                p.setPen(self._lyric_ink(alpha))
                 fm = QFontMetrics(f)
                 p.drawText(QRectF(24, y - 16, w - 48, 32),
                            Qt.AlignLeft | Qt.AlignVCenter,
@@ -1982,7 +2024,7 @@ class LyricsCanvas(QWidget):
                 if tr and abs(dist) <= 1:
                     tf = self._font(13)
                     p.setFont(tf)
-                    p.setPen(QColor(206, 209, 215, max(38, alpha - 60)))
+                    p.setPen(self._trans_ink(alpha))
                     fm2 = QFontMetrics(tf)
                     p.drawText(QRectF(24, y + 20, w - 48, 20),
                                Qt.AlignLeft | Qt.AlignVCenter,
@@ -2001,6 +2043,39 @@ class LyricsCanvas(QWidget):
         return QRectF(24, y + 24, w - 48, 22)
 
     def _paint_current(self, p, text, idx, y, w):
+        if self._immersive:
+            limit = max(200.0, w - 120)
+            size = 58
+            while size > 30:
+                fm = QFontMetrics(self._font(size, bold=True))
+                if fm.horizontalAdvance(text) <= limit:
+                    break
+                size -= 2
+            f = self._font(size, bold=True)
+            fm = QFontMetrics(f)
+            shown = fm.elidedText(text, Qt.ElideRight, limit)
+            rect = QRectF(0, y - 46, w, 92)
+            p.setFont(f)
+            p.setPen(self._ghost_ink())
+            p.drawText(rect, Qt.AlignCenter, shown)
+            frac = self._line_fraction(idx)
+            if frac > 0.0:
+                txt_w = fm.horizontalAdvance(shown)
+                left = max(0.0, (w - txt_w) / 2.0)
+                p.save()
+                p.setClipRect(QRectF(left, rect.top(), txt_w * frac, rect.height()))
+                p.setPen(self.accent)
+                p.drawText(rect, Qt.AlignCenter, shown)
+                p.restore()
+            tr = self.trans.get(idx, "")
+            if tr:
+                tf = self._font(18)
+                p.setFont(tf)
+                p.setPen(self._trans_ink(170))
+                fm2 = QFontMetrics(tf)
+                p.drawText(QRectF(0, y + 34, w, 26), Qt.AlignCenter,
+                           fm2.elidedText(tr, Qt.ElideRight, max(120, w - 120)))
+            return
         limit = max(160.0, w - 48)
         size = 34
         while size > 22:
@@ -2014,7 +2089,7 @@ class LyricsCanvas(QWidget):
         rect_h = 62 if size >= 30 else 54
         rect = QRectF(24, y - 30, w - 48, rect_h)
         p.setFont(f)
-        p.setPen(QColor(245, 246, 248, 84))
+        p.setPen(self._ghost_ink())
         p.drawText(rect, Qt.AlignLeft | Qt.AlignVCenter, shown)
         frac = self._line_fraction(idx)
         if frac > 0.0:
@@ -2028,7 +2103,7 @@ class LyricsCanvas(QWidget):
         if tr:
             tf = self._font(14)
             p.setFont(tf)
-            p.setPen(QColor(215, 218, 224, 170))
+            p.setPen(self._trans_ink(170))
             fm2 = QFontMetrics(tf)
             p.drawText(self._translation_rect(y, w),
                        Qt.AlignLeft | Qt.AlignVCenter,
@@ -2036,16 +2111,16 @@ class LyricsCanvas(QWidget):
 
     def _paint_empty(self, p, w, h):
         cy = h * 0.40
-        p.setPen(QPen(QColor(255, 255, 255, 30), 1))
+        p.setPen(QPen(self._lyric_ink(30 if self._dark else 96), 1))
         p.setBrush(Qt.NoBrush)
         p.drawEllipse(QPointF(w / 2.0, cy), 30, 30)
         _draw_icon(p, "note", QRectF(w / 2.0 - 13, cy - 13, 26, 26),
-                   QColor(255, 255, 255, 150))
-        p.setPen(QColor(255, 255, 255, 225))
+                   self._lyric_ink(150 if self._dark else 200))
+        p.setPen(self._lyric_ink(225))
         p.setFont(self._font(32, bold=True))
         p.drawText(QRectF(0, cy + 48, w, 46), Qt.AlignCenter,
                    self._tr(self.empty_message_key))
-        p.setPen(QColor(255, 255, 255, 150))
+        p.setPen(self._trans_ink(150))
         p.setFont(self._font(13))
         p.drawText(QRectF(20, cy + 92, w - 40, 44), Qt.AlignHCenter | Qt.AlignTop,
                    self._tr(self.empty_description_key))
@@ -2153,7 +2228,8 @@ class NowStage(QWidget):
         self.track_artist = QLabel(tr("播放音乐后自动显示歌词"))
         self.track_artist.setObjectName("stageartist")
         self.track_artist.setParent(self)
-        self.immersive_btn = QPushButton(tr("沉浸歌词"))
+        self.immersive_btn = ui_glass.GlassButton(
+            tr("沉浸歌词"), variant=ui_glass.GLASS)
         self.immersive_btn.setObjectName("stageghost")
         self.immersive_btn.setCursor(Qt.PointingHandCursor)
         self.immersive_btn.setIcon(_icon("expand", self._icon_color(), 15))
@@ -2169,7 +2245,7 @@ class NowStage(QWidget):
         self.bar.setObjectName("playbar")
         self.bar.setAttribute(Qt.WA_StyledBackground, True)
         bl = QHBoxLayout(self.bar)
-        bl.setContentsMargins(14, 11, 16, 11)
+        bl.setContentsMargins(14, 18, 16, 12)
         bl.setSpacing(12)
         self.cover = CoverArt(54)
         bl.addWidget(self.cover)
@@ -2209,11 +2285,25 @@ class NowStage(QWidget):
         self._drag = False
         self._duration = 0.0
         self._playing = False
+        self._immersive = False
         self._toggle_icon_key = None
+
+    def set_immersive(self, on: bool):
+        on = bool(on)
+        if on == self._immersive:
+            return
+        self._immersive = on
+        for widget in (self.hero_cover, self.source, self.track_title,
+                       self.track_artist, self.bar):
+            widget.setVisible(not on)
+        self.canvas.set_immersive(on)
+        self.immersive_btn.raise_()
+        self._apply_layout()
 
     def _round_button(self, icon_name: str, primary: bool = False,
                       label: str = "") -> QPushButton:
-        b = QPushButton()
+        b = ui_glass.GlassButton(
+            variant=ui_glass.ACCENT if primary else ui_glass.GLASS)
         b.setObjectName("playprimary" if primary else "playround")
         b.setFixedSize(46 if primary else 38, 46 if primary else 38)
         b.setCursor(Qt.PointingHandCursor)
@@ -2258,17 +2348,15 @@ class NowStage(QWidget):
         self.backdrop.set_theme(theme)
         self.cover.set_theme(theme)
         self.hero_cover.set_theme(theme)
-        if theme.appearance == "light":
-            # The stage is a deep listening surface even in light mode, so its
-            # labels need on-dark colors rather than the light chrome tokens.
-            self.source.setStyleSheet("color: rgba(255,255,255,.58);")
-            self.track_title.setStyleSheet("color: #F6F5F1;")
-            self.track_artist.setStyleSheet("color: rgba(255,255,255,.68);")
-        else:
-            self.source.setStyleSheet("")
-            self.track_title.setStyleSheet("")
-            self.track_artist.setStyleSheet("")
+        self.canvas.set_theme(theme)
+        self.source.setStyleSheet("")
+        self.track_title.setStyleSheet("")
+        self.track_artist.setStyleSheet("")
+        self.immersive_btn.set_theme(theme)
         self.immersive_btn.setIcon(_icon("expand", self._icon_color(), 15))
+        self.b_prev.set_theme(theme)
+        self.b_next.set_theme(theme)
+        self.b_toggle.set_theme(theme)
         self.b_prev.setIcon(_icon("prev", self._icon_color(), 17))
         self._refresh_toggle_icon()
         self.b_next.setIcon(_icon("next", self._icon_color(), 17))
@@ -2285,7 +2373,23 @@ class NowStage(QWidget):
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
+        self._apply_layout()
+
+    def _apply_layout(self):
         self.backdrop.setGeometry(0, 0, self.width(), self.height())
+        if self._immersive:
+            w, h = self.width(), self.height()
+            self.canvas.setGeometry(0, 0, w, h)
+            pad_x = max(28, int(w * 0.05))
+            pad_y = max(30, int(h * 0.07))
+            self.canvas.set_content_rect(
+                pad_x, pad_y, max(240, w - 2 * pad_x), max(200, h - 2 * pad_y))
+            self.canvas.show()
+            self.canvas.raise_()
+            self.immersive_btn.adjustSize()
+            self.immersive_btn.move(max(12, w - self.immersive_btn.width() - 24), 18)
+            self.immersive_btn.raise_()
+            return
         # The right-hand stage mirrors a full player layout: artwork on the
         # left, lyrics on the right, transport along the bottom. The lyric
         # canvas owns only the text column; it is never covered by artwork.
@@ -2306,10 +2410,10 @@ class NowStage(QWidget):
             self.canvas.show()
             self.immersive_btn.adjustSize()
             self.immersive_btn.move(self.width() - self.immersive_btn.width() - 24, 16)
-            bar_h = 92
-            self.bar.setGeometry(20, self.height() - bar_h - 18,
+            bar_h = 100
+            self.bar.setGeometry(20, self.height() - bar_h - 14,
                                  self.width() - 40, bar_h)
-            self.slider.setGeometry(20, 68, max(80, self.bar.width() - 40), 18)
+            self.slider.setGeometry(24, 8, max(80, self.bar.width() - 48), 18)
             self.slider.raise_()
             return
         self.hero_cover.show()
@@ -2343,9 +2447,9 @@ class NowStage(QWidget):
         self.canvas.show()
         self.immersive_btn.adjustSize()
         self.immersive_btn.move(self.width() - self.immersive_btn.width() - 24, 16)
-        bar_h = 92
-        self.bar.setGeometry(20, self.height() - bar_h - 18, self.width() - 40, bar_h)
-        self.slider.setGeometry(20, 68, max(80, self.bar.width() - 40), 18)
+        bar_h = 100
+        self.bar.setGeometry(20, self.height() - bar_h - 14, self.width() - 40, bar_h)
+        self.slider.setGeometry(24, 8, max(80, self.bar.width() - 48), 18)
         self.slider.raise_()
 
     def paintEvent(self, e):
@@ -2513,21 +2617,38 @@ class SettingsPage(QWidget):
         self.setObjectName("settingsPage")
         import lyrics_overlay as lo
         self.appearance = AppearanceSection(ov, tr, self)
-        self.panel = lo.SettingsPanel(ov, flags=Qt.Widget)
+        self.panel = lo.SettingsPanel(ov, flags=Qt.Widget, embedded=True)
         self.panel.setObjectName("settingsSurface")
+        self.panel.set_theme(self._current_theme())
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(24, 20, 24, 0)
+        lay.setContentsMargins(24, 20, 24, 24)
         lay.setSpacing(14)
         lay.addWidget(self.appearance)
         lay.addWidget(self.panel)
         self.appearance.refresh()
 
+    def _current_theme(self):
+        manager = getattr(self.ov, "theme_manager", None)
+        if manager is not None:
+            try:
+                return manager.current()
+            except Exception:
+                pass
+        getter = getattr(self.ov, "_current_theme", None)
+        if callable(getter):
+            try:
+                return getter()
+            except Exception:
+                pass
+        return None
+
     def rebuild(self):
         import lyrics_overlay as lo
         old_panel = self.panel
         self.layout().removeWidget(old_panel)
-        self.panel = lo.SettingsPanel(self.ov, flags=Qt.Widget)
+        self.panel = lo.SettingsPanel(self.ov, flags=Qt.Widget, embedded=True)
         self.panel.setObjectName("settingsSurface")
+        self.panel.set_theme(self._current_theme())
         self.layout().addWidget(self.panel)
         old_panel.deleteLater()
         self.retranslate()
@@ -2558,17 +2679,25 @@ class AppearanceSection(QFrame):
         self._tr = tr
         self.setObjectName("appearanceCard")
         root = QVBoxLayout(self)
-        root.setContentsMargins(18, 14, 18, 16)
+        root.setContentsMargins(16, 14, 16, 14)
         root.setSpacing(10)
 
         head = QVBoxLayout()
         head.setSpacing(2)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.bar = QFrame()
+        self.bar.setObjectName("sectionBar")
+        self.bar.setFixedSize(3, 16)
+        row.addWidget(self.bar, 0, Qt.AlignVCenter)
         self.title = QLabel()
         self.title.setObjectName("appearanceTitle")
+        row.addWidget(self.title)
+        row.addStretch(1)
+        head.addLayout(row)
         self.hint = QLabel()
         self.hint.setObjectName("appearanceHint")
         self.hint.setWordWrap(True)
-        head.addWidget(self.title)
         head.addWidget(self.hint)
         root.addLayout(head)
 
@@ -2576,7 +2705,7 @@ class AppearanceSection(QFrame):
         seg.setSpacing(8)
         self.seg_buttons = {}
         for key in self._APPEARANCES:
-            b = QPushButton()
+            b = ui_glass.GlassButton(variant=ui_glass.SEGMENT)
             b.setObjectName("appearanceSeg")
             b.setCheckable(True)
             b.setCursor(Qt.PointingHandCursor)
@@ -2593,19 +2722,30 @@ class AppearanceSection(QFrame):
             b.clicked.connect(lambda _=False, t=theme_id: self._pick_theme(t))
             swatches.addWidget(b, 1)
             self.swatch_buttons[theme_id] = b
-        swatches.addStretch(1)
         root.addLayout(swatches)
 
+        divider = QWidget()
+        divider.setObjectName("divider")
+        divider.setFixedHeight(1)
+        root.addWidget(divider)
+
         motion_row = QHBoxLayout()
-        motion_row.setSpacing(8)
-        self.motion_btn = QPushButton()
-        self.motion_btn.setObjectName("appearanceSeg")
-        self.motion_btn.setCheckable(True)
-        self.motion_btn.setCursor(Qt.PointingHandCursor)
-        self.motion_btn.clicked.connect(self._toggle_motion)
-        motion_row.addWidget(self.motion_btn, 0)
+        motion_row.setSpacing(10)
+        self.motion_label = QLabel()
+        self.motion_label.setObjectName("rowlabel")
+        self.motion_label.setMinimumHeight(36)
+        import lyrics_overlay as lo
+        self.motion_switch = lo.Switch(False, w=51, h=31)
+        self.motion_switch.toggled.connect(self._toggle_motion)
+        motion_row.addWidget(self.motion_label)
         motion_row.addStretch(1)
+        motion_row.addWidget(self.motion_switch)
         root.addLayout(motion_row)
+
+        self.motion_hint = QLabel()
+        self.motion_hint.setObjectName("appearanceHint")
+        self.motion_hint.setWordWrap(True)
+        root.addWidget(self.motion_hint)
         self.retranslate()
 
     def _manager(self):
@@ -2662,26 +2802,110 @@ class AppearanceSection(QFrame):
             button.set_appearance(effective)
         reduce_motion = manager.reduce_motion() if manager is not None else \
             bool(self.ov.cfg.get("reduce_motion"))
-        self.motion_btn.blockSignals(True)
-        self.motion_btn.setChecked(reduce_motion)
-        self.motion_btn.blockSignals(False)
+        self.motion_switch.blockSignals(True)
+        self.motion_switch.setChecked(reduce_motion)
+        self.motion_switch.blockSignals(False)
+        theme = manager.current() if manager is not None else None
+        if theme is not None:
+            self.motion_switch.set_accent(QColor(theme.accent_fill))
+            self.motion_switch.set_theme(theme)
+        for button in self.seg_buttons.values():
+            if theme is not None:
+                button.set_theme(theme)
+            button.update()
 
     def retranslate(self):
         tr = self._tr
-        self.title.setText(tr("外观"))
-        self.hint.setText(tr("跟随系统会随 Windows 深浅色切换"))
+        self.title.setText(tr("应用主题"))
+        self.hint.setText(tr("选择应用配色；跟随系统会随 Windows 深浅色切换"))
         for key, label in (("system", "跟随系统"), ("light", "浅色"),
                            ("dark", "深色")):
             self.seg_buttons[key].setText(tr(label))
         for button in self.swatch_buttons.values():
             button.retranslate()
-        self.motion_btn.setText(tr("减少动态效果"))
-        self.motion_btn.setToolTip(tr("停止页面淡入和过渡动画"))
-        self.motion_btn.setAccessibleName(tr("减少动态效果"))
+        self.motion_label.setText(tr("减少动态效果"))
+        self.motion_hint.setText(tr("关闭页面淡入和过渡动画"))
+        self.motion_label.setAccessibleName(tr("减少动态效果"))
+        self.motion_switch.setToolTip(tr("关闭页面淡入和过渡动画"))
+        self.motion_switch.setAccessibleName(tr("减少动态效果"))
+
+
+class _ThemePreview(QWidget):
+    """Mini player mock: sidebar + stage wash + one accent lyric line.
+
+    The old 44x22 chip with an ``Aa`` said nothing about a theme; a tiny
+    window shows the background, surface and accent relationship at a glance.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumSize(148, 64)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._theme = None
+
+    def set_theme(self, theme):
+        self._theme = theme
+        self.update()
+
+    def paintEvent(self, _event):
+        theme = self._theme
+        if theme is None:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+        rect = QRectF(0.5, 0.5, w - 1, h - 1)
+        radius = 8.0
+        path = QPainterPath()
+        path.addRoundedRect(rect, radius, radius)
+        p.setClipPath(path)
+        p.fillRect(rect, QColor(theme.bg))
+        # 顶栏
+        p.fillRect(QRectF(0, 0, w, 11), QColor(theme.surface_raised))
+        p.setPen(QPen(QColor(theme.divider), 1))
+        p.drawLine(QPointF(0, 11), QPointF(w, 11))
+        # 侧栏
+        side = max(30.0, w * 0.24)
+        p.fillRect(QRectF(0, 11, side, h - 11), QColor(theme.surface))
+        p.setPen(QPen(QColor(theme.divider), 1))
+        p.drawLine(QPointF(side, 11), QPointF(side, h))
+        # 侧栏：品牌块 + 一条当前页短横，避免三条横线读成表单
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(theme.accent_fill))
+        p.drawRoundedRect(QRectF(8, 10.5 - 3, 6, 6), 2, 2)
+        p.setBrush(QColor(theme.text_muted))
+        p.drawRoundedRect(QRectF(9, 24, side - 18, 3), 1.5, 1.5)
+        p.setBrush(QColor(theme.accent_fill))
+        p.drawRoundedRect(QRectF(9, 36, side - 16, 3), 1.5, 1.5)
+        # 舞台：封面 + 当前句（主色）+ 两行次级歌词
+        cover_x = side + 12
+        cover_y = (h - 28) / 2.0
+        cover = QRectF(cover_x, cover_y, 28, 28)
+        p.setPen(QPen(QColor(theme.accent_fill), 1))
+        wash = QColor(theme.accent_fill)
+        wash.setAlpha(56)
+        p.setBrush(wash)
+        p.drawRoundedRect(cover, 5, 5)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(theme.accent_fill))
+        p.drawRoundedRect(QRectF(cover_x + 5, cover_y + 5, 18, 18), 3, 3)
+        text_x = cover_x + 36
+        text_w = max(20.0, w - text_x - 10)
+        p.setBrush(QColor(theme.accent_fill))
+        p.drawRoundedRect(QRectF(text_x, h * 0.42, text_w * 0.86, 4), 2, 2)
+        p.setBrush(QColor(theme.text_secondary))
+        p.drawRoundedRect(QRectF(text_x, h * 0.42 + 10, text_w * 0.62, 3), 1.5, 1.5)
+        p.setBrush(QColor(theme.text_muted))
+        p.drawRoundedRect(QRectF(text_x, h * 0.42 + 18, text_w * 0.72, 3), 1.5, 1.5)
+        p.setClipping(False)
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(QColor(theme.border), 1))
+        p.drawRoundedRect(rect, radius, radius)
+        p.end()
 
 
 class _ThemeSwatchButton(QPushButton):
-    """Theme card: three colour dots (bg/surface/accent) + name + check ring."""
+    """Theme card: mini preview + name + check mark (not colour-only)."""
 
     _NAMES = {"ink": "墨", "celadon": "青瓷"}
 
@@ -2693,42 +2917,39 @@ class _ThemeSwatchButton(QPushButton):
         self.setObjectName("themeSwatch")
         self.setCheckable(True)
         self.setCursor(Qt.PointingHandCursor)
-        self.setMinimumHeight(64)
+        self.setMinimumHeight(96)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(4, 8, 4, 8)
+        lay.setContentsMargins(12, 10, 12, 12)
         lay.setSpacing(8)
+        top = QHBoxLayout()
+        top.setSpacing(6)
         self.name = QLabel()
         self.name.setObjectName("themeSwatchName")
-        lay.addWidget(self.name)
-        row = QHBoxLayout()
-        row.setSpacing(6)
-        self._dots = []
-        # 底色 / 主色 / 文字色：比「底色 + 两张几乎同色的表面」更能一眼读出这套主题
-        for key in ("bg", "accent_fill", "text"):
-            dot = QLabel()
-            dot.setObjectName("themeSwatchDots")
-            dot.setFixedSize(18, 18)
-            row.addWidget(dot)
-            self._dots.append((key, dot))
-        row.addStretch(1)
-        lay.addLayout(row)
-        self._paint_dots()
+        self.check = QLabel("\u2713")
+        self.check.setObjectName("themeSwatchCheck")
+        self.check.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.check.setVisible(False)
+        top.addWidget(self.name)
+        top.addStretch(1)
+        top.addWidget(self.check)
+        lay.addLayout(top)
+        self.preview = _ThemePreview(self)
+        lay.addWidget(self.preview, 1)
+        self.set_appearance("dark")
         self.retranslate()
 
     def set_appearance(self, appearance):
         appearance = "light" if appearance == "light" else "dark"
-        if appearance == self._appearance:
-            return
         self._appearance = appearance
-        self._paint_dots()
-
-    def _paint_dots(self):
         theme = ui_theme.THEMES[self.theme_id][self._appearance]
-        for key, dot in self._dots:
-            color = getattr(theme, key)
-            dot.setStyleSheet(
-                "QLabel#themeSwatchDots{background:%s;border:1px solid %s;"
-                "border-radius:9px;}" % (color, theme.border_strong))
+        self.preview.set_theme(theme)
+        self.check.setStyleSheet(
+            "QLabel#themeSwatchCheck{color:%s;font-size:13px;font-weight:700;}"
+            % theme.text)
+
+    def setChecked(self, checked):
+        super().setChecked(checked)
+        self.check.setVisible(bool(checked))
 
     def retranslate(self):
         self.name.setText(self._tr(self._NAMES[self.theme_id]))
@@ -2752,8 +2973,115 @@ class StatTile(QFrame):
         self.value.setText(text)
 
 
+class _EmptyGlyph(QWidget):
+    """Outlined note inside a hairline circle for the report empty state."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(76, 76)
+        self._line = QColor("#8A8A8F")
+        self._ink = QColor("#625D55")
+
+    def set_theme(self, theme):
+        self._line = QColor(theme.border_strong)
+        self._ink = QColor(theme.text_muted)
+        self.update()
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(QPen(self._line, 1.2))
+        p.setBrush(Qt.NoBrush)
+        p.drawEllipse(QRectF(1.5, 1.5, 73, 73))
+        # 自己画音符：图标集里的 note 在 26px 下只剩一根歪线，像坏图。
+        p.setPen(Qt.NoPen)
+        p.setBrush(self._ink)
+        p.drawEllipse(QRectF(24, 40, 15, 11))
+        p.setPen(QPen(self._ink, 2.0, Qt.SolidLine, Qt.RoundCap))
+        p.drawLine(QPointF(38, 45), QPointF(38, 24))
+        p.drawLine(QPointF(38, 24), QPointF(49, 28))
+        p.end()
+
+
+class _RankList(QWidget):
+    """Ranked list with real columns: 序号 / 名称·歌手 / 时长。
+
+    A single QLabel joined with spaces produced ragged columns (CJK and Latin
+    names have different widths), so long titles drifted into the duration
+    column. This widget elides the name and right-aligns a tabular duration.
+    """
+
+    ROW_H = 26
+
+    def __init__(self, tr, show_artist=False, parent=None):
+        super().__init__(parent)
+        self._tr = tr
+        self._show_artist = bool(show_artist)
+        self._rows = []
+        self._text = QColor("#F3F0E9")
+        self._muted = QColor("#A6A6AB")
+        self._secondary = QColor("#B0ADA5")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumHeight(self.ROW_H)
+
+    def set_theme(self, theme):
+        self._text = QColor(theme.text)
+        self._muted = QColor(theme.text_muted)
+        self._secondary = QColor(theme.text_secondary)
+        self.update()
+
+    def set_rows(self, rows):
+        self._rows = list(rows or [])[:5]
+        self.setMinimumHeight(max(self.ROW_H, self.ROW_H * max(1, len(self._rows))))
+        self.updateGeometry()
+        self.update()
+
+    def paintEvent(self, _event):
+        if not self._rows:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        font = _pick_ui_font(12)
+        p.setFont(font)
+        fm = QFontMetrics(font)
+        w = self.width()
+        dur_w = 58
+        rank_w = 24
+        for i, row in enumerate(self._rows):
+            name, artist, seconds = row
+            y = i * self.ROW_H
+            p.setPen(self._muted)
+            p.drawText(QRectF(0, y, rank_w, self.ROW_H),
+                       Qt.AlignLeft | Qt.AlignVCenter, "%02d" % (i + 1))
+            dur = _format_duration(seconds, self._tr)
+            p.setPen(self._secondary)
+            p.drawText(QRectF(w - dur_w, y, dur_w, self.ROW_H),
+                       Qt.AlignRight | Qt.AlignVCenter, dur)
+            name_w = w - rank_w - dur_w - 10
+            p.setPen(self._text)
+            p.drawText(QRectF(rank_w, y, name_w, self.ROW_H),
+                       Qt.AlignLeft | Qt.AlignVCenter,
+                       fm.elidedText(name, Qt.ElideRight,
+                                     max(40, int(name_w)))
+                       if not (artist and self._show_artist)
+                       else fm.elidedText(name, Qt.ElideRight,
+                                          max(40, int(name_w * 0.56)))
+                       )
+            if artist and self._show_artist:
+                meta_w = name_w * 0.44
+                p.setPen(self._muted)
+                p.drawText(QRectF(rank_w + name_w * 0.58, y,
+                                  max(10, meta_w), self.ROW_H),
+                           Qt.AlignLeft | Qt.AlignVCenter,
+                           fm.elidedText("· " + artist, Qt.ElideRight,
+                                         max(10, int(meta_w)))
+                           )
+        p.end()
+
+
 class ReportPage(QWidget):
     clear_requested = Signal()
+    play_requested = Signal()
 
     def __init__(self, tr, parent=None):
         super().__init__(parent)
@@ -2787,15 +3115,21 @@ class ReportPage(QWidget):
         col.addWidget(self.subtitle)
         head.addLayout(col)
         head.addStretch(1)
-        self.privacy = QLabel(tr("● 仅保存在本机"))
-        self.privacy.setObjectName("privacyChip")
-        head.addWidget(self.privacy)
-        self.clear_btn = QPushButton(tr("清空听歌数据"))
+        self.clear_btn = ui_glass.GlassButton(
+            tr("清空听歌数据"), variant=ui_glass.DANGER)
         self.clear_btn.setObjectName("dangerGhost")
         self.clear_btn.setCursor(Qt.PointingHandCursor)
         self.clear_btn.clicked.connect(self.clear_requested.emit)
         head.addWidget(self.clear_btn)
         root.addLayout(head)
+
+        # 有数据才出现的整块内容：空态时整块换成一张居中卡片，而不是留一堆
+        # 隐藏了子控件的空壳（旧实现里 hero 带 stretch，空态会撑出 480px 空白）。
+        self.data_box = QWidget()
+        self.data_box.setObjectName("reportData")
+        dl = QVBoxLayout(self.data_box)
+        dl.setContentsMargins(0, 0, 0, 0)
+        dl.setSpacing(14)
 
         hero = QFrame()
         hero.setObjectName("reportHero")
@@ -2820,7 +3154,7 @@ class ReportPage(QWidget):
         hl.addWidget(self.month_unit)
         self.spark = MiniSparkline()
         hl.addWidget(self.spark, 1)
-        root.addWidget(hero, 1)
+        dl.addWidget(hero, 1)
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(12)
@@ -2831,7 +3165,7 @@ class ReportPage(QWidget):
         self.active = StatTile(tr("活跃天数"))
         for i, w in enumerate((self.today, self.peak, self.streak, self.active)):
             grid.addWidget(w, 0, i)
-        root.addLayout(grid)
+        dl.addLayout(grid)
 
         bottom = QHBoxLayout()
         bottom.setSpacing(12)
@@ -2849,11 +3183,8 @@ class ReportPage(QWidget):
         self.artist_meta = QLabel("")
         self.artist_meta.setObjectName("artistMeta")
         al.addWidget(self.artist_meta)
-        self.artist_list = QLabel("")
-        self.artist_list.setObjectName("rankList")
-        self.artist_list.setWordWrap(True)
-        self.artist_list.setAlignment(Qt.AlignTop)
-        al.addWidget(self.artist_list)
+        self.artist_rank = _RankList(tr, show_artist=False)
+        al.addWidget(self.artist_rank)
         self.artist_spacer = QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding)
         al.addItem(self.artist_spacer)
         bottom.addWidget(self.artist_card, 1)
@@ -2866,21 +3197,49 @@ class ReportPage(QWidget):
         self.track_title = QLabel(tr("热门歌曲"))
         self.track_title.setObjectName("cardHead")
         tl.addWidget(self.track_title)
-        self.track_list = QLabel("")
-        self.track_list.setObjectName("trackRank")
-        self.track_list.setWordWrap(True)
-        self.track_list.setAlignment(Qt.AlignTop)
-        tl.addWidget(self.track_list)
+        self.track_rank = _RankList(tr, show_artist=True)
+        tl.addWidget(self.track_rank)
         self.track_spacer = QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding)
         tl.addItem(self.track_spacer)
         bottom.addWidget(self.track_card, 1)
-        root.addLayout(bottom, 1)
+        dl.addLayout(bottom, 1)
+        root.addWidget(self.data_box, 1)
 
-        self.empty = QLabel(tr("还没有足够的听歌记录。播放满 20 秒后才会开始统计。"))
-        self.empty.setObjectName("reportEmpty")
-        self.empty.setAlignment(Qt.AlignCenter)
-        self.empty.setWordWrap(True)
-        root.addWidget(self.empty)
+        # ---- 空态：一张居中的卡片，而不是底部一条孤立的提示 ----
+        self.empty_card = QFrame()
+        self.empty_card.setObjectName("reportEmptyCard")
+        el = QVBoxLayout(self.empty_card)
+        el.setContentsMargins(32, 30, 32, 34)
+        el.setSpacing(10)
+        el.addStretch(1)
+        self.empty_glyph = _EmptyGlyph()
+        el.addWidget(self.empty_glyph, 0, Qt.AlignHCenter)
+        self.empty_title = QLabel(tr("还没有听歌记录"))
+        self.empty_title.setObjectName("reportEmptyTitle")
+        self.empty_title.setAlignment(Qt.AlignCenter)
+        el.addWidget(self.empty_title)
+        self.empty_hint = QLabel(
+            tr("播放满 20 秒才会开始统计；报告只在本机计算，不上传。"))
+        self.empty_hint.setObjectName("reportEmptyHint")
+        self.empty_hint.setAlignment(Qt.AlignCenter)
+        self.empty_hint.setWordWrap(True)
+        el.addWidget(self.empty_hint)
+        self.empty_go = ui_glass.GlassButton(tr("去听一首"), variant=ui_glass.ACCENT)
+        self.empty_go.setObjectName("emptyGo")
+        self.empty_go.setFixedHeight(34)
+        self.empty_go.setCursor(Qt.PointingHandCursor)
+        self.empty_go.clicked.connect(self.play_requested.emit)
+        el.addWidget(self.empty_go, 0, Qt.AlignHCenter)
+        el.addStretch(1)
+        root.addWidget(self.empty_card, 1)
+        self.empty_card.setVisible(False)
+
+    def set_theme(self, theme):
+        self.clear_btn.set_theme(theme)
+        self.empty_go.set_theme(theme)
+        self.empty_glyph.set_theme(theme)
+        self.artist_rank.set_theme(theme)
+        self.track_rank.set_theme(theme)
 
     def retranslate(self):
         self.title.setText(self._tr("听歌报告"))
@@ -2894,7 +3253,10 @@ class ReportPage(QWidget):
         self.peak.caption.setText(self._tr("本月最爱时段"))
         self.streak.caption.setText(self._tr("连续听歌"))
         self.active.caption.setText(self._tr("活跃天数"))
-        self.empty.setText(self._tr("还没有足够的听歌记录。播放满 20 秒后才会开始统计。"))
+        self.empty_title.setText(self._tr("还没有听歌记录"))
+        self.empty_hint.setText(
+            self._tr("播放满 20 秒才会开始统计；报告只在本机计算，不上传。"))
+        self.empty_go.setText(self._tr("去听一首"))
         if self._stats:
             self.set_stats(self._stats)
 
@@ -2928,33 +3290,20 @@ class ReportPage(QWidget):
             self.artist_big.setText(top[0]["name"])
             self.artist_meta.setText(_format_duration(
                 top[0].get("seconds", 0), self._tr))
-            self.artist_list.setText("\n".join(
-                "%02d   %s   %s" % (i + 1, a["name"],
-                                    _format_duration(a.get("seconds", 0), self._tr))
-                for i, a in enumerate(top[1:5])))
         else:
             self.artist_big.setText("—")
             self.artist_meta.setText(self._tr("暂无数据"))
-            self.artist_list.setText("")
+        self.artist_rank.set_rows(
+            [(a.get("name") or "", "", a.get("seconds", 0)) for a in top[1:5]])
         tracks = s.get("top_tracks") or []
-        self.track_list.setText("\n".join(
-            "%02d   %s  ·  %s   %s" % (
-                i + 1, t["title"], t["artist"],
-                _format_duration(t.get("seconds", 0), self._tr))
-            for i, t in enumerate(tracks[:7])) or self._tr("暂无数据"))
-        self.empty.setVisible(not has_data)
-        self.month_value.setVisible(has_data)
-        self.month_unit.setVisible(has_data)
-        self.track_count.setVisible(has_data)
-        self.month_label.setVisible(has_data)
-        self.spark.setVisible(has_data)
-        self.track_card.setVisible(has_data)
-        self.artist_card.setVisible(has_data)
-        for tile in (self.today, self.peak, self.streak, self.active):
-            tile.setVisible(has_data)
+        self.track_rank.set_rows(
+            [(t.get("title") or "", t.get("artist") or "", t.get("seconds", 0))
+             for t in tracks[:5]])
+        self.data_box.setVisible(has_data)
+        self.empty_card.setVisible(not has_data)
+        # 空态下「清空」没有可清的东西：禁用按钮还留着反而像个灰亏的陷阱
+        self.clear_btn.setVisible(has_data)
         self.clear_btn.setEnabled(has_data)
-        self.privacy.setText(self._tr("● 仅保存在本机") if has_data
-                             else self._tr("● 本地统计 · 不上传"))
 
 
 class HistoryRow(QWidget):
@@ -3249,6 +3598,8 @@ class PlaylistRowButton(QPushButton):
         return bool(lines)
 
     def _status_text(self):
+        if self.track.get("source") == "qqqueue":
+            return self._tr("跟随 QQ 音乐")
         if self._has_local_lyrics():
             return "✓ " + self._tr("歌词已就绪")
         return self._tr("未找到本地歌词")
@@ -3281,12 +3632,16 @@ class PlaylistRowButton(QPushButton):
 
 class PlaylistPage(QWidget):
     track_selected = Signal(object)
+    queue_requested = Signal()
+    prev_requested = Signal()
+    next_requested = Signal()
 
     def __init__(self, tr, parent=None, cover_loader=None, lyrics_loader=None):
         super().__init__(parent)
         self._tr = tr
         self._cover_loader = cover_loader
         self._lyrics_loader = lyrics_loader
+        self._theme = None
         self._tracks = []
         self._state = "empty"
         self._selected_track = None
@@ -3300,7 +3655,7 @@ class PlaylistPage(QWidget):
 
         self.title = QLabel(tr("歌单"))
         self.title.setObjectName("playlistPageTitle")
-        self.subtitle = QLabel(tr("导入歌单信息，选择曲目后进入歌词页。"))
+        self.subtitle = QLabel(tr("导入歌单或读取 QQ 音乐列表；用上一首 / 下一首切歌。"))
         self.subtitle.setObjectName("playlistSubtitle")
         root.addWidget(self.title)
         root.addWidget(self.subtitle)
@@ -3321,27 +3676,40 @@ class PlaylistPage(QWidget):
         self.url_input.setFixedHeight(40)
         self.url_input.returnPressed.connect(self._import_url)
         form.addWidget(self.url_input, 1)
-        self.import_btn = QPushButton(tr("导入歌单"))
+        self.import_btn = ui_glass.GlassButton(
+            tr("导入歌单"), variant=ui_glass.ACCENT)
         self.import_btn.setObjectName("primary")
         self.import_btn.setFixedHeight(40)
         self.import_btn.clicked.connect(self._import_url)
         form.addWidget(self.import_btn)
-        self.file_btn = QPushButton(tr("从文件导入…"))
+        self.file_btn = ui_glass.GlassButton(
+            tr("从文件导入…"), variant=ui_glass.GLASS)
         self.file_btn.setObjectName("ghost")
         self.file_btn.setFixedHeight(40)
         self.file_btn.clicked.connect(self._import_file)
         form.addWidget(self.file_btn)
-        self.cancel_btn = QPushButton(tr("取消"))
+        self.cancel_btn = ui_glass.GlassButton(
+            tr("取消"), variant=ui_glass.GLASS)
         self.cancel_btn.setObjectName("ghost")
         self.cancel_btn.setFixedHeight(40)
         self.cancel_btn.clicked.connect(self._cancel_import)
         self.cancel_btn.hide()
         form.addWidget(self.cancel_btn)
         panel_lay.addLayout(form)
+        queue_row = QHBoxLayout()
+        queue_row.setSpacing(8)
+        self.queue_btn = ui_glass.GlassButton(
+            tr("读取 QQ 音乐列表"), variant=ui_glass.GLASS)
+        self.queue_btn.setObjectName("ghost")
+        self.queue_btn.setFixedHeight(36)
+        self.queue_btn.clicked.connect(self.queue_requested.emit)
+        queue_row.addWidget(self.queue_btn)
+        queue_row.addStretch(1)
         self.compliance = QLabel(tr("仅导入歌单信息，不获取音乐音频或版权歌词。"))
         self.compliance.setObjectName("playlistCompliance")
         self.compliance.setWordWrap(True)
-        panel_lay.addWidget(self.compliance)
+        queue_row.addWidget(self.compliance)
+        panel_lay.addLayout(queue_row)
         self.error = QLabel("")
         self.error.setObjectName("playlistError")
         self.error.setWordWrap(True)
@@ -3360,6 +3728,18 @@ class PlaylistPage(QWidget):
         self.section.setObjectName("playlistSection")
         head.addWidget(self.section)
         head.addStretch(1)
+        self.prev_btn = ui_glass.GlassButton(
+            tr("上一首"), variant=ui_glass.GLASS)
+        self.prev_btn.setObjectName("ghost")
+        self.prev_btn.setFixedHeight(30)
+        self.prev_btn.clicked.connect(self.prev_requested.emit)
+        self.next_btn = ui_glass.GlassButton(
+            tr("下一首"), variant=ui_glass.GLASS)
+        self.next_btn.setObjectName("ghost")
+        self.next_btn.setFixedHeight(30)
+        self.next_btn.clicked.connect(self.next_requested.emit)
+        head.addWidget(self.prev_btn)
+        head.addWidget(self.next_btn)
         self.count = QLabel("0")
         self.count.setObjectName("playlistCount")
         head.addWidget(self.count)
@@ -3405,10 +3785,13 @@ class PlaylistPage(QWidget):
         desc.setObjectName("playlistEmptyDesc")
         desc.setAlignment(Qt.AlignCenter)
         desc.setWordWrap(True)
-        button = QPushButton(self._tr("导入歌单"))
+        button = ui_glass.GlassButton(
+            self._tr("导入歌单"), variant=ui_glass.ACCENT)
         button.setObjectName("primary")
         button.setFixedHeight(40)
         button.clicked.connect(self._import_file)
+        if self._theme is not None:
+            button.set_theme(self._theme)
         lay.addWidget(icon)
         lay.addWidget(title)
         lay.addWidget(desc)
@@ -3431,6 +3814,29 @@ class PlaylistPage(QWidget):
         if self._selected_track is None:
             return False
         return self._track_key(track) == self._track_key(self._selected_track)
+
+    def set_queue_loading(self, loading: bool):
+        self.queue_btn.setEnabled(not loading)
+        self.queue_btn.setText(
+            self._tr("正在读取 QQ 音乐列表…") if loading
+            else self._tr("读取 QQ 音乐列表"))
+
+    def set_theme(self, theme):
+        self._theme = theme
+        for button in (self.import_btn, self.file_btn, self.cancel_btn,
+                       self.queue_btn, self.prev_btn, self.next_btn):
+            button.set_theme(theme)
+        self.refresh()
+
+    def show_notice(self, text: str, error: bool = False):
+        if not text:
+            self.error.hide()
+            self.success.hide()
+            return
+        label = self.error if error else self.success
+        label.setText(text)
+        (self.success if not error else self.error).hide()
+        label.show()
 
     def _set_import_ready(self):
         self.url_input.setProperty("error", "0")
@@ -3655,6 +4061,7 @@ class PlaylistPage(QWidget):
 HistoryPage = PlaylistPage
 class MainPlayerWindow(QWidget):
     closed = Signal()
+    qq_queue_ready = Signal(object)
 
     def __init__(self, overlay):
         super().__init__(None, Qt.FramelessWindowHint | Qt.Window)
@@ -3756,12 +4163,19 @@ class MainPlayerWindow(QWidget):
         self.now.immersive_requested.connect(self.toggle_immersive)
         self.report = ReportPage(self._tr)
         self.report.clear_requested.connect(self._clear_listening)
+        self.report.play_requested.connect(lambda: self.navigate("now"))
         self.playlist = PlaylistPage(
             self._tr,
             cover_loader=_history_cover_loader,
             lyrics_loader=self._playlist_lyrics_loader)
         self.history = self.playlist
         self.playlist.track_selected.connect(self._open_playlist_track)
+        self.playlist.queue_requested.connect(self._load_qq_queue)
+        self.playlist.prev_requested.connect(
+            lambda: self.ov.media_command("prev"))
+        self.playlist.next_requested.connect(
+            lambda: self.ov.media_command("next"))
+        self.qq_queue_ready.connect(self._on_qq_queue)
         self.settings_page = SettingsPage(self.ov, self._tr)
         self.stack.addWidget(self.now)
         self.stack.addWidget(self.report)
@@ -3781,11 +4195,23 @@ class MainPlayerWindow(QWidget):
 
     def _push_theme(self, theme):
         for widget in (self.titlebar, self.sidebar, self.now, self.grip,
-                       self.settings_page):
+                       self.settings_page, self.report, self.playlist):
             setter = getattr(widget, "set_theme", None)
             if callable(setter):
                 setter(theme)
         self.report.spark.set_theme(theme)
+        self._sync_glass_motion(theme)
+
+    def _sync_glass_motion(self, theme):
+        """Glass buttons animate unless the user asked for reduced motion."""
+        manager = getattr(self.ov, "theme_manager", None)
+        if manager is not None:
+            reduce = manager.reduce_motion()
+        else:
+            reduce = bool(self.ov.cfg.get("reduce_motion"))
+        duration = 0 if reduce else int(getattr(theme, "m_fast", 140))
+        for button in self.findChildren(ui_glass.GlassButton):
+            button.set_motion(duration)
 
     def _apply_theme(self, theme):
         self._apply_style()
@@ -3827,12 +4253,14 @@ class MainPlayerWindow(QWidget):
     def navigate(self, key: str):
         self._page = key
         self.sidebar.set_active(key)
+        # 标题栏 crumb 只在「页面自身没有一级标题」时出现：报告页已有
+        # H1 + 副标题，再来一条 crumb 就是同义重复。
+        self.titlebar.page_label.setVisible(key != "report")
         if key == "now":
             self.stack.setCurrentWidget(self.now)
             self.titlebar.page_label.setText(self._tr("正在播放"))
         elif key == "report":
             self.stack.setCurrentWidget(self.report)
-            self.titlebar.page_label.setText(self._tr("听歌报告"))
             try:
                 self.ov.listen_tracker.flush()
             except Exception:
@@ -3845,34 +4273,28 @@ class MainPlayerWindow(QWidget):
             self._refresh_history()
         elif key == "settings":
             self.stack.setCurrentWidget(self.settings_page)
-            self.titlebar.page_label.setText(self._tr("设置"))
+            self.titlebar.page_label.setText(self._tr("桌面歌词设置"))
         self._animate_page(self.stack.currentWidget())
 
     def _animate_page(self, page):
+        """Page switches are instant.
+
+        The old 180ms opacity fade pushed the page through an offscreen
+        surface; switching to the playlist left the playing stage ghosted
+        over the new page and made every navigation feel slow on top of the
+        extra render target.
+        """
         if page is None:
             return
-        manager = getattr(self, "_theme_manager", None)
-        duration = manager.duration("m_base") if manager is not None else 180
-        effect = page.graphicsEffect()
-        if not isinstance(effect, QGraphicsOpacityEffect):
-            effect = QGraphicsOpacityEffect(page)
-            page.setGraphicsEffect(effect)
         old = getattr(page, "_page_anim", None)
         if old is not None:
             try:
                 old.stop()
             except RuntimeError:
                 pass
-        if duration <= 0:
+            page._page_anim = None
+        if page.graphicsEffect() is not None:
             page.setGraphicsEffect(None)
-            return
-        anim = QPropertyAnimation(effect, b"opacity", page)
-        anim.setDuration(duration)
-        anim.setStartValue(0.0)
-        anim.setEndValue(1.0)
-        anim.finished.connect(lambda p=page: self._finish_page_anim(p))
-        anim.start()
-        page._page_anim = anim
 
     def _finish_page_anim(self, page):
         """Drop the opacity effect once the fade ends.
@@ -3893,7 +4315,7 @@ class MainPlayerWindow(QWidget):
         self.navigate("report")
 
     def open_history_track(self, track):
-        self.navigate("history")
+        self.navigate("now")
 
     def _open_settings(self):
         self.navigate("settings")
@@ -3906,8 +4328,7 @@ class MainPlayerWindow(QWidget):
         self.hide()
         self.ov.show()
         try:
-            self.ov.tray.showMessage(self._tr("桌面歌词"), self._tr("已切换到迷你歌词"),
-                                     self.ov.tray.Information, 1500)
+            self.ov._notify(self._tr("桌面歌词"), self._tr("已切换到迷你歌词"))
         except Exception:
             pass
 
@@ -3916,16 +4337,17 @@ class MainPlayerWindow(QWidget):
         if self._immersive:
             self.navigate("now")
             self.sidebar.hide()
-            self.titlebar.page_label.hide()
+            self.titlebar.hide()
             if not self.isFullScreen():
                 self.showFullScreen()
         else:
             self.sidebar.show()
-            self.titlebar.page_label.show()
+            self.titlebar.show()
             if self.isFullScreen():
                 self.showNormal()
             else:
                 self.show()
+        self.now.set_immersive(self._immersive)
         self.now.immersive_btn.setText(self._tr("退出沉浸") if self._immersive
                                        else self._tr("沉浸歌词"))
         self.now.immersive_btn.adjustSize()
@@ -3960,6 +4382,34 @@ class MainPlayerWindow(QWidget):
         if callable(getattr(service, "load_cached", None)):
             return service.load_cached(title, artist)
         return [], {}
+
+    def _load_qq_queue(self):
+        self.playlist.set_queue_loading(True)
+        self.playlist.show_notice("")
+
+        def work():
+            try:
+                res = self.ov.read_qq_queue()
+            except Exception:
+                res = {"ok": False, "reason": "exception"}
+            self.qq_queue_ready.emit(res)
+
+        threading.Thread(target=work, daemon=True, name="qq-queue-ui").start()
+
+    def _on_qq_queue(self, res):
+        self.playlist.set_queue_loading(False)
+        res = res or {}
+        if not res.get("ok"):
+            self.playlist.show_notice(
+                self._tr("请先打开 QQ 音乐「播放队列」"), error=True)
+            return
+        rows = res.get("rows") or []
+        tracks = [{"title": row["title"], "artist": row.get("artist") or "",
+                   "duration": 0.0, "cover": "", "source": "qqqueue"}
+                  for row in rows]
+        self.playlist.set_tracks(tracks)
+        self.playlist.show_notice(
+            self._tr("已读取 %d 首（仅展示，切歌请用上/下一首）") % len(tracks))
 
     def _open_playlist_track(self, track):
         self._playlist_track = track
@@ -4127,4 +4577,3 @@ class MainPlayerWindow(QWidget):
         self._release_theme_manager()
         self.closed.emit()
         super().closeEvent(e)
-

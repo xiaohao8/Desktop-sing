@@ -134,6 +134,40 @@ for _lang in ("en", "ja"):
                       if not str(_table.get(_key) or "").strip())
     ck("lyrics_view 文案无缺译 (%s, %d keys)" % (_lang, len(_view_keys)),
        not _missing, _missing[:10])
+# 7) 设置页重排：新增键四语言齐全，且设置页文案跟随语言
+_refresh_keys = ("应用主题", "歌词外观",
+                 "选择应用配色；跟随系统会随 Windows 深浅色切换",
+                 "显示内容", "关闭页面淡入和过渡动画")
+for _lang in ("zh-TW", "en", "ja"):
+    L.set_ui_lang(_lang)
+    _table = L._I18N_TABLES.get(_lang) or {}
+    _missing = [_k for _k in _refresh_keys if not str(_table.get(_k) or "").strip()]
+    ck("设置页重排键无缺译 (%s)" % _lang, not _missing, _missing)
+    ck("设置页重排键不回退中文 (%s)" % _lang,
+       all(str(_table.get(_k) or "") != _k for _k in _refresh_keys),
+       [_k for _k in _refresh_keys if str(_table.get(_k) or "") == _k])
+
+import lyrics_view as _V  # noqa: E402
+_page = _V.SettingsPage(ov, L._tr)
+for _lang, _title in (("zh-CN", "应用主题"), ("zh-TW", "應用主題"),
+                      ("en", "App theme"), ("ja", "アプリテーマ")):
+    L.set_ui_lang(_lang)
+    _page.retranslate()
+    ck("设置页标题跟随语言 (%s)" % _lang,
+       _page.appearance.title.text() == _title, _page.appearance.title.text())
+    _hint = _page.appearance.hint.text().strip()
+    ck("设置页提示跟随语言 (%s)" % _lang,
+       bool(_hint) and (_hint == "选择应用配色；跟随系统会随 Windows 深浅色切换")
+       == (_lang == "zh-CN"), _hint)
+    _motion = _page.appearance.motion_label.text().strip()
+    ck("减少动态效果标签跟随语言 (%s)" % _lang,
+       bool(_motion) and (_motion == "减少动态效果") == (_lang == "zh-CN"), _motion)
+    _names = [btn.name.text().strip() for btn in _page.appearance.swatch_buttons.values()]
+    ck("主题卡名称非空 (%s)" % _lang, all(bool(_n) for _n in _names), _names)
+    if _lang == "en":
+        ck("主题卡名称为英文 (%s)" % _lang,
+           all(_n not in ("墨", "青瓷") for _n in _names), _names)
+_page.deleteLater()
 L.set_ui_lang("zh-CN")
 
 print("----", "FAIL: %d" % len(fails) if fails else "全部通过")

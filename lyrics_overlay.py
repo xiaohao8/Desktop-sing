@@ -208,6 +208,26 @@ UI_LANG_LABELS = {
 
 _I18N_TABLES = {
     "zh-TW": {
+        # ---- 设置页重排（v2.0.8） ----
+        "应用主题": "應用主題",
+        "歌词外观": "歌詞外觀",
+        "选择应用配色；跟随系统会随 Windows 深浅色切换":
+            "選擇應用配色；跟隨系統會隨 Windows 深淺色切換",
+        "显示内容": "顯示內容",
+        "关闭页面淡入和过渡动画": "關閉頁面淡入與過渡動畫",
+        "读取 QQ 音乐队列": "讀取 QQ 音樂佇列",
+        "正在读取 QQ 音乐队列…": "正在讀取 QQ 音樂佇列…",
+        "已读取 %d 首（仅当前可见）": "已讀取 %d 首（僅目前可見）",
+        "读取 QQ 音乐列表": "讀取 QQ 音樂列表",
+        "跟随 QQ 音乐": "跟隨 QQ 音樂",
+        "导入歌单或读取 QQ 音乐列表；用上一首 / 下一首切歌。":
+            "匯入歌單或讀取 QQ 音樂列表；用上一首 / 下一首切歌。",
+        "正在读取 QQ 音乐列表…": "正在讀取 QQ 音樂列表…",
+        "已读取 %d 首（仅展示，切歌请用上/下一首）":
+            "已讀取 %d 首（僅展示，切歌請用上/下一首）",
+        "请先打开 QQ 音乐「播放队列」": "請先開啟 QQ 音樂「播放佇列」",
+        "已切到 QQ 音乐：%s": "已切到 QQ 音樂：%s",
+        "这首歌不在 QQ 音乐可见队列里": "這首歌不在 QQ 音樂可見佇列裡",
         # ---- 字体名（拉丁名）与语言下拉 Auto 项 ----
         "自动跟随系统 · Auto": "自動跟隨系統 · Auto",
         # ---- 设置面板文案（v2.0.6 补全） ----
@@ -491,6 +511,26 @@ _I18N_TABLES = {
         "开源 SIL OFL，强对比斜体美术字，很抓眼": "開源 SIL OFL，強對比斜體美術字，很抓眼",
     },
     "en": {
+        # ---- Settings page refresh (v2.0.8) ----
+        "应用主题": "App theme",
+        "歌词外观": "Lyrics appearance",
+        "选择应用配色；跟随系统会随 Windows 深浅色切换":
+            "Choose the app palette; Follow system tracks Windows light/dark mode",
+        "显示内容": "Display content",
+        "关闭页面淡入和过渡动画": "Turn off page fades and transitions",
+        "读取 QQ 音乐队列": "Read QQ Music queue",
+        "正在读取 QQ 音乐队列…": "Reading QQ Music queue…",
+        "已读取 %d 首（仅当前可见）": "Loaded %d tracks (visible only)",
+        "读取 QQ 音乐列表": "Read QQ Music playlist",
+        "跟随 QQ 音乐": "Follows QQ Music",
+        "导入歌单或读取 QQ 音乐列表；用上一首 / 下一首切歌。":
+            "Import a playlist or read the QQ Music list; use Previous / Next to switch.",
+        "正在读取 QQ 音乐列表…": "Reading QQ Music playlist…",
+        "已读取 %d 首（仅展示，切歌请用上/下一首）":
+            "Loaded %d tracks (view only; use Previous/Next to switch)",
+        "请先打开 QQ 音乐「播放队列」": "Open QQ Music \"Play Queue\" first",
+        "已切到 QQ 音乐：%s": "Switched QQ Music to: %s",
+        "这首歌不在 QQ 音乐可见队列里": "This track is not in the visible queue",
         # ---- 字体名（拉丁名）与语言下拉 Auto 项 ----
         "钉钉进步体": "DingTalk JinBuTi",
         "阿里巴巴普惠体 3.0": "Alibaba PuHuiTi 3.0",
@@ -774,6 +814,26 @@ _I18N_TABLES = {
         "开源 SIL OFL，强对比斜体美术字，很抓眼": "Open Source (SIL OFL); high-contrast italic display face",
     },
     "ja": {
+        # ---- 設定ページ再構成（v2.0.8） ----
+        "应用主题": "アプリテーマ",
+        "歌词外观": "歌詞の外観",
+        "选择应用配色；跟随系统会随 Windows 深浅色切换":
+            "アプリの配色を選択。システムに従うと Windows のライト/ダークに追従します",
+        "显示内容": "表示内容",
+        "关闭页面淡入和过渡动画": "ページのフェードとトランジションをオフ",
+        "读取 QQ 音乐队列": "QQ ミュージックの再生キューを読み込む",
+        "正在读取 QQ 音乐队列…": "QQ ミュージックの再生キューを読み込み中…",
+        "已读取 %d 首（仅当前可见）": "%d 曲を読み込みました（表示中の曲のみ）",
+        "读取 QQ 音乐列表": "QQ ミュージックのプレイリストを読み込む",
+        "跟随 QQ 音乐": "QQ ミュージックに追従",
+        "导入歌单或读取 QQ 音乐列表；用上一首 / 下一首切歌。":
+            "プレイリストを読み込むか QQ ミュージックのリストを取得。曲送りは前/次へ。",
+        "正在读取 QQ 音乐列表…": "QQ ミュージックのプレイリストを読み込み中…",
+        "已读取 %d 首（仅展示，切歌请用上/下一首）":
+            "%d 曲を読み込みました（表示のみ。曲送りは前/次へ）",
+        "请先打开 QQ 音乐「播放队列」": "先に QQ ミュージックの「再生キュー」を開いてください",
+        "已切到 QQ 音乐：%s": "QQ ミュージックで再生中：%s",
+        "这首歌不在 QQ 音乐可见队列里": "この曲は表示中のキューにありません",
         # ---- 字体名（拉丁名）与语言下拉 Auto 项 ----
         "钉钉进步体": "DingTalk JinBuTi",
         "阿里巴巴普惠体 3.0": "Alibaba PuHuiTi 3.0",
@@ -2327,6 +2387,95 @@ def norm_text(s: str) -> str:
     return re.sub(r"[\W_]+", "", (s or "").lower())
 
 
+# ---------------- 版本标记（Live / 现场版 / 伴奏 / DJ …）----------------
+# 同一首歌的「录音室版 / Live 版 / 伴奏版 / DJ 版」歌词**行序和时间轴完全不同**，
+# 拿错版本不只是错位，还会**提前结束**：实测（2026-11-26）正在播《最后一页 (Live)》，
+# 程序匹配到的是酷狗《最后一页 - 姚晓棠》（223s 录音室版），它的歌词 210.4s 就到头了，
+# 而歌还在放 —— 画面停在最后一句不动，面板里只剩三行，看起来就是「歌词不全」。
+# 根因有两层：① clean_query_text 把歌名里的 "(Live)" 抹掉了，版本信息直接丢失；
+#            ② 候选排序只比「歌名完全相等」，录音室版因此排在 Live 版前面，
+#               再叠加它带 KRC 逐字（score_lyrics +30）就稳稳赢过正确版本。
+_VERSION_RULES = (
+    # 「Live版」这种中文紧跟英文的写法 \b 不成立（live 与 版 之间没有词边界），
+    # 所以用 (?<![a-z]) / (?![a-z]) 代替 \b：既能匹配「Live版」，又不会误伤 lively。
+    ("live", r"(?<![a-z])live(?![a-z])|现场版?|直播版?|不插电|纯享版|演唱会|实况"),
+    ("inst", r"伴奏|instrumental|消音版?|纯音乐"),
+    ("mix", r"dj(?![a-z])|rmx(?![a-z])|remix|混音版|mix版|加速版|变速版"),
+    ("remaster", r"remaster|重制版?|hi-?res|高解析"),
+    ("cover", r"(?<![a-z])cover(?![a-z])|翻唱"),
+)
+
+
+def version_tags(text: str) -> set:
+    """取歌名里的版本标记集合（如 {"live"}）。取不到就是空集。"""
+    t = (text or "").lower()
+    return {tag for tag, pat in _VERSION_RULES if re.search(pat, t)}
+
+
+def _version_group(target_tags, cand_name) -> int:
+    """候选按版本标记分组（数字越小越优先）。
+
+    目标带版本标记时：同类（Live 对 Live）= 0，一个标记都没有 = 1（多半是录音室版），
+    明确另一种标记（伴奏 / DJ / 翻唱）= 2。
+    目标没带标记时不做区分（= 0），老行为不变。
+    """
+    if not target_tags:
+        return 0
+    ct = version_tags(cand_name)
+    if not ct:
+        return 1
+    return 0 if (target_tags & ct) else 2
+
+
+def version_fit(target_tags, target_dur, cand_name, cand_dur) -> int:
+    """候选与目标在「版本 / 时长」上的一致度（正=像同一版本，负=多半是另一个版本）。
+
+    目标有版本标记（Live/伴奏/DJ…）而候选是另一种标记 → 明确不是同一版；
+    候选一个标记都没有 → 多半是录音室版（同名不同版本里最常见的那种）；
+    候选时长与实际播放时长差太远 → 多半是另一个录音/剪辑版。
+    两者都判不出来（候选没写标记、时长未知）时给 0，不奖不罚。
+
+    ⚠️ 时长只作**辅助**：播放器上报的时长偶尔是脏值（QQ 音乐有过 end_time=34.5s
+    的坑），也偶尔比平台标注的版本短一截（现场版常比录音室版长），所以时长差
+    再大也不能盖过版本标记的判断——否则会出现「版本是对的、却被时长差拖下去」。
+    """
+    s = 0
+    ct = version_tags(cand_name)
+    if target_tags:
+        if ct and not (target_tags & ct):
+            s -= 60                      # 明确是另一种版本（伴奏 / DJ / 翻唱…）
+        elif target_tags <= ct:
+            s += 12                      # 版本标记完全对上
+        elif not ct:
+            s -= 25                      # 目标标了 Live，候选毫无标记：多半是录音室版
+    if (20.0 <= float(target_dur or 0) <= 14400.0
+            and 20.0 <= float(cand_dur or 0) <= 14400.0):
+        diff = abs(float(cand_dur) - float(target_dur))
+        tol_tight = max(3.0, float(target_dur) * 0.02)
+        tol_loose = max(20.0, float(target_dur) * 0.12)
+        if diff <= tol_tight:
+            s += 8                       # 时长几乎一致
+        elif diff > tol_loose:
+            s -= 25                      # 差太远：多半是另一个录音 / 剪辑版
+        else:
+            s -= 8                       # 差得有点多：可疑但不敢一棍子打死
+    return s
+
+
+def lyric_cache_key(title: str, artist: str) -> str:
+    """歌词缓存键：**带版本标记**，避免 Live 版 / 录音室版共用一份缓存。
+
+    没有版本标记的歌沿用旧键（"歌名|歌手"），已有缓存不作废；
+    有版本标记的歌用 "歌名|版本|歌手"，不同版本各存各的。
+    """
+    base = clean_query_text(title or "")
+    art = clean_query_text(artist or "")
+    tags = version_tags(title or "")
+    if tags:
+        return ("%s|%s|%s" % (base, "+".join(sorted(tags)), art)).lower().strip()
+    return ("%s|%s" % (base, art)).lower().strip()
+
+
 # 制作名单行：角色 + 冒号（「作词：李荣浩」「小提琴：须磨和声」「编曲 Arrangement：xxx」）。
 # 必须带冒号（或整行只有角色名），这样「鼓起勇气」这类正常歌词不会被当成「鼓」的名单。
 _CREDIT_ROLE = (r"作?词|作曲|词曲|编曲|和声|合声|合唱|混音|缩混|录音|母带|制作人?|监制|出品人?|出品|版权|发行|推广|"
@@ -2516,6 +2665,8 @@ def fetch_qq_search(query: str, timeout: float = 8.0):
             "albummid": album.get("mid") or "",
             "name": it.get("name") or "",
             "singer": (sg[0].get("name") if sg and isinstance(sg, list) else "") or "",
+            # QQ 搜索结果带 interval（秒）——版本匹配要用它区分同名不同版本
+            "duration": float(it.get("interval") or 0),
         })
     return results
 
@@ -2621,6 +2772,8 @@ def fetch_netease_search(query: str, timeout: float = 8.0):
             "name": it.get("name") or "",
             "singer": (artists[0].get("name") if artists else "") or "",
             "pic_url": pic,
+            # 搜索结果自带时长（毫秒）——版本匹配要用它区分同名不同版本
+            "duration": float(it.get("duration") or 0) / 1000.0,
         })
     return results
 
@@ -3235,6 +3388,12 @@ def score_lyrics(lines, words=None, trans=None, duration: float = 0.0,
         first = min(float(r[0]) for r in lines)
         if first > duration * 0.85 + 5.0:
             score -= 40
+        # 2026-11-26 新增：**尾部空太多** = 这份时间轴只覆盖了整首的前半段。
+        # 实测触发：正在播《最后一页 (Live)》，误取了 223s 的录音室版，
+        # 它的末行停在 210.4s —— 后面 40s 根本没有歌词，一眼就是另一个版本。
+        # 门槛取 30s 和 15% 的较大者：短歌的「正常长尾奏」不至于被误伤。
+        if duration - last > max(30.0, duration * 0.15):
+            score -= 25
     # 2026-11-14 新增「空档判据」：最大行间隔离谱 = 这份时间轴断了一段。
     # 实测触发：我听人说思念像风一样 / 顾叮当，34 行逐字齐全，但 122.3s → 182.7s
     # 空了 60.4s（中位间隔才 5.7s），播到那一段画面会停在「等风来」上一分钟不动，
@@ -3567,7 +3726,7 @@ def _singer_matches(artist_c: str, singer: str) -> bool:
     return any(t == a or a in t or t in a for t in _singer_tokens(singer))
 
 
-def _match_candidates(cands, title_c, artist_c=""):
+def _match_candidates(cands, title_c, artist_c="", duration=0.0, vtags=None):
     """搜索结果**择优 + 否决**：只保留歌名匹配且歌手对得上的候选，最多 3 个。
 
     ⚠️ 旧实现只按 (歌名+歌手, 歌名) 排序后取前 3，**从不否决**明显不匹配的候选。
@@ -3581,9 +3740,16 @@ def _match_candidates(cands, title_c, artist_c=""):
          宁可拿同名歌的歌词也不要没有——这是权衡后的选择，会打日志）；
       2. 歌手对得上 → 按「都匹配 > 仅歌名」排序取前 3；
       3. 歌名带后缀（「童话 (温柔女声版)」）且目标里没有该后缀 → 降权但不淘汰。
+
+    ⚠️ 版本一致度排在「歌名完全相等」**之前**（2026-11-26 新增）：
+    「歌名完全相等」这条老规则会把**录音室版**顶到 Live 版前面——两者歌名都是
+    《最后一页》，录音室版又带 KRC 逐字，于是稳稳赢过正确的 Live 版：
+    整首走字错位，且歌词在 210.4s 就结束（歌还没放完），面板里只剩三行。
+    现在先按版本分组（Live / 无标记 / 明确另一版），同组内再比时长接近度。
     """
     cands = cands or []
     norm_t, norm_a = norm_text(title_c), norm_text(artist_c)
+    vtags = vtags or set()
 
     def name_ok(it):
         n = norm_text(it.get("name"))
@@ -3592,23 +3758,36 @@ def _match_candidates(cands, title_c, artist_c=""):
     def singer_ok(it):
         return _singer_matches(artist_c, it.get("singer") or "")
 
+    def rank(it):
+        # 版本一致度优先：Live 版 / 录音室版同名时靠它区分
+        return (_version_group(vtags, it.get("name")),
+                version_fit(vtags, duration, it.get("name"), it.get("duration")),
+                norm_text(it.get("name")) == norm_t)
+
+    def pick(pool):
+        """按版本分组挑：明显是另一种版本的（伴奏 / DJ / 翻唱）先出局。"""
+        if not pool:
+            return []
+        if vtags:
+            best_group = min(_version_group(vtags, it.get("name")) for it in pool)
+            if best_group < 2:
+                pool = [it for it in pool
+                        if _version_group(vtags, it.get("name")) <= best_group]
+        return sorted(pool, key=rank, reverse=True)[:3]
+
     # 歌手确实对得上的先留着
     keep = [it for it in cands if name_ok(it) and singer_ok(it)]
     rest = [it for it in cands if not (name_ok(it) and singer_ok(it))]
 
     if keep:
-        # 歌名完全相同 > 歌名包含关系
-        def rank(it):
-            return (norm_text(it.get("name")) == norm_t,)
-        return sorted(keep, key=rank, reverse=True)[:3]
+        return pick(keep)
 
     # 全都不匹配：只要有歌名能对上的就退而求其次（同名歌也算命中用户意图）
     loose = [it for it in rest if name_ok(it)]
     if loose and norm_a:
         log("match: no candidate singer matches %r, falling back to title-only"
             % artist_c)
-    return sorted(loose, key=lambda it: norm_text(it.get("name")) == norm_t,
-                  reverse=True)[:3]
+    return pick(loose)
 
 
 # ======================================================================
@@ -3665,14 +3844,20 @@ def _source_mark(src: str, ok: bool):
                     % (src, h["fail"], _SOURCE_COOL_TTL))
 
 
-def _fetch_source(src: str, query: str, title_c: str, artist_c: str):
-    """单个来源的候选抓取（在并行线程里跑）；失败 / 无结果返回 None"""
+def _fetch_source(src: str, query: str, title_c: str, artist_c: str,
+                  duration: float = 0.0, vtags=None):
+    """单个来源的候选抓取（在并行线程里跑）；失败 / 无结果返回 None
+
+    duration / vtags 传入后，候选排序会按「版本标记 + 时长」挑，
+    避免同名不同版本（Live 版 vs 录音室版）抢到前面。
+    """
     to = _FETCH_TIMEOUT.get(src, 6.0)
     if _source_in_cooldown(src):
         to = min(to, _SOURCE_COOL_TIMEOUT)
     cand = None
     if src == "qq":
-        for it in _match_candidates(fetch_qq_search(query, timeout=to), title_c, artist_c):
+        for it in _match_candidates(fetch_qq_search(query, timeout=to), title_c,
+                                    artist_c, duration=duration, vtags=vtags):
             lyr, tr = fetch_qq_lyric(it["mid"], timeout=to) if it["mid"] else (None, "")
             pl, pw = parse_lrc(lyr) if lyr else ([], {})
             if pl:
@@ -3682,40 +3867,55 @@ def _fetch_source(src: str, query: str, title_c: str, artist_c: str):
                              "T002R500x500M000%s.jpg" % it["albummid"])
                 cand = {"lines": pl, "words": pw,
                         "trans": parse_trans(tr) if tr else [], "cover": cover,
-                        "singer": it.get("singer") or ""}
+                        "singer": it.get("singer") or "",
+                        "name": it.get("name") or "",
+                        "cand_duration": it.get("duration") or 0.0}
                 break
     elif src == "kugou":
         # 酷狗 KRC 自带逐字时间轴（借鉴 Lyricify 的酷狗源）
-        for it in _match_candidates(fetch_kugou_search(query, timeout=to), title_c, artist_c):
+        for it in _match_candidates(fetch_kugou_search(query, timeout=to), title_c,
+                                    artist_c, duration=duration, vtags=vtags):
             pl, pw, pt = fetch_kugou_lyric(it["name"], it["duration"], it["hash"], timeout=to)
             if pl:
                 cand = {"lines": pl, "words": pw, "trans": pt, "cover": None,
-                        "singer": it.get("singer") or ""}
+                        "singer": it.get("singer") or "",
+                        "name": it.get("name") or "",
+                        "cand_duration": it.get("duration") or 0.0}
                 break
     elif src == "netease":
-        for it in _match_candidates(fetch_netease_search(query, timeout=to), title_c, artist_c):
+        for it in _match_candidates(fetch_netease_search(query, timeout=to), title_c,
+                                    artist_c, duration=duration, vtags=vtags):
             pl, pw, pt, pr = (fetch_netease_lyric_full(it["id"], timeout=to) if it["id"]
                               else ([], {}, [], []))
             if pl:
                 cand = {"lines": pl, "words": pw, "trans": pt, "roma": pr,
                         "cover": it["pic_url"] or None,
-                        "singer": it.get("singer") or ""}
+                        "singer": it.get("singer") or "",
+                        "name": it.get("name") or "",
+                        "cand_duration": it.get("duration") or 0.0}
                 break
     else:                                   # lrclib：候选里挑质量分最高的一个
         best = None
         for c in fetch_lrclib_candidates(title_c, artist_c, timeout=to):
-            if best is None or (score_lyrics(c["lines"], c["words"], c["trans"], c["duration"])
-                                > score_lyrics(best["lines"], best["words"], best["trans"],
-                                               best["duration"])):
-                best = c
+            # 与实际播放时长 / 版本对不上的条目直接出局（同名不同版本），其余按质量分比
+            fit = version_fit(vtags, duration, c.get("name"), c.get("duration"))
+            if fit < 0:
+                continue
+            sc = score_lyrics(c["lines"], c["words"], c["trans"],
+                              duration or c["duration"])
+            if best is None or sc > best[0]:
+                best = (sc, c)
         if best is not None:
-            cand = {"lines": best["lines"], "words": best["words"], "trans": best["trans"],
-                    "cover": None, "duration": best["duration"],
+            cand = {"lines": best[1]["lines"], "words": best[1]["words"],
+                    "trans": best[1]["trans"], "cover": None,
+                    "duration": best[1]["duration"],
+                    "cand_duration": best[1]["duration"],
+                    "name": best[1].get("name") or "",
                     "singer": artist_c}          # lrclib 按歌名+歌手精确查，视为同一人
     return cand
 
 
-def _gather_sources(query, title_c, artist_c, duration, prefer_netease=None):
+def _gather_sources(query, title_c, artist_c, duration, prefer_netease=None, vtags=None):
     """并行询问所有来源，边到边择优，返回 (lines, words, trans, cover, used_src,
     by_src, singer_ok, network_down)
 
@@ -3727,6 +3927,8 @@ def _gather_sources(query, title_c, artist_c, duration, prefer_netease=None):
     - network_down（2026-11-14 新增）：多源网络级失败（超时/DNS/连接被掐）且无任何
       源给出候选时置 True，UI 据此区分「没网」和「没词」，占位文案与重试节奏都不同。
       prefer_netease 参数已废弃（源优先级固定网易云第一），仅为兼容旧签名保留。
+    - vtags / duration（2026-11-26 新增）：目标曲目的版本标记与实际时长，
+      用来在多源竞速时认出「同名不同版本」，避免录音室版凭逐字加分反超 Live 版。
     """
     import queue as _queue
 
@@ -3760,7 +3962,8 @@ def _gather_sources(query, title_c, artist_c, duration, prefer_netease=None):
 
     def worker(src):
         try:
-            cand = _fetch_source(src, query, title_c, artist_c)
+            cand = _fetch_source(src, query, title_c, artist_c,
+                                 duration=duration, vtags=vtags)
             _source_mark(src, cand is not None)
         except Exception as ex:
             log(src + " lyric failed: " + traceback.format_exc())
@@ -3791,9 +3994,17 @@ def _gather_sources(query, title_c, artist_c, duration, prefer_netease=None):
         nonlocal lines, words, trans, cover, roma, best_key, used_src, used_singer
         if not cand or not cand.get("lines"):
             return False
+        # 期望时长用「实际播放时长」；播放器没给时长时才退回候选自身的时长。
+        # ⚠️ 不能用候选自己的 duration：那是**这条候选自己**的版本时长，
+        # 拿它跟自己的末行比永远「严丝合缝」，错版本就永远发现不了。
+        expect_dur = duration or cand.get("cand_duration") or 0.0
         sc = score_lyrics(cand["lines"], cand["words"], cand["trans"],
-                          cand.get("duration") or duration,
+                          expect_dur,
                           artist_c, cand.get("singer") or "")
+        # 版本一致度也计入分数：录音室版往往带逐字（+30），Live 版可能只有行级，
+        # 光看质量分会选错版本（整首走字错位，歌词还提前结束）。
+        sc += version_fit(vtags, duration, cand.get("name") or "",
+                          cand.get("cand_duration") or 0.0)
         key = (sc, len(cand["words"] or {}), len(cand["trans"] or []),
                len(cand["lines"]), -rank.get(src, len(order) + 1))
         if best_key is None or key > best_key:
@@ -3920,8 +4131,12 @@ def fetch_lyrics(title: str, artist: str, prefer_netease: bool = False,
     四个源并行竞速，拿到「逐字 + 翻译」的满配结果立即收工。
     """
     title_c, artist_c = clean_query_text(title), clean_query_text(artist)
-    key = ("%s|%s" % (title_c, artist_c)).lower().strip()
+    # 缓存键带版本标记：Live 版和录音室版各存各的，别互相顶替
+    key = lyric_cache_key(title or "", artist or "")
     cp = _cache_path(key)
+    # 版本标记取自**原始歌名**：clean_query_text 会把 "(Live)" 抹掉，
+    # 版本信息必须在清洗前提取，否则同名不同版本会共用一份缓存。
+    vtags = version_tags(title or "")
     # strict_artist（用户手动「只要这一版」）必须绕过缓存：缓存里存的正是
     # 那个错配结果，不绕开的话重试多少次都是同一份错的。
     if os.path.exists(cp) and not strict_artist:
@@ -3950,7 +4165,7 @@ def fetch_lyrics(title: str, artist: str, prefer_netease: bool = False,
     query = "%s %s" % (title_c, artist_c) if artist_c else title_c
     (lines, words, trans, cover_url, used_src, by_src,
      singer_ok, network_down, roma) = _gather_sources(
-        query, title_c, artist_c, duration, prefer_netease)
+        query, title_c, artist_c, duration, prefer_netease, vtags=vtags)
     if not lines:
         # 全源空手以前是静默的——用户只看到「不出歌词」，日志里却查无实据。
         # 落一行各源返回情况，事后一眼定位是「都没通」还是「通了但没匹配到」。
@@ -4395,7 +4610,15 @@ class _AudioProbe:
                 if k.rsplit(".", 1)[0] == proc or k.startswith(proc):
                     active = v
                     break
-        return bool(active)
+        if not active:
+            return False
+        # 会话状态 Active 不等于真的在出声：QQ 音乐暂停后会话仍可能挂着
+        # Active，僵死桥接会把它误判成 PLAYING，导致暂停后歌词继续往后走。
+        # 设备电平是最直接的闸门；探针不可用（-1）时保持旧行为。
+        peak = self.device_peak()
+        if peak >= 0 and peak <= 0.002:
+            return False
+        return True
 
     def device_peak(self) -> float:
         """默认输出设备此刻的电平峰值（0~1）；探针不可用/陈旧返回 -1。
@@ -4803,6 +5026,70 @@ def _calib_is_stale_snapshot(pos: float, snapshot) -> bool:
     return snapshot is not None and abs(pos - snapshot) < 0.1
 
 
+_QUEUE_TEXT_NOISE = {"MV", "力", "劥", "劦", "取消喜欢", "更多操作", "定位",
+                     "播放", "暂停", "已开始播放提示", "立即续费"}
+
+
+def _queue_rows_from_elements(elements):
+    """把 QQ 音乐「播放队列」的 UIA 元素聚合成可见行。
+
+    elements: [(name, control_type, [x, y, w, h] | None), ...]
+    返回 [{title, artist, y, queue_play}]，按屏幕 y 排序。
+
+    行结构以「歌名列」为锚点（x 固定、图标在右侧），而不是依赖播放按钮：
+    播放按钮只在鼠标悬停某行时才出现在 UIA 树里。queue_play 只有在元素中
+    恰好带播放按钮时才有值，否则为 None，由 play_queue_item 悬停后重读。
+    """
+    texts = []
+    for name, ctype, bounds in elements:
+        if ctype != _UIA_TEXT_CONTROLTYPE or not bounds:
+            continue
+        text = (name or "").strip()
+        if not text or text in _QUEUE_TEXT_NOISE:
+            continue
+        x, y, w, h = bounds
+        if w <= 0 or h <= 0:
+            continue
+        texts.append((y + h / 2.0, x, text, bounds))
+    if not texts:
+        return []
+    counts = {}
+    for _y, x, _t, _b in texts:
+        key = int(round(x))
+        counts[key] = counts.get(key, 0) + 1
+    col = max(counts, key=lambda k: (counts[k], k))
+    texts = [t for t in texts if abs(t[1] - col) <= 3]
+    texts.sort(key=lambda t: (t[0], t[1]))
+    rows = []
+    i = 0
+    while i < len(texts):
+        ty, _x, name, bounds = texts[i]
+        artist = ""
+        if i + 1 < len(texts) and 18 <= texts[i + 1][0] - ty <= 30:
+            artist = texts[i + 1][2]
+            i += 2
+        else:
+            i += 1
+        play = None
+        for ename, etype, eb in elements:
+            if etype != 50000 or (ename or "").strip() != "播放" or not eb:
+                continue
+            if abs((eb[1] + eb[3] / 2.0) - ty) <= 26:
+                play = [int(round(eb[0] + eb[2] / 2.0)),
+                        int(round(eb[1] + eb[3] / 2.0))]
+                break
+        rows.append({"title": name, "artist": artist,
+                     "y": int(round(ty)), "queue_play": play})
+    seen, out = set(), []
+    for row in rows:
+        key = (row["title"], row["artist"])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
+
+
 class _QQMusicProbe:
     """一次性读取 QQ 音乐窗口里的播放进度（只读 UIA3，独立 STA 线程）。
 
@@ -5156,6 +5443,206 @@ class _QQMusicProbe:
             return None, ""
         return best[0], best[1]
 
+    QUEUE_TITLE = "播放队列"
+
+    def _queue_window(self):
+        """返回 QQ 音乐「播放队列」窗口句柄（不要求窗口可见）。"""
+        user32 = ctypes.windll.user32
+        user32.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p,
+                                                    ctypes.POINTER(ctypes.c_ulong)]
+        user32.GetWindowThreadProcessId.restype = ctypes.c_ulong
+        user32.GetWindowTextLengthW.argtypes = [ctypes.c_void_p]
+        user32.GetWindowTextLengthW.restype = ctypes.c_int
+        user32.GetWindowTextW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p,
+                                          ctypes.c_int]
+        user32.GetWindowTextW.restype = ctypes.c_int
+        found = []
+
+        @ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p)
+        def cb(hwnd, _lparam):
+            try:
+                pid = ctypes.c_ulong(0)
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                exe = (_pid_image_name(pid.value) or "").lower()
+                if exe not in self.WINDOW_EXES:
+                    return 1
+                n = int(user32.GetWindowTextLengthW(hwnd))
+                if n <= 0:
+                    return 1
+                buf = ctypes.create_unicode_buffer(n + 1)
+                user32.GetWindowTextW(hwnd, buf, n + 1)
+                if self.QUEUE_TITLE in buf.value:
+                    found.append(int(hwnd))
+                    return 0
+            except Exception:
+                pass
+            return 1
+
+        try:
+            user32.EnumWindows(cb, None)
+        except Exception:
+            return None
+        return found[0] if found else None
+
+    def read_queue(self, timeout: float = 6.0) -> dict:
+        """读取「播放队列」的可见行；在独立 STA 线程里跑，超时就放弃。"""
+        cls = type(self)
+        with cls._gate_lock:
+            if (cls._gate_owner is not None
+                    and time.monotonic() - cls._gate_ts < cls.GATE_STALE):
+                return {"ok": False, "reason": "busy", "rows": []}
+            cls._gate_seq += 1
+            token = cls._gate_seq
+            cls._gate_owner = token
+            cls._gate_ts = time.monotonic()
+        box = {}
+
+        def runner():
+            try:
+                box.update(self._queue_run())
+            except Exception:
+                log("QQ 队列读取异常:\n" + traceback.format_exc())
+                box.update({"ok": False, "reason": "exception", "rows": []})
+            finally:
+                with cls._gate_lock:
+                    if cls._gate_owner == token:
+                        cls._gate_owner = None
+
+        th = threading.Thread(target=runner, daemon=True, name="qq-queue")
+        th.start()
+        th.join(max(1.0, float(timeout)))
+        if th.is_alive():
+            return {"ok": False, "reason": "timeout", "rows": []}
+        return box or {"ok": False, "reason": "no-result", "rows": []}
+
+    def _queue_run(self) -> dict:
+        ole = self._oleaut = ctypes.OleDLL("ole32")
+        uia = root = cond = arr = None
+        elements = []
+        try:
+            ole = ctypes.OleDLL("ole32")
+            self._oleaut = ctypes.OleDLL("oleaut32")
+            self._oleaut.SysFreeString.argtypes = [ctypes.c_void_p]
+            self._oleaut.SysFreeString.restype = None
+            if (ole.CoInitializeEx(None, 0x2) & 0xFFFFFFFF) not in (0, 1):
+                return {"ok": False, "reason": "com-init", "rows": []}
+            hwnd = self._queue_window()
+            if not hwnd:
+                return {"ok": False, "reason": "no-queue", "rows": []}
+            uia = ctypes.c_void_p()
+            if ole.CoCreateInstance(
+                    ctypes.byref(_UIA_CLSID_CUIAUTOMATION8), None, 1,
+                    ctypes.byref(_UIA_IID_IUIAUTOMATION),
+                    ctypes.byref(uia)) != 0:
+                return {"ok": False, "reason": "uia-create", "rows": []}
+            root = ctypes.c_void_p()
+            if _uia_call(uia, 6, ctypes.c_long, ctypes.c_void_p,
+                         ctypes.POINTER(ctypes.c_void_p))(
+                    uia, ctypes.c_void_p(hwnd), ctypes.byref(root)) != 0:
+                return {"ok": False, "reason": "element", "rows": []}
+            cond = ctypes.c_void_p()
+            _uia_call(uia, 21, ctypes.c_long,
+                      ctypes.POINTER(ctypes.c_void_p))(uia, ctypes.byref(cond))
+            arr = ctypes.c_void_p()
+            if _uia_call(root, 6, ctypes.c_long, ctypes.c_int, ctypes.c_void_p,
+                         ctypes.POINTER(ctypes.c_void_p))(
+                    root, _UIA_TREE_DESCENDANTS, cond,
+                    ctypes.byref(arr)) != 0:
+                return {"ok": False, "reason": "findall", "rows": []}
+            count = ctypes.c_int()
+            _uia_call(arr, 3, ctypes.c_long,
+                      ctypes.POINTER(ctypes.c_int))(arr, ctypes.byref(count))
+            for i in range(min(count.value, 4000)):
+                elem = ctypes.c_void_p()
+                if _uia_call(arr, 4, ctypes.c_long, ctypes.c_int,
+                             ctypes.POINTER(ctypes.c_void_p))(
+                        arr, i, ctypes.byref(elem)) != 0:
+                    continue
+                try:
+                    name = self._prop(elem, _UIA_PROP_NAME) or ""
+                    ctype = self._prop(elem, _UIA_PROP_CONTROLTYPE) or 0
+                    elements.append((str(name), int(ctype), self._bounds(elem)))
+                finally:
+                    _uia_release(elem)
+            rows = _queue_rows_from_elements(elements)
+            return {"ok": bool(rows), "rows": rows, "hwnd": int(hwnd),
+                    "reason": "" if rows else "empty"}
+        finally:
+            if arr:
+                _uia_release(arr)
+            if cond:
+                _uia_release(cond)
+            if root:
+                _uia_release(root)
+            if uia:
+                _uia_release(uia)
+            try:
+                ole.CoUninitialize()
+            except Exception:
+                pass
+
+    def play_queue_item(self, title: str, artist: str = "") -> dict:
+        """点「播放队列」里某一行的播放按钮，让 QQ 音乐切到这首歌。"""
+        info = self.read_queue(8.0)
+        rows = info.get("rows") or []
+        hwnd = info.get("hwnd")
+        target = (title or "").strip()
+        if not target or not rows or not hwnd:
+            return {"ok": False, "reason": info.get("reason") or "no-queue"}
+        match = next((row for row in rows if row["title"] == target), None)
+        if match is None:
+            match = next((row for row in rows
+                          if target in row["title"] or row["title"] in target),
+                         None)
+        if match is None:
+            return {"ok": False, "reason": "not-visible"}
+        self._focus_window(hwnd)
+        user32 = ctypes.windll.user32
+        user32.SetCursorPos(100, int(match["y"]))
+        time.sleep(0.4)
+        hovered = self.read_queue(6.0)
+        point = match.get("queue_play")
+        for row in hovered.get("rows") or []:
+            if row["title"] == match["title"] and row.get("queue_play"):
+                point = row["queue_play"]
+                break
+        if not point:
+            point = [100, int(match["y"])]
+        self._click_point(point)
+        return {"ok": True, "title": match["title"],
+                "artist": match["artist"]}
+
+    def _focus_window(self, hwnd):
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        user32.GetForegroundWindow.restype = ctypes.c_void_p
+        user32.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p,
+                                                    ctypes.POINTER(ctypes.c_ulong)]
+        user32.GetWindowThreadProcessId.restype = ctypes.c_ulong
+        user32.AttachThreadInput.argtypes = [ctypes.c_ulong, ctypes.c_ulong,
+                                             ctypes.c_int]
+        user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+        user32.BringWindowToTop.argtypes = [ctypes.c_void_p]
+        user32.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        kernel32.GetCurrentThreadId.restype = ctypes.c_ulong
+        user32.ShowWindow(ctypes.c_void_p(int(hwnd)), 9)
+        fg = user32.GetForegroundWindow() or 0
+        t_fg = user32.GetWindowThreadProcessId(ctypes.c_void_p(fg), None)
+        t_me = kernel32.GetCurrentThreadId()
+        if t_fg:
+            user32.AttachThreadInput(t_me, t_fg, 1)
+        user32.BringWindowToTop(ctypes.c_void_p(int(hwnd)))
+        user32.SetForegroundWindow(ctypes.c_void_p(int(hwnd)))
+        if t_fg:
+            user32.AttachThreadInput(t_me, t_fg, 0)
+        time.sleep(0.35)
+
+    def _click_point(self, point):
+        user32 = ctypes.windll.user32
+        user32.SetCursorPos(int(point[0]), int(point[1]))
+        time.sleep(0.12)
+        user32.mouse_event(0x0002, 0, 0, 0, 0)
+        user32.mouse_event(0x0004, 0, 0, 0, 0)
 
 _MUSIC_AUMID_KEYS = ("qq", "cloudmusic", "netease", "spotify", "wmplayer",
                      "zune", "foobar", "kugou", "kuwo", "migu", "music")
@@ -5384,20 +5871,26 @@ class MediaWatcher(QObject):
         return best
 
     async def _cover_bytes(self, props):
-        try:
-            thumb = props.thumbnail
-            if thumb is None:
-                return None
-            stream = await asyncio.wait_for(thumb.open_read_async(), 10.0)
-            size = int(stream.size)
-            reader = DataReader(stream)
-            await asyncio.wait_for(reader.load_async(size), 10.0)
-            buf = bytearray(size)
-            reader.read_bytes(buf)  # winsdk: 传入数组就地填充
-            return bytes(buf)
-        except Exception:
-            log("cover read failed:\n" + traceback.format_exc())
-            return None
+        for attempt in (0, 1):
+            try:
+                thumb = props.thumbnail
+                if thumb is None:
+                    return None
+                stream = await asyncio.wait_for(thumb.open_read_async(), 6.0)
+                size = int(stream.size)
+                if size <= 0 or size > 12 * 1024 * 1024:
+                    return None
+                reader = DataReader(stream)
+                await asyncio.wait_for(reader.load_async(size), 6.0)
+                buf = bytearray(size)
+                reader.read_bytes(buf)  # winsdk: 传入数组就地填充
+                return bytes(buf)
+            except Exception:
+                if attempt == 0:
+                    await asyncio.sleep(0.15)
+                    continue
+                log("cover read failed:\n" + traceback.format_exc())
+        return None
 
     async def _main(self):
         while not self._ready.is_set():
@@ -5500,17 +5993,31 @@ class MediaWatcher(QObject):
                 key = (title, artist)
                 if key != self._key:
                     self._key = key
-                    cover = await self._cover_bytes(props)
-                    self.mediaChanged.emit({
+                    payload = {
                         "title": title,
                         "artist": artist,
                         "album": props.album_title or "",
                         "source": sid,
-                        "cover": cover,
+                        "cover": None,
                         # 歌曲总时长：歌词多源择优时用来判断"末行是否贴合全长"
                         # （同时喂给酷狗搜索做时长对齐，脏值会直接带歪匹配）
                         "duration": _sane_duration(tl),
-                    })
+                    }
+                    cache = getattr(type(self), "_cover_cache", None)
+                    if cache is None:
+                        cache = type(self)._cover_cache = {}
+                    cached = cache.get(key)
+                    if cached:
+                        payload["cover"] = cached
+                    self.mediaChanged.emit(dict(payload))
+                    if not payload["cover"]:
+                        cover = await self._cover_bytes(props)
+                        if cover:
+                            cache[key] = cover
+                            while len(cache) > 24:
+                                cache.pop(next(iter(cache)))
+                            payload["cover"] = cover
+                            self.mediaChanged.emit(dict(payload))
                 # 二次读取的原始 SMTC 状态只用来判断「僵死是否已恢复」，不能
                 # 覆盖桥接结果；否则 WASAPI 兜底会在同一轮被立刻抹掉。
                 raw_status = _status_name(
@@ -5761,7 +6268,7 @@ def char_transform(cx: float, y: float, ch_w: float,
         tr.translate(-px, 0)
     return tr
 
-APP_VERSION = "2.0.10"
+APP_VERSION = "2.0.13"
 
 # LRCLIB 的 User-Agent：Desktop-sing/<版本>，随 APP_VERSION 走（隐私声明里
 # 描述为「自己的名称标识 + 版本号」，改版本不用再动声明）。
@@ -6542,12 +7049,18 @@ def build_message_box(parent, title: str, text: str, informative: str = "",
     QMessageBox { background: #15181f; }
     QMessageBox QLabel { color: #dfe4ee; font-family: "Microsoft YaHei UI"; font-size: 13px; }
     QMessageBox QLabel#qt_msgbox_informativelabel { color: #98a0b2; font-size: 12px; }
-    QMessageBox QPushButton { background: #1e222b; color: #dfe4ee;
-                              border: 1px solid rgba(255,255,255,24);
-                              border-radius: 8px; padding: 6px 18px; min-width: 60px; }
-    QMessageBox QPushButton:hover { border-color: __A__; color: #ffffff; }
+    QMessageBox QPushButton { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                                         stop:0 rgba(255,255,255,16), stop:1 rgba(255,255,255,6));
+                              color: #dfe4ee;
+                              border: 1px solid rgba(255,255,255,20);
+                              border-top-color: rgba(255,255,255,40);
+                              border-radius: 12px; padding: 6px 18px; min-width: 60px; }
+    QMessageBox QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                                               stop:0 rgba(255,255,255,28), stop:1 rgba(255,255,255,10));
+                                   border-color: rgba(255,255,255,34);
+                                   border-top-color: rgba(255,255,255,60); color: #ffffff; }
     QMessageBox QPushButton:default { background: __A__; color: #10131a;
-                                      border: none; font-weight: 700; }
+                                      border: 1px solid rgba(255,255,255,46); font-weight: 700; }
     QMessageBox QPushButton:default:hover { background: #ffffff; }
     """.replace("__A__", a))
     return box
@@ -6634,12 +7147,14 @@ class WelcomeDialog(QDialog):
             "QDialog{background:#14171f;}"
             "QLabel#wdtitle{color:#f2f6fb;font-size:17px;font-weight:600;}"
             "QLabel#wdbody{color:#b8c4d4;font-size:12.5px;line-height:1.5;}"
-            "QPushButton#wdgo{background:%s;color:#0d1017;border:none;"
-            "border-radius:8px;padding:8px 18px;font-weight:600;}"
+            "QPushButton#wdgo{background:%s;color:#0d1017;"
+            "border:1px solid rgba(255,255,255,42);"
+            "border-radius:12px;padding:8px 18px;font-weight:600;}"
             "QPushButton#wdgo:hover{background:%s;}"
-            "QPushButton#wdghost{background:transparent;color:#9fb0c3;"
-            "border:1px solid #3a4356;border-radius:8px;padding:8px 16px;}"
-            "QPushButton#wdghost:hover{color:#e6ecf5;border-color:#5a6a86;}"
+            "QPushButton#wdghost{background:rgba(255,255,255,8);color:#9fb0c3;"
+            "border:1px solid rgba(255,255,255,20);border-top-color:rgba(255,255,255,40);"
+            "border-radius:12px;padding:8px 16px;}"
+            "QPushButton#wdghost:hover{color:#e6ecf5;border-color:rgba(255,255,255,34);}"
             % (DEFAULT_ACCENT1, DEFAULT_ACCENT2))
 
 
@@ -6834,7 +7349,7 @@ class LyricOverlay(QWidget):
         self.listen_store = listening_store.ListeningStore()
         self._listen_enabled = lambda: bool(self.cfg.get("listen_stats", True))
         self.listen_tracker = listening_store.ListeningTracker(
-            self.listen_store, self._listen_enabled)
+            self.listen_store, self._listen_enabled, logger=log)
         # ★ 标题要放在 set_ui_lang 之后：放在前面会用导入期的语言（恒 zh-CN），
         #   英文/日文模式下窗口标题留着中文（真机抓窗口枚举时能看到）。
         self.setWindowTitle(_tr("桌面歌词"))
@@ -7237,7 +7752,7 @@ class LyricOverlay(QWidget):
         self.display_mode = "topmost" if self.display_mode == "desktop" else "desktop"
         self._apply_display_mode()
         self._save_position()
-        self.tray.showMessage(_tr("桌面歌词"),
+        self._notify(_tr("桌面歌词"),
                               "已切换为：%s" % (_tr("置顶悬浮（覆盖窗口）") if self.display_mode == "topmost"
                                               else _tr("常驻桌面（不遮挡窗口）")),
                               QSystemTrayIcon.Information, 1500)
@@ -7510,7 +8025,7 @@ class LyricOverlay(QWidget):
     def _toggle_autostart(self):
         on = not autostart_enabled()
         if set_autostart(on):
-            self.tray.showMessage(_tr("桌面歌词"), _tr("已开启开机自启") if on else _tr("已关闭开机自启"),
+            self._notify(_tr("桌面歌词"), _tr("已开启开机自启") if on else _tr("已关闭开机自启"),
                                   QSystemTrayIcon.Information, 1500)
 
     def _about(self):
@@ -7564,7 +8079,7 @@ class LyricOverlay(QWidget):
         self.saver.finished.connect(self._on_saver_closed)
         self.saver.start()
         if not auto:
-            self.tray.showMessage(_tr("桌面歌词"), _tr("氛围屏保已开启 · 按任意键或点击退出"),
+            self._notify(_tr("桌面歌词"), _tr("氛围屏保已开启 · 按任意键或点击退出"),
                                   QSystemTrayIcon.Information, 1800)
 
     def _on_saver_closed(self):
@@ -7861,7 +8376,7 @@ class LyricOverlay(QWidget):
         save_config(self.cfg)
         set_ui_lang(lang)
         self.retranslate_ui()
-        self.tray.showMessage(_tr("桌面歌词"), _tr("界面语言（立即生效）"),
+        self._notify(_tr("桌面歌词"), _tr("界面语言（立即生效）"),
                               QSystemTrayIcon.Information, 2600)
 
     def retranslate_ui(self):
@@ -7980,7 +8495,7 @@ class LyricOverlay(QWidget):
 
     def _toggle_lock(self):
         self.set_locked(not self.locked)
-        self.tray.showMessage(_tr("桌面歌词"), _tr("已开启位置锁定") if self.locked else _tr("已关闭位置锁定"),
+        self._notify(_tr("桌面歌词"), _tr("已开启位置锁定") if self.locked else _tr("已关闭位置锁定"),
                               QSystemTrayIcon.Information, 1200)
 
     def media_command(self, cmd: str):
@@ -8007,7 +8522,7 @@ class LyricOverlay(QWidget):
         self._trans_map = {}
         self._reset_line_state()
         self._spans_cache.clear()
-        self.tray.showMessage(
+        self._notify(
             _tr("桌面歌词"),
             _tr("正在重新获取歌词（只取 %s 的版本）…") % _tr("该歌手")
             if strict_artist else _tr("正在重新获取歌词…"),
@@ -8033,7 +8548,7 @@ class LyricOverlay(QWidget):
             msg = "已启用 %d 项；%s 被占用" % (n, " ".join(busy))
         else:
             msg = "全局快捷键已启用（共 %d 项：Ctrl+Alt+P 播放 / 暂停）" % n
-        self.tray.showMessage(_tr("桌面歌词"), msg, QSystemTrayIcon.Information, 2600)
+        self._notify(_tr("桌面歌词"), msg, QSystemTrayIcon.Information, 2600)
 
     def _on_hotkey(self, act: str):
         if act == "toggle":
@@ -8086,7 +8601,7 @@ class LyricOverlay(QWidget):
             # 打包成 --noconsole 后 stderr 是空的，用户看到的就是「点了没反应」。
             # 这里必须自己兜住并落日志，否则这类故障永远查不到。
             log("设置面板打开失败:\n" + traceback.format_exc())
-            self.tray.showMessage(_tr("桌面歌词"),
+            self._notify(_tr("桌面歌词"),
                                   _tr("设置面板打开失败，详情见日志"),
                                   QSystemTrayIcon.Warning, 3000)
             return False
@@ -8139,7 +8654,7 @@ class LyricOverlay(QWidget):
                 self.main_player.activateWindow()
         except Exception:
             log("player window open failed:\n" + traceback.format_exc())
-            self.tray.showMessage(_tr("桌面歌词"), _tr("播放器窗口打开失败，详情见日志"),
+            self._notify(_tr("桌面歌词"), _tr("播放器窗口打开失败，详情见日志"),
                                   QSystemTrayIcon.Warning, 3000)
 
     def _on_player_closed(self):
@@ -8248,7 +8763,40 @@ class LyricOverlay(QWidget):
         self._current_text = ""
         self._next_text = ""
 
+    def _notify(self, title, message, *_args, **_kwargs):
+        """Process-wide silent notice: log + tray tooltip, never a system toast.
+
+        Windows toasts play the system notification sound, and the app must never
+        make noise; every former tray.showMessage call routes here instead.
+        """
+        try:
+            log("notify: %s | %s" % (title, message))
+        except Exception:
+            pass
+        try:
+            self.tray.setToolTip("%s：%s" % (title, message))
+        except Exception:
+            pass
+
     def _apply_media(self, info):
+        if (info and self.song and info.get("cover")
+                and not self.song.get("cover")
+                and (self.song.get("title") or "") == (info.get("title") or "")
+                and (self.song.get("artist") or "") == (info.get("artist") or "")):
+            self.song["cover"] = info["cover"]
+            pix = QPixmap()
+            if pix.loadFromData(info["cover"]):
+                self.cover_pix = pix
+                self._cover_scaled = None
+                self._vinyl_pix = None
+                self._resolve_accent()
+                self._relayout()
+                if self.main_player is not None:
+                    try:
+                        self.main_player.on_track_changed()
+                    except Exception:
+                        log("player cover refresh failed:\n" + traceback.format_exc())
+            return
         try:
             self.listen_tracker.on_media(info)
         except Exception:
@@ -8526,7 +9074,7 @@ class LyricOverlay(QWidget):
             # 主动告知一次（托盘气泡）。不静默——用户听 A 歌手却看到 B 歌手的词，
             # 自己未必发现得了；给一条可点的提示，菜单里也能随时强制重取。
             art = (self.song or {}).get("artist") or "当前歌手"
-            self.tray.showMessage(
+            self._notify(
                 _tr("桌面歌词"), _tr("没找到 %s 的《%s》版本，先显示同名歌歌词。\n如需只认这一版，可点「重新获取歌词」再试。")
                 % (art, (self.song or {}).get("title") or ""),
                 QSystemTrayIcon.Warning, 6000)
@@ -10352,6 +10900,16 @@ class LyricOverlay(QWidget):
 
     # ---------------- QQ 音乐进度校准（只读 UIA，手动触发） ----------------
 
+    def read_qq_queue(self) -> dict:
+        """读取 QQ 音乐「播放队列」的可见行（调用方应在后台线程里用）。"""
+        return _QQMusicProbe().read_queue(8.0)
+
+    def play_qq_queue(self, track) -> dict:
+        """点击队列行的播放按钮，让 QQ 音乐切到该曲（调用方放在后台线程）。"""
+        track = track or {}
+        return _QQMusicProbe().play_queue_item(track.get("title") or "",
+                                               track.get("artist") or "")
+
     def _calibrate_from_qq(self):
         """菜单入口：后台只读一次 QQ 音乐进度，回到主线程再确认。
 
@@ -10366,13 +10924,13 @@ class LyricOverlay(QWidget):
             return
         self._probe_busy = False
         if not self.song or self.status not in ("PLAYING", "PAUSED"):
-            self.tray.showMessage(_tr("桌面歌词"),
+            self._notify(_tr("桌面歌词"),
                                   _tr("当前没有正在播放的歌曲，无法校准"),
                                   QSystemTrayIcon.Information, 2000)
             return
         self._probe_busy = True
         self._probe_started = time.monotonic()
-        self.tray.showMessage(_tr("桌面歌词"),
+        self._notify(_tr("桌面歌词"),
                               _tr("正在读取 QQ 音乐进度…"),
                               QSystemTrayIcon.Information, 1500)
         expected = ((self.song or {}).get("title") or "",
@@ -10412,7 +10970,7 @@ class LyricOverlay(QWidget):
                 "busy": _tr("上一次读取尚未结束，请稍后再试"),
             }.get(reason, _tr("读取失败，请稍后再试"))
             log("QQ 进度校准未完成：reason=%s" % reason)
-            self.tray.showMessage(_tr("桌面歌词"), msg,
+            self._notify(_tr("桌面歌词"), msg,
                                   QSystemTrayIcon.Information, 2600)
             return
         # 采样期间切了歌：这次结果对应的是上一首，直接作废，绝不能套到新歌上
@@ -10420,7 +10978,7 @@ class LyricOverlay(QWidget):
         if expected != ((self.song or {}).get("title") or "",
                         (self.song or {}).get("artist") or ""):
             log("QQ 进度校准作废：采样期间歌曲已切换")
-            self.tray.showMessage(_tr("桌面歌词"),
+            self._notify(_tr("桌面歌词"),
                                   _tr("读取期间歌曲已切换，请重新校准"),
                                   QSystemTrayIcon.Information, 2400)
             return
@@ -10430,7 +10988,7 @@ class LyricOverlay(QWidget):
             # 总时长对不上，说明读到的可能是另一个窗口/另一首歌：宁可放弃
             log("QQ 进度校准作废：总时长不符（QQ %.1fs vs SMTC %.1fs）"
                 % (qq_dur, self.duration))
-            self.tray.showMessage(_tr("桌面歌词"),
+            self._notify(_tr("桌面歌词"),
                                   _tr("QQ 音乐的歌曲与当前歌词不一致，未校准"),
                                   QSystemTrayIcon.Information, 2600)
             return
@@ -10440,7 +10998,7 @@ class LyricOverlay(QWidget):
         cur = self._current_pos()
         diff = qq_pos - cur
         if abs(diff) < 0.8:
-            self.tray.showMessage(_tr("桌面歌词"),
+            self._notify(_tr("桌面歌词"),
                                   _tr("进度已经对齐（差 %.1fs），无需校准") % diff,
                                   QSystemTrayIcon.Information, 2200)
             return
@@ -10509,11 +11067,12 @@ class Switch(QWidget):
 
     toggled = Signal(bool)
 
-    def __init__(self, checked: bool = False, parent=None, w: int = 44, h: int = 24):
+    def __init__(self, checked: bool = False, parent=None, w: int = 51, h: int = 31):
         super().__init__(parent)
         self._on = bool(checked)
         self._w, self._h = int(w), int(h)
         self._accent = QColor(DEFAULT_ACCENT1)
+        self._theme = None
         self._knob = 1.0 if self._on else 0.0
         self._hover = False
         self.setFixedSize(self._w, self._h)
@@ -10531,6 +11090,10 @@ class Switch(QWidget):
 
     def set_accent(self, c: QColor):
         self._accent = QColor(c)
+        self.update()
+
+    def set_theme(self, theme):
+        self._theme = theme
         self.update()
 
     def isChecked(self) -> bool:
@@ -10582,7 +11145,13 @@ class Switch(QWidget):
         rad = r.height() / 2.0
         k = self._knob
         # 轨道：关=深灰，开=主色，按圆钮位置插值
-        off = QColor(56, 61, 74)
+        if self._theme is None:
+            off = QColor(56, 61, 74)
+        else:
+            off = _qss_color(self._theme.surface_sunken, QColor(56, 61, 74))
+            if self._theme.appearance == "light":
+                off = _qss_color(self._theme.surface_sunken,
+                                 QColor(229, 229, 234))
         ac = QColor(self._accent)
         track = QColor(int(off.red() + (ac.red() - off.red()) * k),
                        int(off.green() + (ac.green() - off.green()) * k),
@@ -10604,7 +11173,9 @@ class Switch(QWidget):
         p.setPen(Qt.NoPen)
         p.setBrush(QColor(0, 0, 0, 70))
         p.drawEllipse(QPointF(kx, r.center().y() + 1.0), kr, kr)
-        p.setBrush(QColor(250, 252, 255))
+        knob = (QColor(250, 252, 255) if self._theme is None else
+                _qss_color(self._theme.surface_raised, QColor(250, 252, 255)))
+        p.setBrush(knob)
         p.drawEllipse(QPointF(kx, r.center().y()), kr, kr)
         if self.hasFocus():
             p.setBrush(Qt.NoBrush)
@@ -10689,21 +11260,6 @@ class Segmented(QWidget):
     def value(self) -> str:
         return self._cur
 
-    def sizeHint(self):
-        # 必须有真实 sizeHint，否则 Expanding 策略下在面板布局里塌缩成 0 宽（控件看不见）
-        f = QFont("Microsoft YaHei UI")
-        f.setPixelSize(max(12, int(self._h * 0.42)))
-        f.setBold(True)
-        fm = QFontMetrics(f)
-        pad = 10
-        inner = 14                       # 选中滑块左右内边距
-        total = pad * 2 + inner * 2 * len(self._items)
-        for _k, label in self._items:
-            total += fm.horizontalAdvance(label)
-        return QSize(max(96, total), self._h)
-
-    def minimumSizeHint(self):
-        return self.sizeHint()
 
     def set_accent(self, c: QColor):
         self._accent = QColor(c)
@@ -10713,6 +11269,15 @@ class Segmented(QWidget):
         """深浅主题下轨道/文字改用 token，避免浅色里出现一条黑槽。"""
         self._theme = theme
         self.update()
+
+    def _resolve_theme(self):
+        parent = self.parent()
+        while parent is not None:
+            theme = getattr(parent, "_theme", None)
+            if theme is not None:
+                return theme
+            parent = parent.parent()
+        return None
 
     def setValue(self, key, emit: bool = False, animate: bool = True):
         if key is None:
@@ -10781,55 +11346,34 @@ class Segmented(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
         rad = h / 2.0
-        # 轨道要比卡片底**明显更深**才读得出"凹槽"。原来用 #181b22，跟卡片底色
-        # （#1c2029~#14171e）几乎一样，轨道整个糊进卡片里，看着像选项在飘。
-        # 轨道要比卡片底**明显更深**才读得出"凹槽"。原来用 #181b22，跟卡片底色
-        # （#1c2029~#14171e）几乎一样，轨道整个糊进卡片里，看着像选项在飘。
-        # 再用竖向渐变把顶部压得更暗，凹槽就有了"深度"而不只是一块深色。
-        theme = self._theme
+        theme = self._theme or self._resolve_theme()
+        dark = bool(theme is not None and theme.appearance == "dark")
         if theme is None:
-            track_top, track_bottom = QColor(7, 9, 13), QColor(20, 24, 31)
-            edge = QColor(0, 0, 0, 120)
-            ink_sel, ink_hover, ink_idle = (QColor(18, 20, 26),
-                                            QColor(214, 221, 233),
-                                            QColor(178, 185, 198))
+            track = QColor(38, 42, 50)
+            knob = QColor(99, 99, 102)
+            ink_sel = QColor(255, 255, 255)
+            ink_hover = QColor(210, 210, 215)
+            ink_idle = QColor(150, 150, 155)
         else:
-            sunken = _qss_color(theme.surface_sunken, QColor(20, 24, 31))
-            track_top, track_bottom = sunken.darker(106), sunken
-            edge = _qss_color(theme.border_strong, QColor(0, 0, 0, 120))
-            ink_sel = _qss_color(theme.on_accent, QColor(18, 20, 26))
-            ink_hover = _qss_color(theme.text, QColor(214, 221, 233))
-            ink_idle = _qss_color(theme.text_secondary, QColor(178, 185, 198))
-        tg = QLinearGradient(0, 0, 0, h)
-        tg.setColorAt(0.0, track_top)
-        tg.setColorAt(1.0, track_bottom)
-        p.setPen(QPen(edge, 1))
-        p.setBrush(QBrush(tg))
-        p.drawRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), rad, rad)
+            track = _qss_color(theme.surface_sunken, QColor(38, 42, 50))
+            knob = QColor(99, 99, 102) if dark else                 _qss_color(theme.surface_raised, QColor(255, 255, 255))
+            ink_sel = _qss_color(theme.text, QColor(255, 255, 255))
+            ink_hover = _qss_color(theme.text_secondary, QColor(210, 210, 215))
+            ink_idle = _qss_color(theme.text_muted, QColor(150, 150, 155))
+        # iOS segmented control: soft grey track, white pill riding on top.
+        p.setPen(Qt.NoPen)
+        p.setBrush(track)
+        p.drawRoundedRect(QRectF(0, 0, w, h), rad, rad)
         n = max(1, len(self._items))
         seg = w / n
-        pad = 3.0
+        pad = 2.0
         pw, ph = seg - 2 * pad, h - 2 * pad
         pr = ph / 2.0
         sx = pad + self._idx * seg
-        ac = QColor(self._accent)
-        # 选中滑块：先落影、再铺「顶亮底暗」的主色渐变 —— 读成浮在槽上的一块实体，
-        # 而不是"槽里刷了层颜色"。
-        p.setPen(Qt.NoPen)
-        p.setBrush(QColor(0, 0, 0, 84))
-        p.drawRoundedRect(QRectF(sx, pad + 1.5, pw, ph), pr, pr)
-        pg = QLinearGradient(0, pad, 0, pad + ph)
-        if theme is not None:
-            # Use the semantic accent pair instead of a lightened accent:
-            # on_accent is guaranteed >= 4.5:1 on both stops, including 12px.
-            pg.setColorAt(0.0, _qss_color(theme.accent_fill, ac))
-            pg.setColorAt(1.0, _qss_color(theme.accent_pressed, ac.darker(118)))
-        else:
-            pg.setColorAt(0.0, ac.lighter(124))
-            pg.setColorAt(1.0, ac.darker(106))
-        p.setBrush(QBrush(pg))
+        p.setBrush(QColor(0, 0, 0, 26))
+        p.drawRoundedRect(QRectF(sx, pad + 1.0, pw, ph), pr, pr)
+        p.setBrush(knob)
         p.drawRoundedRect(QRectF(sx, pad, pw, ph), pr, pr)
-        # 文字
         f = self._label_font()
         fm = QFontMetrics(f)
         p.setFont(f)
@@ -10838,7 +11382,7 @@ class Segmented(QWidget):
             if sel:
                 p.setPen(ink_sel)
             elif i == self._hover_i:
-                p.setPen(ink_hover)                    # 悬停的未选项提亮，给点击预期
+                p.setPen(ink_hover)
             else:
                 p.setPen(ink_idle)
             p.drawText(QRectF(i * seg, 0, seg, h), Qt.AlignCenter,
@@ -10987,7 +11531,7 @@ def make_card(title: str, parent=None):
     card.setObjectName("card")
     card.setAttribute(Qt.WA_StyledBackground, True)
     lay = QVBoxLayout(card)
-    lay.setContentsMargins(16, 13, 16, 15)
+    lay.setContentsMargins(16, 14, 16, 14)
     lay.setSpacing(10)
     lb = QLabel(title)
     lb.setObjectName("cardtitle")
@@ -11665,16 +12209,19 @@ class SettingsPanel(QWidget):
     font_done = Signal(str, object)  # 字体下载完成：(条目 id, 族名列表 或 异常)
 
     def __init__(self, ov: LyricOverlay,
-                 flags=Qt.Window | Qt.WindowStaysOnTopHint):
+                 flags=Qt.Window | Qt.WindowStaysOnTopHint,
+                 embedded: bool = False):
         super().__init__(None, flags)
         self.ov = ov
+        self.embedded = bool(embedded)
         self.setWindowTitle(_tr("桌面歌词 · 设置"))
         self.setWindowIcon(make_app_icon())
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(0 if self.embedded else 520)
         # 面板本身可获焦：打开时把焦点收在面板上，避免第一个按钮一进来就顶着
         # 焦点描边（看着像"预设选中了某个操作"）。Tab 仍然能在控件间走。
         self.setFocusPolicy(Qt.StrongFocus)
-        self.resize(548, 760)
+        if not self.embedded:
+            self.resize(548, 760)
         self._content_accent = QColor(ov.accent1)
         self._theme = self._current_theme()
         self._chrome_accent = (QColor(self._theme.accent_fill)
@@ -11759,7 +12306,8 @@ class SettingsPanel(QWidget):
             self._fx.setOpacity(0.0)
             self._fade.start()
         # 焦点落在面板本身，而不是自动落到第一个按钮上（否则首个按钮一开面板就带焦点环）
-        self.setFocus()
+        if self.isWindow():
+            self.setFocus()
 
     # ---------- 控件工厂 ----------
 
@@ -11867,10 +12415,14 @@ class SettingsPanel(QWidget):
         self.b_refetch.clicked.connect(ov._refresh_lyrics)
         self.b_calib.clicked.connect(lambda *_: ov._calibrate_from_qq())
         ctl.addStretch(1)
-        ctl.addWidget(self.b_calib)
-        ctl.addWidget(self.b_refetch)
+        if not self.embedded:
+            ctl.addWidget(self.b_calib)
+            ctl.addWidget(self.b_refetch)
         hl.addLayout(ctl)
+        self._head = head
         root.addWidget(head)
+        if self.embedded:
+            head.hide()
 
         # ===== 疑似错配提示条 =====
         # 找不到当前歌手的版本、暂用同名歌歌词时出现。给用户一个「只认这一版」
@@ -11899,14 +12451,26 @@ class SettingsPanel(QWidget):
         content = QWidget()
         content.setObjectName("content")
         cv = QVBoxLayout(content)
-        cv.setContentsMargins(14, 12, 14, 14)
-        cv.setSpacing(11)
+        if self.embedded:
+            # 右边留出滚动条的槽位：否则 2px 手柄会压在卡片右边缘上
+            cv.setContentsMargins(0, 0, 10, 0)
+        else:
+            cv.setContentsMargins(14, 12, 14, 24)
+        cv.setSpacing(14)
         scroll.setWidget(content)
         self._content = content
         root.addWidget(scroll, 1)
 
         # ---- 歌词同步 ----
         c1, l1 = make_card(_tr("歌词同步"))
+        self._sync_card = c1
+        if self.embedded:
+            ops = QHBoxLayout()
+            ops.setSpacing(8)
+            ops.addStretch(1)
+            ops.addWidget(self.b_calib)
+            ops.addWidget(self.b_refetch)
+            l1.addLayout(ops)
         row = QHBoxLayout()
         row.setSpacing(10)
         self.off_slider = self._slider(-int(OFFSET_LIMIT * 10), int(OFFSET_LIMIT * 10),
@@ -11950,8 +12514,8 @@ class SettingsPanel(QWidget):
         self._sync_color_hint()
         cv.addWidget(c7)
 
-        # ---- 外观 ----
-        c2, l2 = make_card(_tr("外观"))
+        # ---- 歌词外观 ----
+        c2, l2 = make_card(_tr("歌词外观"))
         self.style_combo = QComboBox()
         for key, name in STYLE_NAMES.items():
             self.style_combo.addItem(_tr(name), key)
@@ -11988,12 +12552,9 @@ class SettingsPanel(QWidget):
         self.fade_check = self._switch(ov.edge_fade, self._on_fade)
         l2.addWidget(make_row(_tr("边缘虚化"), self.fade_slider, self.fade_check))
 
-        self.dm_seg = Segmented([("desktop", _tr("常驻桌面")), ("topmost", _tr("置顶悬浮"))],
-                                ov.display_mode, h=32)
-        self.dm_seg.set_accent(self._chrome_accent)
-        self.dm_seg.changed.connect(self._on_display_seg)
-        self._segs.append(self.dm_seg)
-        l2.addWidget(make_row(_tr("显示模式"), self.dm_seg, expand=True))
+        group = QLabel(_tr("显示内容"))
+        group.setObjectName("groupLabel")
+        l2.addWidget(group)
 
         self.cover_check = self._switch(ov.show_cover, ov.set_show_cover)
         self.trans_check = self._switch(ov.show_trans, ov.set_show_trans)
@@ -12011,9 +12572,10 @@ class SettingsPanel(QWidget):
 
         # ---- 字体库 ----
         c3, l3 = make_card(_tr("字体库 · 免费商用一键下载"))
-        tip3 = QLabel(_tr("下载后自动装入并立即生效；字体保存在 %APPDATA%\\Desktop-sing\\fonts，非系统字体也能用，不局限于电脑自带字体。"))
+        tip3 = QLabel(_tr("下载后自动装入并立即生效；字体保存在本机字体目录。"))
         tip3.setObjectName("hint")
         tip3.setWordWrap(True)
+        tip3.setToolTip(_tr("字体保存在 %APPDATA%\\Desktop-sing\\fonts；非系统字体也能用，不局限于电脑自带字体。"))
         l3.addWidget(tip3)
         for ent in FONT_LIBRARY:
             roww = QWidget()
@@ -12046,6 +12608,12 @@ class SettingsPanel(QWidget):
 
         # ---- 悬浮窗 ----
         c4, l4 = make_card(_tr("悬浮窗"))
+        self.dm_seg = Segmented([("desktop", _tr("常驻桌面")), ("topmost", _tr("置顶悬浮"))],
+                                ov.display_mode, h=32)
+        self.dm_seg.set_accent(self._chrome_accent)
+        self.dm_seg.changed.connect(self._on_display_seg)
+        self._segs.append(self.dm_seg)
+        l4.addWidget(make_row(_tr("显示模式"), self.dm_seg, expand=True))
         self.glow_check = self._switch(ov.glow, ov.set_glow)
         self.pfade_check = self._switch(ov.pause_fade, ov.set_pause_fade)
         self.lock_check = self._switch(ov.locked, ov.set_locked)
@@ -12105,12 +12673,13 @@ class SettingsPanel(QWidget):
         self.saver_preview.activated.connect(ov.open_saver)
         self.saver_preview.mousePressEvent = lambda _e: ov.open_saver()
         l5.addWidget(self.saver_preview)
-        h5 = QLabel(_tr("3D 粒子 = 星云随乐缓缓流转；极简 = 纯黑 + 大时钟；"
-                    "音浪 = 底部居中的对称音条；星轨 = 同心圆星轨公转。"
-                    "四种都极慢、低亮度、居中对称，适合写作业/挂机当氛围感，长时间也不烧屏。"
-                    "系统锁屏期间不重复启动，按任意键或点一下鼠标即可退出。"))
+        h5 = QLabel(_tr("四种风格均极慢、低亮度、居中对称；按任意键或点击退出。"))
         h5.setObjectName("hint")
         h5.setWordWrap(True)
+        h5.setToolTip(_tr("3D 粒子 = 星云随乐缓缓流转；极简 = 纯黑 + 大时钟；"
+                          "音浪 = 底部居中的对称音条；星轨 = 同心圆星轨公转。"
+                          "四种都极慢、低亮度、居中对称，适合写作业/挂机当氛围感，长时间也不烧屏。"
+                          "系统锁屏期间不重复启动，按任意键或点一下鼠标即可退出。"))
         l5.addWidget(h5)
         b_saver = QPushButton(_tr("立即进入屏保"))
         b_saver.setObjectName("saver")
@@ -12180,6 +12749,8 @@ class SettingsPanel(QWidget):
         self.open_player_btn.setCursor(Qt.PointingHandCursor)
         self.open_player_btn.clicked.connect(ov._open_player)
         l6.addWidget(self.open_player_btn)
+        if self.embedded:
+            self.open_player_btn.hide()
         self.player_start_check = self._switch(
             bool(ov.cfg.get("open_player_on_start", True)),
             self._on_player_start)
@@ -12459,12 +13030,12 @@ class SettingsPanel(QWidget):
         try:
             n_left, _bytes = cache_size()
             if failed or n_left:
-                self.ov.tray.showMessage(
+                self.ov._notify(
                     _tr("桌面歌词"),
                     _tr("已清理大部分歌词缓存，%d 个文件删不掉（可能正被占用）。\n重启程序后再试一次即可。") % n_left,
                     QSystemTrayIcon.Warning, 5000)
             else:
-                self.ov.tray.showMessage(
+                self.ov._notify(
                     _tr("桌面歌词"), _tr("歌词缓存已清理"),
                     QSystemTrayIcon.Information, 2000)
         except Exception:
@@ -12495,7 +13066,7 @@ class SettingsPanel(QWidget):
             self.ov.listen_tracker.reset()
             if self.ov.main_player is not None:
                 self.ov.main_player.refresh_all()
-            self.ov.tray.showMessage(_tr("桌面歌词"), _tr("听歌数据已清空"),
+            self.ov._notify(_tr("桌面歌词"), _tr("听歌数据已清空"),
                                      QSystemTrayIcon.Information, 1800)
         except Exception:
             log("clear listening data failed:\n" + traceback.format_exc())
@@ -12519,7 +13090,7 @@ class SettingsPanel(QWidget):
         if not set_autostart(bool(on)):
             self.auto_check.setChecked(not on, animate=True)   # 写注册表失败则回弹
         else:
-            self.ov.tray.showMessage(_tr("桌面歌词"), _tr("已%s开机自启") % (_tr("开启") if on else _tr("关闭")),
+            self.ov._notify(_tr("桌面歌词"), _tr("已%s开机自启") % (_tr("开启") if on else _tr("关闭")),
                                      QSystemTrayIcon.Information, 1500)
 
     # ---------- 刷新 / 换肤 ----------
@@ -12616,6 +13187,10 @@ class SettingsPanel(QWidget):
 
     def set_theme(self, theme):
         """Chrome accent follows the app theme; cover colour is content-only."""
+        if theme is None:
+            theme = self._current_theme()
+        if theme is None:
+            return
         self._theme = theme
         self._chrome_accent = QColor(theme.accent_fill)
         self._accent = self._chrome_accent
@@ -12679,15 +13254,17 @@ class SettingsPanel(QWidget):
         QScrollArea#scroll > QWidget > QWidget { background: __BG__; }
         QLabel#title { color: __TEXT__; font-size: 19px; font-weight: 700; }
         QLabel#song  { color: __TEXT2__; font-size: 12px; }
-        QLabel#hint  { color: __MUTED__; font-size: 12px; }
+        QLabel#hint  { color: __MUTED__; font-size: 13px; }
+        QLabel#groupLabel { color: __MUTED__; font-size: 12px; font-weight: 600;
+                            padding-top: 4px; }
+        QWidget#divider { background: __DIVIDER__; max-height: 1px; }
         QLabel#footer { color: __MUTED__; font-size: 12px; padding: 4px 0 2px 0; }
         QLabel#value { color: __TEXT2__; font-size: 12px; }
-        QLabel#rowlabel { color: __TEXT2__; font-size: 13px; }
+        QLabel#rowlabel { color: __TEXT2__; font-size: 14px; }
         QLabel#rowhint { color: __MUTED__; font-size: 12px; }
-        QLabel#cardtitle { color: __A2__; font-size: 12px; font-weight: 700;
-                           letter-spacing: 1px;
-                           border-left: 3px solid __A2__;
-                           padding-left: 8px; padding-top: 1px; padding-bottom: 1px; }
+        QLabel#cardtitle { color: __TEXT__; font-size: 17px; font-weight: 700;
+                           border-left: 3px solid __A__;
+                           padding-left: 8px; }
         QWidget#card { background: __SURF__;
                        border: 1px solid __BORDER__;
                        border-radius: __R_CARD__px; }
@@ -12734,6 +13311,7 @@ class SettingsPanel(QWidget):
                          .replace("__TEXT2__", theme.text_secondary)
                          .replace("__MUTED__", theme.text_muted)
                          .replace("__A2__", theme.accent_text)
+                         .replace("__A__", theme.accent_fill)
                          .replace("__ACCENT__", theme.accent_fill)
                          .replace("__ACCENTH__", theme.accent_hover)
                          .replace("__ACCENTP__", theme.accent_pressed)
@@ -12743,7 +13321,7 @@ class SettingsPanel(QWidget):
                          .replace("__BSTRONG__", theme.border_strong)
                          .replace("__SBH__", theme.scrollbar_handle)
                          .replace("__R_CARD__", str(UI_R_CARD)))
-                self.setStyleSheet(base + "\n" + extra)
+                self.setStyleSheet(base + "\n" + extra + "\n" + arrow_rule)
                 return
             except Exception:
                 pass
@@ -12767,17 +13345,19 @@ class SettingsPanel(QWidget):
         QLabel#vertag { color: #7f8798; font-size: 12px; padding: 2px 7px;
                         border: 1px solid rgba(255,255,255,26); border-radius: 8px; }
         QLabel#song  { color: #98a0b2; font-size: 12px; }
-        QLabel#hint  { color: #79808f; font-size: 12px; }
+        QLabel#hint  { color: #79808f; font-size: 13px; }
+        QLabel#groupLabel { color: #838a99; font-size: 12px; font-weight: 600;
+                            padding-top: 4px; }
+        QWidget#divider { background: #2a2f3a; max-height: 1px; }
         QLabel#footer { color: #79808f; font-size: 12px; padding: 4px 0 2px 0; }
         QLabel#value { color: #cfd6e4; font-size: 12px; }
-        QLabel#rowlabel { color: #c6cddb; font-size: 13px; }
+        QLabel#rowlabel { color: #c6cddb; font-size: 14px; }
         QLabel#rowhint { color: #838a99; font-size: 12px; }
         /* 分区标题：主色文字 + 左侧 3px 主色小竖条。比单纯染色更容易一眼定位分区，
            竖条也把标题和卡片左内边距对齐成一条视觉轴。 */
-        QLabel#cardtitle { color: __A__; font-size: 12px; font-weight: 700;
-                           letter-spacing: 1px;
+        QLabel#cardtitle { color: #dfe4ee; font-size: 17px; font-weight: 700;
                            border-left: 3px solid __A__;
-                           padding-left: 8px; padding-top: 1px; padding-bottom: 1px; }
+                           padding-left: 8px; }
         QLabel#fontname { color: #d6dbe6; font-size: 13px; font-weight: 600; }
         QLabel#fontnote { color: #7d8595; font-size: 12px; }
         /* 卡片：顶部一条受光带 + 上亮下暗的分层描边。原来只有一层平描边 + 微渐变，
@@ -12816,18 +13396,20 @@ class SettingsPanel(QWidget):
                                       selection-color: #10131a; }
         QComboBox QAbstractItemView::item { padding: 6px 10px; border-radius: 6px;
                                             min-height: 20px; }
-        /* 按钮：默认态顶部接光；按下态把受光方向反转（顶部变暗）= "被按进去"。
-           原来按下只是换了个更亮的底色，方向是反的（按下去反而更亮），读着别扭。 */
+        /* 按钮：液态玻璃质感——半透明磨砂底 + 顶部高光边缘 + 细描边。
+           按下时把受光方向反转（顶部变暗）= "被按进去"。 */
         QPushButton { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                                  stop:0 __CTRL_TOP__, stop:1 __CTRL_BOT__);
-                      border: 1px solid __MID__;
-                      border-top-color: __HI__;
+                                                  stop:0 rgba(255,255,255,16), stop:1 rgba(255,255,255,6));
+                      border: 1px solid rgba(255,255,255,16);
+                      border-top-color: rgba(255,255,255,36);
                       border-radius: __R_CTRL__px; padding: 6px 12px; color: #e6ebf4; }
         QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                                        stop:0 #2f3542, stop:1 #21262f);
-                            border-color: __A__; border-top-color: __A__; color: #ffffff; }
-        QPushButton:pressed { background: #171a21;
-                              border-color: __MID__; border-top-color: rgba(255,255,255,10); }
+                                                        stop:0 rgba(255,255,255,28), stop:1 rgba(255,255,255,10));
+                            border-color: rgba(255,255,255,28);
+                            border-top-color: rgba(255,255,255,58); color: #ffffff; }
+        QPushButton:pressed { background: rgba(255,255,255,5);
+                              border-color: rgba(255,255,255,12);
+                              border-top-color: rgba(255,255,255,16); }
         /* 键盘 Tab 到按钮时给个描边反馈；边框宽度不变，所以不会有布局跳动 */
         QPushButton:focus { border-color: __A__; border-top-color: __A__; }
         QPushButton#ctl:focus { border-color: __A__; border-top-color: __A__; }
@@ -12840,14 +13422,16 @@ class SettingsPanel(QWidget):
            和下面卡片的圆润语言对齐。原来是棱角分明的方盒，像系统默认控件。 */
         QPushButton#ctl { padding: 6px 11px; min-width: 30px;
                           border-radius: __R_ICON__px;
-                          background: rgba(255,255,255,11);
-                          border: 1px solid rgba(255,255,255,18);
-                          border-top-color: rgba(255,255,255,30); }
-        QPushButton#ctl:hover { background: rgba(255,255,255,22);
+                          background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                                    stop:0 rgba(255,255,255,20), stop:1 rgba(255,255,255,7));
+                          border: 1px solid rgba(255,255,255,20);
+                          border-top-color: rgba(255,255,255,44); }
+        QPushButton#ctl:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                                          stop:0 rgba(255,255,255,32), stop:1 rgba(255,255,255,12));
                                 border-color: rgba(255,255,255,34);
-                                border-top-color: rgba(255,255,255,50); }
+                                border-top-color: rgba(255,255,255,62); }
         QPushButton#ctl:pressed { background: rgba(255,255,255,7);
-                                  border-top-color: rgba(255,255,255,12); }
+                                  border-top-color: rgba(255,255,255,14); }
         QPushButton#ctlplay { padding: 2px; border: none; background: transparent;
                               border-radius: 17px; }
         QPushButton#ctlplay:hover { background: rgba(255,255,255,20); }
