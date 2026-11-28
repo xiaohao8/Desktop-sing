@@ -1286,10 +1286,10 @@ app.processEvents()
 check("set_ui_lang 联动刷新播放器",
       "Desktop-sing" in player.windowTitle()
       and not _has_cjk(player.windowTitle())
-      and player.sidebar.brand_name.text() == "Desktop-sing"
+      and player.titlebar.app_name.text() == "Desktop-sing"
       and player.now.immersive_btn.text() == "Immersive lyrics"
       and player.now.source.text() == "Now playing",
-      (player.windowTitle(), player.sidebar.brand_name.text(),
+      (player.windowTitle(), player.titlebar.app_name.text(),
        player.now.immersive_btn.text(), player.now.source.text()))
 
 L.set_ui_lang("en")
@@ -1298,8 +1298,8 @@ app.processEvents()
 check("切 en 后窗口标题无中文",
       "Desktop-sing" in player.windowTitle()
       and not _has_cjk(player.windowTitle()), player.windowTitle())
-check("切 en 后侧栏品牌", player.sidebar.brand_name.text() == "Desktop-sing",
-      player.sidebar.brand_name.text())
+check("切 en 后标题栏应用名", player.titlebar.app_name.text() == "Desktop-sing",
+      player.titlebar.app_name.text())
 check("切 en 后沉浸按钮", player.now.immersive_btn.text() == "Immersive lyrics",
       player.now.immersive_btn.text())
 check("切 en 后迷你模式按钮",

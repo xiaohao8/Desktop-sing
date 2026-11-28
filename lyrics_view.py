@@ -55,6 +55,13 @@ LINE = "rgba(24,28,34,18)"
 _UI_FONT_FAMILY_CACHE = None
 
 
+def _tc(value, fallback="#888888"):
+    """主题令牌是 CSS 字符串（rgba(...)），QColor("rgba(...)") 会静默解析成
+    纯黑（alpha=255）——浅色界面上那些「黑印」就是这么来的。绘制取色统一
+    走这里，交给能解析 rgba 的解析器。"""
+    return ui_glass.qcolor(value, fallback)
+
+
 def _ui_font_family() -> str:
     global _UI_FONT_FAMILY_CACHE
     if _UI_FONT_FAMILY_CACHE:
@@ -1394,6 +1401,23 @@ def _draw_icon(p: QPainter, kind: str, r: QRectF, color: QColor):
     p.restore()
 
 
+def _app_icon_pixmap(size: int) -> QPixmap:
+    """应用自己的品牌图标（icon.png），缺失时返回空图。
+
+    与 lyrics_overlay.make_app_icon() 同源，但这里要的是**位图**（QLabel
+    显示用），不是 QIcon。歌词覆盖层不能被 lyrics_view 在模块级 import
+    （会循环），所以在运行时惰性导入 —— 此时两个模块都已加载完毕。
+    """
+    try:
+        import lyrics_overlay as lo
+        icon = lo.make_app_icon()
+    except Exception:
+        return QPixmap()
+    if icon.isNull():
+        return QPixmap()
+    return icon.pixmap(size, size)
+
+
 def _icon(kind: str, color: str = INK, size: int = 18) -> QIcon:
     # 2x 位图交给 Qt 自己缩：声明 devicePixelRatio(2) 后 QIcon.paint 只取到
     # 左上角一块，播放/上一首的图形会被裁掉半个（2.0.13 实测）。
@@ -1415,7 +1439,7 @@ class NavButton(QPushButton):
         self._icon_color_checked = "#ffffff"
         self._update_icon()
         self.setIconSize(QSize(18, 18))
-        self.setMinimumHeight(42)
+        self.setMinimumHeight(40)
         self.setObjectName("nav")
 
     def set_theme(self, theme):
@@ -1440,7 +1464,10 @@ class _SizeGrip(QSizeGrip):
         self._dot = QColor(255, 255, 255, 92)
 
     def set_theme(self, theme):
-        self._dot = QColor(theme.grip_dot)
+        # 三点手柄在浅色下用半透明墨点，别做成三颗黑芝麻
+        dot = _tc(theme.text_muted)
+        dot.setAlpha(120 if theme.appearance == "light" else 96)
+        self._dot = dot
         self.update()
 
     def paintEvent(self, event):
@@ -1449,7 +1476,7 @@ class _SizeGrip(QSizeGrip):
         p.setPen(Qt.NoPen)
         p.setBrush(self._dot)
         for x, y in ((11, 5), (5, 11), (11, 11)):
-            p.drawEllipse(QPointF(x, y), 1.6, 1.6)
+            p.drawEllipse(QPointF(x, y), 1.3, 1.3)
         p.end()
 
 
@@ -1467,11 +1494,26 @@ class TitleBar(QWidget):
         self._stats = {}
         self._drag = None
         self._theme = None
-        self.setFixedHeight(56)
+        self.setFixedHeight(52)
         self.setObjectName("titlebar")
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(18, 8, 12, 8)
+        lay.setContentsMargins(20, 6, 14, 6)
         lay.setSpacing(8)
+        # 左上角固定是「应用身份」：自己的图标 + 应用名，永远显示，不随页面
+        # 切换而变（2026-11-28 用户要求）。页面名降级成后面一条弱化的 crumb，
+        # 只作辅助信息，不再占据左上角。
+        self.app_icon = QLabel()
+        self.app_icon.setObjectName("appicon")
+        self.app_icon.setFixedSize(22, 22)
+        self.app_icon.setAlignment(Qt.AlignCenter)
+        self._apply_app_icon()
+        lay.addWidget(self.app_icon)
+        self.app_name = QLabel(tr("桌面歌词"))
+        self.app_name.setObjectName("appname")
+        lay.addWidget(self.app_name)
+        self.app_tag = QLabel("DESKTOP PLAYER")
+        self.app_tag.setObjectName("apptag")
+        lay.addWidget(self.app_tag)
         self.page_label = QLabel(tr("正在播放"))
         self.page_label.setObjectName("pagecrumb")
         lay.addWidget(self.page_label)
@@ -1510,7 +1552,21 @@ class TitleBar(QWidget):
         return b
 
     def _quick_color(self) -> str:
-        return self._theme.text_muted if self._theme is not None else "#c9cdd6"
+        return self._theme.text_secondary if self._theme is not None else "#4F4B44"
+
+    def _apply_app_icon(self):
+        """把应用自己的品牌图标（icon.png）放进左上角的小方块。
+
+        22px 是极限了：icon.png 里带 wordmark，缩到 18px 以下文字会糊成
+        一团（实测）。所以这里保持 22px，并让方块本身跟着主题走。
+        """
+        pm = _app_icon_pixmap(22)
+        if pm.isNull():
+            # 拿不到 icon.png 时不要留一个空白方块，直接隐藏
+            self.app_icon.hide()
+            return
+        self.app_icon.setPixmap(pm)
+        self.app_icon.show()
 
     def set_theme(self, theme):
         self._theme = theme
@@ -1525,6 +1581,7 @@ class TitleBar(QWidget):
             b.update()
 
     def retranslate(self):
+        self.app_name.setText(self._tr("桌面歌词"))
         self.page_label.setText(self._tr("正在播放"))
         self.quick_buttons["mini"].setText(self._tr("迷你模式"))
         self._win_button_labels()
@@ -1564,32 +1621,17 @@ class Sidebar(QWidget):
         self._status_key = "正在读取系统媒体"
         self._status_live = False
         self.setObjectName("sidebar")
-        self.setFixedWidth(248)
+        self.setFixedWidth(240)
+        # iOS 26 的侧栏是一块浮起的面板，四周留出窗底、内缩 8px
+        self._panel_fill = None
+        self._panel_edge = None
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 18, 16, 16)
+        root.setContentsMargins(26, 26, 22, 22)
         root.setSpacing(8)
 
-        brand = QHBoxLayout()
-        brand.setSpacing(10)
-        mark = QLabel("◉")
-        mark.setObjectName("brandmark")
-        mark.setAlignment(Qt.AlignCenter)
-        mark.setFixedSize(36, 36)
-        brand.addWidget(mark)
-        col = QVBoxLayout()
-        col.setSpacing(0)
-        name = QLabel(tr("桌面歌词"))
-        name.setObjectName("brandname")
-        self.brand_name = name
-        sub = QLabel("DESKTOP PLAYER")
-        sub.setObjectName("brandsub")
-        col.addWidget(name)
-        col.addWidget(sub)
-        brand.addLayout(col)
-        brand.addStretch(1)
-        root.addLayout(brand)
-        root.addSpacing(8)
-
+        # 应用身份（图标 + 应用名 + 英文副标）统一放在标题栏左上角，永远
+        # 显示（2026-11-28 用户要求）。侧栏这里原本还有一份品牌块，现在会
+        # 和标题栏里的重复 40px —— 删掉它，侧栏从状态行开始。
         self.status = QLabel("●  " + tr("正在读取系统媒体"))
         self.status.setObjectName("sidestatus")
         root.addWidget(self.status)
@@ -1631,8 +1673,32 @@ class Sidebar(QWidget):
         self.set_active("now")
 
     def set_theme(self, theme):
+        # 浅色侧栏用比窗底更沉的玻璃灰，深色用比窗底略亮的一层，
+        # 这样不会和右侧白色卡片抢注意力。
+        if theme.appearance == "light":
+            fill = _tc(theme.surface_sunken)
+            fill.setAlpha(206)
+        else:
+            fill = _tc(theme.surface_raised)
+            fill.setAlpha(208)
+        edge = _tc(theme.border)
+        edge.setAlpha(160)
+        self._panel_fill = fill
+        self._panel_edge = edge
         for b in self.buttons.values():
             b.set_theme(theme)
+        self.update()
+
+    def paintEvent(self, event):
+        if self._panel_fill is None:
+            return super().paintEvent(event)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(8, 8, -8, -8)
+        p.setPen(QPen(self._panel_edge, 1))
+        p.setBrush(self._panel_fill)
+        p.drawRoundedRect(rect, 22, 22)
+        p.end()
 
     def retranslate(self):
         labels = {"now": "正在播放", "report": "听歌报告",
@@ -1641,7 +1707,6 @@ class Sidebar(QWidget):
             button = self.buttons.get(key)
             if button is not None:
                 button.setText(self._tr(label))
-        self.brand_name.setText(self._tr("桌面歌词"))
         self._apply_status()
 
     def _apply_status(self):
@@ -1654,6 +1719,10 @@ class Sidebar(QWidget):
             b._update_icon()
 
     def set_status(self, text: str, live: bool = False):
+        # 60fps 心跳里每帧都调这里；文案没变就别重新 polish 样式
+        # （unpolish/polish 会触发整棵控件树的样式重算）。
+        if text == self._status_key and bool(live) == self._status_live:
+            return
         self._status_key = text
         self._status_live = bool(live)
         self._apply_status()
@@ -1700,18 +1769,21 @@ class StageBackdrop(QWidget):
         self._dark = True
         self._cover_cache_key = None
         self._cover_cache_pix = None
+        self._wash_cache_key = None
+        self._wash_pix = None
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setAttribute(Qt.WA_NoSystemBackground, True)
+        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
 
     def set_theme(self, theme):
-        self._base = QColor(theme.bg)
+        self._base = _tc(theme.bg)
         dark = theme.appearance != "light"
         self._dark = dark
         # Light themes keep the stage on the app palette instead of forcing a
         # deep listening surface; lyric text switches to theme colours.
         # Dark keeps the listening surface (sunken is the groove token and
         # deliberately deeper than the card now, which would flatten the stage).
-        self._scrim = QColor(theme.surface if dark else theme.bg)
+        self._scrim = _tc(theme.surface if dark else theme.bg)
         self.update()
 
     def set_cover(self, cover):
@@ -1724,9 +1796,26 @@ class StageBackdrop(QWidget):
         self.update()
 
     def paintEvent(self, e):
-        p = QPainter(self)
+        # 整块舞台底是一次性画好的位图：封面压暗 + 主色晕 + 顶部渐变 + 唱片
+        # 纹路全是静态的。之前每帧重画三条全尺寸渐变（歌词 90ms 刷新一次，
+        # 等于每秒 11 次重算整屏），是界面/动画发卡的主要来源之一。
+        key = (self.width(), self.height(), round(self.devicePixelRatioF(), 2),
+               self.accent.rgb(), self._base.rgb(), self._scrim.rgb(),
+               self._dark,
+               self.cover.cacheKey() if self.cover is not None
+               and not self.cover.isNull() else 0)
+        if self._wash_cache_key != key or self._wash_pix is None:
+            self._wash_pix = self._render_wash()
+            self._wash_cache_key = key
+        QPainter(self).drawPixmap(0, 0, self._wash_pix)
+
+    def _render_wash(self):
+        dpr = max(1.0, self.devicePixelRatioF())
+        w, h = max(1, self.width()), max(1, self.height())
+        pix = QPixmap(int(w * dpr), int(h * dpr))
+        pix.setDevicePixelRatio(dpr)
+        p = QPainter(pix)
         p.setRenderHint(QPainter.SmoothPixmapTransform)
-        w, h = self.width(), self.height()
         p.fillRect(0, 0, w, h, self._base)
         if self.cover is not None and not self.cover.isNull():
             key = (self.cover.cacheKey(), w, h)
@@ -1752,10 +1841,7 @@ class StageBackdrop(QWidget):
         p.fillRect(0, 0, w, h, wash)
         shade = QLinearGradient(0, 0, 0, h)
         c = QColor(self._scrim)
-        if self._dark:
-            alphas = (95, 120, 190)
-        else:
-            alphas = (40, 64, 90)
+        alphas = (95, 120, 190) if self._dark else (40, 64, 90)
         c.setAlpha(alphas[0])
         shade.setColorAt(0.0, c)
         c.setAlpha(alphas[1])
@@ -1764,7 +1850,7 @@ class StageBackdrop(QWidget):
         shade.setColorAt(1.0, c)
         p.fillRect(0, 0, w, h, shade)
         if self._dark:
-            # 2-3% concentric grooves: a quiet vinyl signature in empty space.
+            # 2-3% 同心唱片纹：空白处的低调签名
             p.setPen(QPen(QColor(255, 255, 255, 7), 1))
             p.setBrush(Qt.NoBrush)
             cx, cy = w * 0.26, h * 0.47
@@ -1774,10 +1860,18 @@ class StageBackdrop(QWidget):
                 p.drawEllipse(QPointF(cx, cy), radius, radius)
                 radius += 18
         p.end()
-
+        return pix
 
 class LyricsCanvas(QWidget):
     seek_requested = Signal(float)
+
+    # ---- 手动滚动的时序常量 ----
+    SCROLL_RETURN_DELAY = 2.4   # 停手多久后滑回当前句（秒）
+    SCROLL_FOLLOW_TAU = 0.075   # 跟随/回弹的指数时间常数（秒，帧率无关）
+    SCROLL_FRICTION = 0.22      # 惯性速度衰减时间常数（秒）
+    SCROLL_NOTCH_UNITS = 120.0  # Windows 滚轮一格 = 120 angleDelta units
+    SCROLL_MIN_VEL = 0.05       # 低于此线速度（行/秒）不再惯性滑行
+    SCROLL_MAX_LINES_PER_FRAME = 0.6   # 单帧最多移动多少行（防瞬移）
 
     def __init__(self, tr, parent=None):
         super().__init__(parent)
@@ -1793,8 +1887,20 @@ class LyricsCanvas(QWidget):
         self.empty_message_key = "等待播放"
         self.empty_description_key = (
             "在任意接入系统媒体控制的播放器中开始播放")
-        self._manual = 0.0
-        self._manual_until = 0.0
+        # 滚动模型：_focus 是「锚点上那一行的小数行号」。
+        #   _follow=True  → 锚点跟着当前播放行走（听歌时的常态）
+        #   _follow=False → 用户手动滚动，锚点由 _focus_target 决定
+        # 用**行号**而不是像素做基准：滚动范围天然可夹（不会滚进空白），
+        # 换行时的位移也连续（原来按行号重排会整块跳一格）。
+        self._focus = 0.0
+        self._focus_target = 0.0
+        self._focus_vel = 0.0
+        self._follow = True
+        self._focus_snap = True       # 换歌/首帧：直接落位，不做滑动
+        self._last_input_t = 0.0
+        self._last_step_t = 0.0
+        self._last_anim_t = 0.0
+        self._reduce_motion = False
         self._line_h = 64.0
         self._cover_cache_key = None
         self._cover_cache_pix = None
@@ -1812,6 +1918,129 @@ class LyricsCanvas(QWidget):
         self._bg = QColor("#14171e")
         self._text = QColor(238, 239, 242)
         self._text2 = QColor(215, 218, 224)
+        # 滚动动画的专用时钟：只在有动画时跑（settled 就停表），与主窗口的
+        # 刷新节奏解耦 —— 主窗口在非播放页只有 90ms 一拍，靠它驱动滚动会顿。
+        self._anim_timer = QTimer(self)
+        self._anim_timer.setInterval(16)
+        self._anim_timer.timeout.connect(self._anim_tick)
+
+    # ---------------- 滚动模型 ----------------
+
+    def _anchor_ratio(self) -> float:
+        """锚点在歌词区里的相对高度：普通态偏上，沉浸态居中。"""
+        return 0.42 if self._immersive else 0.20
+
+    def _focus_limits(self) -> tuple:
+        """可滚动范围（焦点行号）：[0, 末行]。
+
+        焦点 = 锚点上那一行的小数行号。夹到 [0, n-1] 保证「锚点永远落在
+        一句真实的歌词上」—— 旧实现没有夹取，往上滚可以一直滚到整屏空白。
+        """
+        n = len(self.lines)
+        if n <= 0:
+            return 0.0, 0.0
+        return 0.0, float(n - 1)
+
+    def _anchor_effective(self, focus: float, h: float = None) -> float:
+        """锚点实际落在内容区的哪个 y。
+
+        锚点默认在 20%（沉浸态 42%），但歌词不够长时下方会空一大块。
+        这里把锚点夹到「最后一行贴着视口底 / 第一行贴着视口顶」之间，
+        于是：往歌尾滚，最后一句会停在底部；往歌头滚，第一句会停在顶部；
+        中间段落保持「当前句在上方 1/5 处」的聚光灯布局。
+        """
+        n = len(self.lines)
+        if n <= 0:
+            return 0.0
+        if h is None:
+            h = self._content_h()
+        desired = h * self._anchor_ratio()
+        lower = h - (n - 1 - focus) * self._line_h   # 最后一行贴视口底
+        upper = focus * self._line_h                 # 第一行贴视口顶
+        if lower > upper:
+            return desired        # 歌词比视口还短：居中即可
+        return max(lower, min(upper, desired))
+
+    def _content_h(self) -> float:
+        if self._content_rect is not None:
+            return float(self._content_rect[3])
+        return float(self.height())
+
+    def _clamp_focus(self, value: float) -> float:
+        lo, hi = self._focus_limits()
+        if lo > hi:
+            lo, hi = hi, lo
+        return max(lo, min(hi, value))
+
+    def _ensure_anim(self):
+        """有未完成的动画就把 16ms 时钟拉起来，settled 后自动停。"""
+        if not self._anim_timer.isActive():
+            # 表停了很久再启动时，_last_anim_t 是陈的：第一拍按固定 16ms 算，
+            # 否则会按「停表时长」跳一大步（看着像瞬移）。
+            self._last_anim_t = 0.0
+            self._anim_timer.start()
+
+    def _anim_tick(self, dt=None):
+        """滚动动画的一拍：惯性衰减 → 弹簧追目标 → 需要时回到跟随。
+
+        帧率无关：位移用「距上次一拍的秒数」算，不看这一帧渲染了多久。
+        以前衰减写在 paintEvent 里（``self._manual *= 0.86``），高刷屏和
+        60Hz 屏的回弹速度完全不一样，而且是一格一格的硬跳。
+
+        dt 可外部传入（测试用），默认按真实时钟算。
+        """
+        now = time.monotonic()
+        if dt is None:
+            dt = 0.016
+            if self._last_anim_t:
+                dt = max(0.0, min(0.05, now - self._last_anim_t))
+        self._last_anim_t = now
+
+        # 1) 惯性：松手后继续滑行，速度按指数衰减（只触控板有）
+        if abs(self._focus_vel) > self.SCROLL_MIN_VEL:
+            self._focus_target += self._focus_vel * dt
+            self._focus_vel *= pow(2.0, -dt / self.SCROLL_FRICTION)
+        else:
+            self._focus_vel = 0.0
+
+        # 2) 停手够久 ⇒ 回到「跟随当前句」
+        if (not self._follow and self._last_input_t
+                and now - self._last_input_t > self.SCROLL_RETURN_DELAY):
+            self._follow = True
+            self._focus_vel = 0.0
+        if self._follow:
+            self._focus_target = float(max(0, self.cur_idx))
+
+        self._focus_target = self._clamp_focus(self._focus_target)
+
+        # 3) 弹簧逼近目标：位置连续，不跳格
+        if self._reduce_motion:
+            self._focus = self._focus_target
+        else:
+            k = 1.0 - pow(2.0, -dt / self.SCROLL_FOLLOW_TAU)
+            step = (self._focus_target - self._focus) * k
+            # 单帧位移上限：seek 跳很远时也不许一帧硬跳（那会看着像瞬移）
+            limit = self.SCROLL_MAX_LINES_PER_FRAME
+            if step > limit:
+                step = limit
+            elif step < -limit:
+                step = -limit
+            self._focus += step
+
+        if (abs(self._focus - self._focus_target) < 0.004
+                and abs(self._focus_vel) <= self.SCROLL_MIN_VEL):
+            self._focus = self._focus_target
+            self._focus_vel = 0.0
+            self._anim_timer.stop()
+        self.update()
+
+    def set_reduce_motion(self, enabled: bool):
+        """「减少动态效果」开启时：滚动直接落位，不做惯性与回弹。"""
+        self._reduce_motion = bool(enabled)
+        if self._reduce_motion:
+            self._focus = self._focus_target
+            self._focus_vel = 0.0
+            self._anim_timer.stop()
 
     def set_content_rect(self, x, y, w, h):
         self._content_rect = (int(x), int(y), max(1, int(w)), max(1, int(h)))
@@ -1827,11 +2056,12 @@ class LyricsCanvas(QWidget):
 
     def set_theme(self, theme):
         self._dark = theme.appearance != "light"
-        self._bg = QColor(theme.bg)
-        self._text = QColor(theme.text)
-        self._text2 = QColor(theme.text_secondary)
-        self.accent = QColor(theme.accent_fill if self._dark
+        self._bg = _tc(theme.bg)
+        self._text = _tc(theme.text)
+        self._text2 = _tc(theme.text_secondary)
+        self.accent = _tc(theme.accent_fill if self._dark
                              else theme.accent_text)
+        self._accent_text = _tc(theme.accent_text)
         self.update()
 
     def _readable_accent(self, color: QColor) -> QColor:
@@ -1843,8 +2073,33 @@ class LyricsCanvas(QWidget):
         is already above 6:1.
         """
         if self._dark:
-            return QColor(color)
-        return ui_theme.readable_on(color, self._bg, 4.5)
+            base = QColor(color)
+            if ui_theme.contrast_ratio(base, self._bg) >= 4.5:
+                return base
+            # 封面色偶有偏暗（暗红 / 深棕），直接拿来当深色高亮会比未唱行还难看清；
+            # 朝白色提亮、保住色相，够 4.5:1 就停。
+            for step in range(1, 13):
+                t = step / 12.0
+                mix = QColor(
+                    int(round(base.red() * (1 - t) + 255 * t)),
+                    int(round(base.green() * (1 - t) + 255 * t)),
+                    int(round(base.blue() * (1 - t) + 255 * t)))
+                if ui_theme.contrast_ratio(mix, self._bg) >= 4.5:
+                    return mix
+            return QColor("#FFFFFF")
+        # 浅色不要直接把封面色一路混黑（会变成脏棕色），而是朝主题的
+        # 深主色收，保住色相，够 4.5:1 就停。
+        target = QColor(getattr(self, "_accent_text", "#A93618"))
+        # 先从 45% 起混，别让封面色一路原样压到 4.5:1 才变成暗棕。
+        for step in range(5, 13):
+            t = step / 12.0
+            mix = QColor(
+                int(round(color.red() * (1 - t) + target.red() * t)),
+                int(round(color.green() * (1 - t) + target.green() * t)),
+                int(round(color.blue() * (1 - t) + target.blue() * t)))
+            if ui_theme.contrast_ratio(mix, self._bg) >= 4.5:
+                return mix
+        return target
 
     def _dim_alpha(self, dist: int) -> int:
         """Opacity for a non-current lyric line.
@@ -1889,7 +2144,12 @@ class LyricsCanvas(QWidget):
         self.trans = dict(trans or {})
         self.song = dict(song or self.song or {})
         self.cur_idx = -1
-        self._manual = 0.0
+        # 换歌 ⇒ 复位滚动状态（否则新歌会继承上一首的滚动位置）
+        self._focus = 0.0
+        self._focus_target = 0.0
+        self._focus_vel = 0.0
+        self._follow = True
+        self._focus_snap = True
         self.empty_message_key = empty_message_key or "等待播放"
         self.empty_description_key = (
             empty_description_key
@@ -1899,6 +2159,7 @@ class LyricsCanvas(QWidget):
     def set_playback(self, pos, cur_idx, playing, accent=None, cover=None,
                      song=None, font_family=""):
         self.pos = float(pos or 0.0)
+        prev_idx = self.cur_idx
         self.cur_idx = int(cur_idx)
         self.playing = bool(playing)
         if accent is not None:
@@ -1911,6 +2172,16 @@ class LyricsCanvas(QWidget):
         if font_family and font_family != self._font_family:
             self._font_family = font_family
             self._font_cache.clear()
+        # 跟随模式：锚点跟着当前行走。**用弹簧追**，不要直接赋值 ——
+        # 直接赋值会让整块歌词在换行瞬间硬跳一格（原来就是这样）。
+        if self._follow:
+            self._focus_target = float(max(0, self.cur_idx))
+            if self._focus_snap or self._reduce_motion:
+                # 换歌/首帧/减少动态效果：直接落位
+                self._focus = self._focus_target
+                self._focus_snap = False
+            elif abs(self._focus - self._focus_target) > 0.001:
+                self._ensure_anim()
         self.update()
 
     def _font(self, px: int, bold: bool = False) -> QFont:
@@ -1924,9 +2195,52 @@ class LyricsCanvas(QWidget):
         return f
 
     def wheelEvent(self, e):
-        self._manual -= e.angleDelta().y() * 0.42
-        self._manual_until = time.monotonic() + 4.0
-        self.update()
+        """滚轮/触控板：手动浏览歌词。
+
+        两条关键修正：
+        1) **方向**：滚轮向上（angleDelta.y() > 0）应该往**过去**看。
+           旧代码是 ``_manual -= delta``，而 _manual 是「往下加」的，
+           实际把上下滚反了 —— 往下滚看到的是过去的歌词。
+        2) **触控板**：精确式触控板只给 pixelDelta（angleDelta 为 0），
+           旧代码只看 angleDelta，触控板在部分驱动下完全不动。两条都取，
+           pixelDelta 优先（它才是高分辨率的真实位移）。
+
+        触控板（pixelDelta）额外带惯性：松手后继续滑行再缓缓停下；
+        鼠标滚轮是离散的，不给惯性，用弹簧到位即可。
+        """
+        if not self.lines:
+            return
+        pixels = e.pixelDelta().y()
+        angle = e.angleDelta().y()
+        if not pixels and not angle:
+            return
+        now = time.monotonic()
+        if pixels:
+            step_lines = pixels / self._line_h
+        else:
+            # 120 units ≈ Windows 滚轮一格；一格走 3 行歌词
+            step_lines = (angle / self.SCROLL_NOTCH_UNITS) * 3.0
+        # 向上滚（delta > 0）→ 往过去看 → 焦点行号变小
+        self._focus_target = self._clamp_focus(self._focus_target - step_lines)
+        self._follow = False
+        self._last_input_t = now
+        # 触控板惯性：用连续两次事件的位移/间隔估速度
+        if pixels and self._last_step_t:
+            dt = now - self._last_step_t
+            if 0.001 < dt < 0.2:
+                inst = -step_lines / dt          # 行/秒，负=往过去
+                self._focus_vel = (self._focus_vel * 0.4 + inst * 0.6)
+        else:
+            self._focus_vel = 0.0
+        self._last_step_t = now
+        if self._reduce_motion:
+            # 减少动态效果：直接落位，不做弹簧/惯性
+            self._focus = self._focus_target
+            self._focus_vel = 0.0
+            self._anim_timer.stop()
+        else:
+            self._ensure_anim()
+        e.accept()
 
     def mouseReleaseEvent(self, e):
         if e.button() != Qt.LeftButton or not self.lines:
@@ -1942,8 +2256,15 @@ class LyricsCanvas(QWidget):
         return self._content_rect
 
     def _index_at(self, y: float, content_h: float | None = None) -> int:
-        base = float(content_h or self.height()) * 0.20
-        idx = int(round((y - base) / self._line_h)) + self.cur_idx
+        """把内容区里的 y 坐标换算成歌词行号。
+
+        旧实现用 ``content_h * 0.20`` + cur_idx 反推，既没考虑沉浸模式
+        的 0.42 锚点，也没考虑用户手动滚动后的偏移 —— 手动滚过之后
+        点某一行，跳到的是**另一行**。现在和绘制共用同一套几何。
+        """
+        h = float(content_h) if content_h is not None else self._content_h()
+        anchor_y = self._anchor_effective(self._focus, h)
+        idx = int(round(self._focus + (y - anchor_y) / self._line_h))
         return max(0, min(len(self.lines) - 1, idx))
 
     def _line_fraction(self, idx: int) -> float:
@@ -1970,21 +2291,23 @@ class LyricsCanvas(QWidget):
             p.end()
             return
 
-        if time.monotonic() > self._manual_until:
-            self._manual *= 0.86
-            if abs(self._manual) < 0.5:
-                self._manual = 0.0
-
         # The now-playing layout puts the active line near the upper quarter,
         # like a desktop player's lyric pane, not in the vertical centre.
         # Immersive mode is the opposite: centre the block and scale it up.
-        base = h * (0.42 if self._immersive else 0.20) + self._manual
+        # h 是内容区高度（不是整个控件），锚点与点选换算都用它，保证一致。
+        anchor_y = self._anchor_effective(self._focus, h)
+        focus = self._focus
 
-        first = max(0, self.cur_idx - 2)
-        last = min(len(self.lines), self.cur_idx + 6)
+        # 画「焦点行」上下够覆盖视口的整段歌词。旧代码固定只画
+        # cur_idx-2 .. cur_idx+6 —— 用户手动滚出去以后，上下都是空白，
+        # 看着像「滚不动」。
+        above = anchor_y / self._line_h
+        below = (h - anchor_y) / self._line_h
+        first = max(0, int(focus - above) - 1)
+        last = min(len(self.lines), int(focus + below) + 2)
         for i in range(first, last):
-            dist = i - self.cur_idx
-            y = base + dist * self._line_h
+            dist = i - focus
+            y = anchor_y + dist * self._line_h
             if y < -40 or y > h + 40:
                 continue
             text = str(self.lines[i][1] or "")
@@ -2139,10 +2462,10 @@ class CoverArt(QWidget):
 
     def set_theme(self, theme):
         dark = theme.appearance != "light"
-        self._placeholder_top = QColor(theme.surface_raised)
-        self._placeholder_bottom = QColor(theme.surface_sunken)
-        self._placeholder_icon = QColor(theme.text_muted)
-        self._ring = QColor(theme.text)
+        self._placeholder_top = _tc(theme.surface_raised)
+        self._placeholder_bottom = _tc(theme.surface_sunken)
+        self._placeholder_icon = _tc(theme.text_muted)
+        self._ring = _tc(theme.text)
         self._ring.setAlpha(28 if dark else 40)
         self.update()
 
@@ -2287,6 +2610,7 @@ class NowStage(QWidget):
         self._playing = False
         self._immersive = False
         self._toggle_icon_key = None
+        self._time_text = ""
 
     def set_immersive(self, on: bool):
         on = bool(on)
@@ -2514,10 +2838,14 @@ class NowStage(QWidget):
         cur = int(max(0, pos))
         if self._duration > 0:
             dur = int(self._duration)
-            self.time.setText("%d:%02d / %d:%02d" % (cur // 60, cur % 60,
-                                                     dur // 60, dur % 60))
+            label = "%d:%02d / %d:%02d" % (cur // 60, cur % 60,
+                                           dur // 60, dur % 60)
         else:
-            self.time.setText("%d:%02d" % (cur // 60, cur % 60))
+            label = "%d:%02d" % (cur // 60, cur % 60)
+        # 60fps 心跳下每秒只变一次；同文案别再触发 QLabel 重排
+        if label != self._time_text:
+            self._time_text = label
+            self.time.setText(label)
 
     def set_accent(self, color):
         """Cover-driven accent: lyric highlight + backdrop wash only.
@@ -2543,10 +2871,10 @@ class MiniSparkline(QWidget):
         self.setMinimumHeight(170)
 
     def set_theme(self, theme):
-        self._line = QColor(theme.accent_fill)
-        self._dot = QColor(theme.accent_fill)
-        self._dot_ring = QColor(theme.surface)
-        self._label = QColor(theme.text_muted)
+        self._line = _tc(theme.accent_fill)
+        self._dot = _tc(theme.accent_fill)
+        self._dot_ring = _tc(theme.surface)
+        self._label = _tc(theme.text_muted)
         self._label_px = max(12, int(getattr(theme, "fs_caption", 12)))
         self.update()
 
@@ -2688,8 +3016,9 @@ class AppearanceSection(QFrame):
         row.setSpacing(8)
         self.bar = QFrame()
         self.bar.setObjectName("sectionBar")
-        self.bar.setFixedSize(3, 16)
-        row.addWidget(self.bar, 0, Qt.AlignVCenter)
+        # iOS 分组标题没有左侧色条，只靠字号/字重分层
+        self.bar.setFixedSize(0, 0)
+        self.bar.hide()
         self.title = QLabel()
         self.title.setObjectName("appearanceTitle")
         row.addWidget(self.title)
@@ -2701,18 +3030,22 @@ class AppearanceSection(QFrame):
         head.addWidget(self.hint)
         root.addLayout(head)
 
-        seg = QHBoxLayout()
-        seg.setSpacing(8)
+        seg_track = QFrame()
+        seg_track.setObjectName("segTrack")
+        seg_box = QHBoxLayout(seg_track)
+        seg_box.setContentsMargins(3, 3, 3, 3)
+        seg_box.setSpacing(3)
         self.seg_buttons = {}
         for key in self._APPEARANCES:
             b = ui_glass.GlassButton(variant=ui_glass.SEGMENT)
             b.setObjectName("appearanceSeg")
             b.setCheckable(True)
             b.setCursor(Qt.PointingHandCursor)
+            b.setMinimumHeight(32)
             b.clicked.connect(lambda _=False, k=key: self._pick_appearance(k))
-            seg.addWidget(b, 1)
+            seg_box.addWidget(b, 1)
             self.seg_buttons[key] = b
-        root.addLayout(seg)
+        root.addWidget(seg_track)
 
         swatches = QHBoxLayout()
         swatches.setSpacing(10)
@@ -2807,7 +3140,7 @@ class AppearanceSection(QFrame):
         self.motion_switch.blockSignals(False)
         theme = manager.current() if manager is not None else None
         if theme is not None:
-            self.motion_switch.set_accent(QColor(theme.accent_fill))
+            self.motion_switch.set_accent(_tc(theme.accent_fill))
             self.motion_switch.set_theme(theme)
         for button in self.seg_buttons.values():
             if theme is not None:
@@ -2831,10 +3164,13 @@ class AppearanceSection(QFrame):
 
 
 class _ThemePreview(QWidget):
-    """Mini player mock: sidebar + stage wash + one accent lyric line.
+    """Mini player mock: one cover block + one accent lyric line.
 
-    The old 44x22 chip with an ``Aa`` said nothing about a theme; a tiny
-    window shows the background, surface and accent relationship at a glance.
+    2026-11-28 重做：旧版画了顶栏分割线、侧栏分割线、双层描边封面、
+    三条歌词横线，十几根 1px 线条挤在 148x64 里 —— 用户反馈「线框看着
+    很杂乱」。现在只用**圆角色块**表达结构（底色 / 侧栏 / 封面 / 主色
+    歌词 / 次级歌词），一条描边都不画（只有最外框），靠明度层次而不是
+    线框来区分区块。
     """
 
     def __init__(self, parent=None):
@@ -2855,51 +3191,46 @@ class _ThemePreview(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
         rect = QRectF(0.5, 0.5, w - 1, h - 1)
-        radius = 8.0
+        radius = 10.0
         path = QPainterPath()
         path.addRoundedRect(rect, radius, radius)
         p.setClipPath(path)
-        p.fillRect(rect, QColor(theme.bg))
-        # 顶栏
-        p.fillRect(QRectF(0, 0, w, 11), QColor(theme.surface_raised))
-        p.setPen(QPen(QColor(theme.divider), 1))
-        p.drawLine(QPointF(0, 11), QPointF(w, 11))
-        # 侧栏
-        side = max(30.0, w * 0.24)
-        p.fillRect(QRectF(0, 11, side, h - 11), QColor(theme.surface))
-        p.setPen(QPen(QColor(theme.divider), 1))
-        p.drawLine(QPointF(side, 11), QPointF(side, h))
-        # 侧栏：品牌块 + 一条当前页短横，避免三条横线读成表单
+        p.fillRect(rect, _tc(theme.bg))
+
+        # 侧栏：只是一块更沉的底色，不再画分隔线
+        side = max(26.0, w * 0.22)
+        p.fillRect(QRectF(0, 0, side, h), _tc(theme.surface))
+
+        # 舞台：铺一层极淡的主色，让每套主题的性格能一眼看出来
+        stage = QRectF(side, 0, w - side, h)
+        tint = _tc(theme.accent_fill)
+        tint.setAlpha(40 if theme.appearance == "dark" else 22)
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor(theme.accent_fill))
-        p.drawRoundedRect(QRectF(8, 10.5 - 3, 6, 6), 2, 2)
-        p.setBrush(QColor(theme.text_muted))
-        p.drawRoundedRect(QRectF(9, 24, side - 18, 3), 1.5, 1.5)
-        p.setBrush(QColor(theme.accent_fill))
-        p.drawRoundedRect(QRectF(9, 36, side - 16, 3), 1.5, 1.5)
-        # 舞台：封面 + 当前句（主色）+ 两行次级歌词
-        cover_x = side + 12
-        cover_y = (h - 28) / 2.0
-        cover = QRectF(cover_x, cover_y, 28, 28)
-        p.setPen(QPen(QColor(theme.accent_fill), 1))
-        wash = QColor(theme.accent_fill)
-        wash.setAlpha(56)
-        p.setBrush(wash)
-        p.drawRoundedRect(cover, 5, 5)
-        p.setPen(Qt.NoPen)
-        p.setBrush(QColor(theme.accent_fill))
-        p.drawRoundedRect(QRectF(cover_x + 5, cover_y + 5, 18, 18), 3, 3)
-        text_x = cover_x + 36
-        text_w = max(20.0, w - text_x - 10)
-        p.setBrush(QColor(theme.accent_fill))
-        p.drawRoundedRect(QRectF(text_x, h * 0.42, text_w * 0.86, 4), 2, 2)
-        p.setBrush(QColor(theme.text_secondary))
-        p.drawRoundedRect(QRectF(text_x, h * 0.42 + 10, text_w * 0.62, 3), 1.5, 1.5)
-        p.setBrush(QColor(theme.text_muted))
-        p.drawRoundedRect(QRectF(text_x, h * 0.42 + 18, text_w * 0.72, 3), 1.5, 1.5)
+        p.fillRect(stage, tint)
+
+        # 侧栏内容：品牌点 + 一条高亮项，其余留白
+        p.setBrush(_tc(theme.accent_fill))
+        p.drawRoundedRect(QRectF(7, 9, 7, 7), 2.5, 2.5)
+        p.setBrush(_tc(theme.text_muted))
+        p.drawRoundedRect(QRectF(8, h - 13, side - 16, 3), 1.5, 1.5)
+
+        # 舞台：封面 + 当前句（主色）+ 一行次级歌词
+        size = min(30.0, h - 20.0)
+        cover = QRectF(side + (w - side - size) / 2.0 - 34.0,
+                       (h - size) / 2.0, size, size)
+        p.setBrush(_tc(theme.accent_fill))
+        p.drawRoundedRect(cover, size * 0.24, size * 0.24)
+        text_x = cover.right() + 12
+        text_w = max(24.0, w - text_x - 14)
+        p.setBrush(_tc(theme.accent_fill))
+        p.drawRoundedRect(QRectF(text_x, h / 2.0 - 5, text_w * 0.9, 4), 2, 2)
+        soft = _tc(theme.text_muted)
+        p.setBrush(soft)
+        p.drawRoundedRect(QRectF(text_x, h / 2.0 + 5, text_w * 0.6, 3), 1.5, 1.5)
+
         p.setClipping(False)
         p.setBrush(Qt.NoBrush)
-        p.setPen(QPen(QColor(theme.border), 1))
+        p.setPen(QPen(_tc(theme.border), 1))
         p.drawRoundedRect(rect, radius, radius)
         p.end()
 
@@ -2970,7 +3301,14 @@ class StatTile(QFrame):
         lay.addWidget(self.caption)
 
     def set_value(self, text: str):
-        self.value.setText(text)
+        # 数字大、单位小：iOS 的统计卡都是这个排法，等宽同号会显得笨重
+        m = re.match(r"^(.+?)\s+(分钟|小时|天|首|次)$", text.strip())
+        if m:
+            self.value.setText(
+                f'<span style="font-size:27px;font-weight:700;">{m.group(1)}</span>'
+                f'<span style="font-size:14px;font-weight:500;">&nbsp;{m.group(2)}</span>')
+        else:
+            self.value.setText(text)
 
 
 class _EmptyGlyph(QWidget):
@@ -2983,8 +3321,8 @@ class _EmptyGlyph(QWidget):
         self._ink = QColor("#625D55")
 
     def set_theme(self, theme):
-        self._line = QColor(theme.border_strong)
-        self._ink = QColor(theme.text_muted)
+        self._line = _tc(theme.border_strong)
+        self._ink = _tc(theme.text_muted)
         self.update()
 
     def paintEvent(self, _event):
@@ -3025,9 +3363,9 @@ class _RankList(QWidget):
         self.setMinimumHeight(self.ROW_H)
 
     def set_theme(self, theme):
-        self._text = QColor(theme.text)
-        self._muted = QColor(theme.text_muted)
-        self._secondary = QColor(theme.text_secondary)
+        self._text = _tc(theme.text)
+        self._muted = _tc(theme.text_muted)
+        self._secondary = _tc(theme.text_secondary)
         self.update()
 
     def set_rows(self, rows):
@@ -4212,6 +4550,11 @@ class MainPlayerWindow(QWidget):
         duration = 0 if reduce else int(getattr(theme, "m_fast", 140))
         for button in self.findChildren(ui_glass.GlassButton):
             button.set_motion(duration)
+        # 歌词滚动同样是动画：「减少动态效果」开启时直接落位，不做惯性与回弹
+        try:
+            self.now.canvas.set_reduce_motion(reduce)
+        except (AttributeError, RuntimeError):
+            pass
 
     def _apply_theme(self, theme):
         self._apply_style()
@@ -4253,8 +4596,8 @@ class MainPlayerWindow(QWidget):
     def navigate(self, key: str):
         self._page = key
         self.sidebar.set_active(key)
-        # 标题栏 crumb 只在「页面自身没有一级标题」时出现：报告页已有
-        # H1 + 副标题，再来一条 crumb 就是同义重复。
+        # 标题栏左上角永远是「图标 + 应用名」；页面名只是后面一条弱化的
+        # crumb。报告页已有 H1 + 副标题，再来一条 crumb 就是同义重复。
         self.titlebar.page_label.setVisible(key != "report")
         if key == "now":
             self.stack.setCurrentWidget(self.now)
@@ -4527,6 +4870,13 @@ class MainPlayerWindow(QWidget):
 
     def _tick(self):
         try:
+            # 歌词逐字高亮跟着 90ms 心跳走只有 11fps，肉眼看就是"卡"。
+            # 播放中且停在歌词页时提到 ~60fps；其它页面回到低频巡检，
+            # 避免空转整窗重绘。
+            want = 16 if (self._page == "now"
+                          and self.ov.status == "PLAYING") else 90
+            if self._timer.interval() != want:
+                self._timer.setInterval(want)
             song = self.ov.song or {}
             title = song.get("title") or ""
             if not title:

@@ -13,10 +13,10 @@ padding, they just no longer paint the button itself.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import (QEasingCurve, QEvent, QPointF, QPropertyAnimation,
+from PySide6.QtCore import (QEasingCurve, QEvent, QPropertyAnimation,
                             QRectF, Qt, Property)
 from PySide6.QtGui import (QBrush, QColor, QIcon, QLinearGradient, QPainter,
-                           QPainterPath, QPen, QRadialGradient)
+                           QPen)
 from PySide6.QtWidgets import QPushButton
 
 # Variants ------------------------------------------------------------------
@@ -242,38 +242,14 @@ class GlassButton(QPushButton):
         press = self._press
         enabled = self.isEnabled()
 
-        self._paint_bloom(painter, rect, hover, press, enabled)
+        # iOS 26 的液态玻璃只做三件事：一层材质、一圈发丝边、一道顶部高光。
+        # 旧的 bloom 光晕 + 径向反光 + 黑色底影是「黑印」和掉帧的来源，
+        # 全部删掉后一次绘制从 8 次渐变降到 3 次。
         self._paint_fill(painter, rect, radius, hover, press, enabled, palette)
         self._paint_rim(painter, rect, radius, hover, press, enabled, palette)
-        self._paint_specular(painter, rect, radius, enabled)
         self._paint_content(painter, rect, hover, press, enabled, palette)
         self._paint_focus(painter, rect, radius, palette)
         painter.end()
-
-    def _paint_bloom(self, painter, rect, hover, press, enabled):
-        """Soft light halo instead of a hard drop shadow.
-
-        A heavy shadow is what made earlier buttons read as glossy plastic;
-        liquid glass floats on a diffuse glow, not on a solid cast shadow.
-        Saturated fills skip the halo entirely — a glow around a red or
-        orange pane reads as a neon sign rather than glass.
-        """
-        if not enabled or self._variant in (ACCENT, DANGER, SEGMENT):
-            return
-        dark = self._is_dark()
-        strength = (0.55 + 0.45 * hover) * (1.0 - 0.5 * press)
-        alpha = (0.05 if dark else 0.12) * strength
-        spread = rect.height() * 0.55
-        center = rect.center()
-        glow = QRadialGradient(center, rect.width() * 0.5 + spread)
-        glow.setColorAt(0.0, QColor(255, 255, 255, int(round(255 * alpha))))
-        glow.setColorAt(0.55, QColor(255, 255, 255,
-                                     int(round(255 * alpha * 0.35))))
-        glow.setColorAt(1.0, QColor(255, 255, 255, 0))
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(glow)
-        painter.drawEllipse(center, rect.width() * 0.5 + spread,
-                            rect.height() * 0.5 + spread)
 
     def _paint_fill(self, painter, rect, radius, hover, press, enabled,
                     palette):
@@ -284,162 +260,95 @@ class GlassButton(QPushButton):
             base = palette["accent"]
             if press > 0.0:
                 base = _mix(base, palette["accent_pressed"], press)
-            # A tinted pane of colour rather than a solid slab of plastic.
-            if base.alpha() == 255:
-                base.setAlpha(236 if dark else 244)
+            elif hover > 0.0:
+                base = _lighten(base, 0.06 * hover)
             gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-            gradient.setColorAt(0.0, _lighten(base, 0.14 + 0.10 * hover))
-            gradient.setColorAt(0.55, base)
-            gradient.setColorAt(1.0, _darken(base, 0.07))
+            gradient.setColorAt(0.0, _lighten(base, 0.07))
+            gradient.setColorAt(1.0, _darken(base, 0.04))
             painter.setBrush(gradient)
             painter.drawRoundedRect(rect, radius, radius)
             return
         if variant == DANGER:
             danger = palette["danger"]
-            alpha = int(round(18 + 34 * hover + 56 * press))
-            fill = QColor(danger.red(), danger.green(), danger.blue(), alpha)
-            painter.setBrush(fill)
+            alpha = int(round(24 + 30 * hover + 46 * press))
+            painter.setBrush(QColor(danger.red(), danger.green(), danger.blue(),
+                                    alpha))
             painter.drawRoundedRect(rect, radius, radius)
             return
         if variant == GHOST:
-            alpha = int(round(8 + 20 * hover + 24 * press))
-            painter.setBrush(QColor(255, 255, 255, alpha if dark else 0))
+            alpha = int(round((14 + 26 * hover + 20 * press) if dark
+                              else (0 + 28 * hover + 26 * press)))
+            painter.setBrush(QColor(0, 0, 0, alpha) if not dark
+                             else QColor(255, 255, 255, alpha))
             painter.drawRoundedRect(rect, radius, radius)
             return
-        # GLASS / SEGMENT
         if variant == SEGMENT:
-            # iOS 分段控件：未选是凹槽底，已选是一块「抬起」的面板。
-            # 旧实现把 accent_soft 的 RGB 直接给到 70% 不透明度，选中段
-            # 变成橙底橙字（浅色下几乎是同色）。这里改成层级表达：
-            # 底色区分轨道与滑块，选中态靠明度 + 描边 + 落影，不靠染色。
+            # iOS 分段控件：整条轨道由外层容器画，未选段完全透明，
+            # 选中段是一块干净的白色滑块（深色下是抬起的一档灰）。
             if self.isChecked():
-                painter.setPen(Qt.NoPen)
-                painter.setBrush(QColor(0, 0, 0, 34 if dark else 20))
-                painter.drawRoundedRect(rect.adjusted(0, 1.6, 0, 1.6),
-                                        radius, radius)
-                base = palette["surface"] if not dark \
-                    else _lighten(palette["surface"], 0.10)
-                top = _lighten(base, 0.02 if dark else 0.0)
-                bottom = base
-            else:
-                base = palette["track"]
-                if hover > 0:
-                    base = _lighten(base, 0.05 + 0.03 * hover)
-                top = _lighten(base, 0.06 if dark else 0.02)
-                bottom = base
-            gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-            gradient.setColorAt(0.0, top)
-            gradient.setColorAt(1.0, bottom)
-            painter.setBrush(gradient)
-            painter.drawRoundedRect(rect, radius, radius)
+                base = QColor(255, 255, 255) if not dark \
+                    else _lighten(palette["surface"], 0.16)
+                if press > 0.0:
+                    base = _darken(base, 0.05 * press)
+                painter.setBrush(base)
+                painter.drawRoundedRect(rect, radius, radius)
+            elif hover > 0.01:
+                tint = QColor(0, 0, 0, int(round(10 * hover))) if not dark \
+                    else QColor(255, 255, 255, int(round(14 * hover)))
+                painter.setBrush(tint)
+                painter.drawRoundedRect(rect, radius, radius)
             return
+        # GLASS：一层半透明材质。浅色用白 62%，深色用白 8%。
         if dark:
-            # A real translucent pane: whatever sits behind shows through.
-            base = QColor(255, 255, 255, int(round(30 + 20 * hover)))
+            base = QColor(255, 255, 255, int(round(18 + 12 * hover)))
+            if press > 0:
+                base.setAlpha(max(6, base.alpha() - int(10 * press)))
         else:
-            base = QColor(255, 255, 255, int(round(178 + 40 * hover)))
-        if variant == SEGMENT and self.isChecked():
-            tint = palette["accent_soft"]
-            base = QColor(tint.red(), tint.green(), tint.blue(),
-                          max(base.alpha(), tint.alpha()))
-        top = _lighten(base, 0.16 if dark else 0.25)
-        bottom = _darken(base, 0.10 if dark else 0.04)
+            base = QColor(255, 255, 255, int(round(158 + 52 * hover)))
+            if press > 0:
+                base.setAlpha(max(90, base.alpha() - int(36 * press)))
         gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-        gradient.setColorAt(0.0, top)
-        gradient.setColorAt(0.60, base)
-        gradient.setColorAt(1.0, bottom)
+        gradient.setColorAt(0.0, _lighten(base, 0.05 if dark else 0.02))
+        gradient.setColorAt(1.0, base)
         painter.setBrush(gradient)
         painter.drawRoundedRect(rect, radius, radius)
 
     def _paint_rim(self, painter, rect, radius, hover, press, enabled,
                    palette):
-        """A bright hairline that catches the light on top and fades below."""
+        """一圈发丝边：上缘接光、下缘收暗，不再画黑色投影。"""
         variant = self._variant
         dark = self._is_dark()
-        if variant == SEGMENT:
-            # 选中滑块靠一圈实色描边定型；未选段只留一点顶部微光。
-            painter.setBrush(Qt.NoBrush)
-            painter.setPen(QPen(palette["border_strong"] if self.isChecked()
-                                else QColor(255, 255, 255, 0), 1.0))
-            painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5),
-                                    radius, radius)
+        if variant == SEGMENT and not self.isChecked():
+            return
+        if variant == GHOST and hover <= 0.01:
             return
         if variant == ACCENT:
-            top = QColor(255, 255, 255, int(round(96 + 60 * hover)))
-            bottom = QColor(255, 255, 255, int(round(34 + 30 * hover)))
+            top = QColor(255, 255, 255, int(round(110 + 50 * hover)))
+            bottom = QColor(255, 255, 255, 26)
         elif variant == DANGER:
             danger = palette["danger"]
-            top = QColor(danger.red(), danger.green(), danger.blue(),
-                         int(round(170 + 70 * hover)))
-            bottom = QColor(danger.red(), danger.green(), danger.blue(),
-                            int(round(90 + 40 * hover)))
+            top = QColor(danger.red(), danger.green(), danger.blue(), 120)
+            bottom = QColor(danger.red(), danger.green(), danger.blue(), 40)
         elif variant == GHOST:
-            rim = palette["rim"]
-            top = QColor(rim.red(), rim.green(), rim.blue(),
-                         int(round(rim.alpha() + 90 * hover)))
-            bottom = QColor(rim.red(), rim.green(), rim.blue(),
-                            int(round(rim.alpha() * 0.5 + 30 * hover)))
+            top = QColor(palette["text"].red(), palette["text"].green(),
+                         palette["text"].blue(), int(round(28 * hover)))
+            bottom = QColor(0, 0, 0, 0)
+        elif variant == SEGMENT:
+            top = QColor(255, 255, 255, 70 if dark else 220)
+            bottom = QColor(255, 255, 255, 0) if dark \
+                else QColor(60, 60, 67, 22)
         else:
-            rim = palette["rim"]
-            top = QColor(rim.red(), rim.green(), rim.blue(),
-                         int(round(rim.alpha() + 110 * hover)))
-            bottom = QColor(rim.red(), rim.green(), rim.blue(),
-                            int(round(rim.alpha() * 0.6 + 24 * hover)))
+            top = QColor(255, 255, 255, int(round((58 if dark else 225)
+                                                  + 20 * hover)))
+            bottom = QColor(0, 0, 0, 0) if dark else QColor(60, 60, 67, 26)
         gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         gradient.setColorAt(0.0, top)
-        gradient.setColorAt(0.72, bottom)
-        # Light refracts through the lower edge as well, so the rim picks up a
-        # second, dimmer highlight before it closes.
-        gradient.setColorAt(1.0, _lighten(bottom, 0.35))
+        gradient.setColorAt(0.55, bottom)
+        gradient.setColorAt(1.0, bottom)
         painter.setBrush(Qt.NoBrush)
         painter.setPen(QPen(QBrush(gradient), 1.0))
-        area = rect.adjusted(0.5, 0.5, -0.5, -0.5)
-        painter.drawRoundedRect(area, radius, radius)
-
-    def _paint_specular(self, painter, rect, radius, enabled):
-        """Soft overhead light and a hint of thickness at the bottom edge."""
-        if not enabled:
-            return
-        dark = self._is_dark()
-        path = QPainterPath()
-        path.addRoundedRect(rect, radius, radius)
-        painter.save()
-        painter.setClipPath(path)
-        # Overhead light across the upper half.
-        sheen = 40 if dark else 150
-        gradient = QLinearGradient(
-            rect.topLeft(), QPointF(rect.left(), rect.top() + rect.height()))
-        gradient.setColorAt(0.0, QColor(255, 255, 255, int(sheen * 0.62)))
-        gradient.setColorAt(0.38, QColor(255, 255, 255, 0))
-        painter.fillRect(rect, gradient)
-        # A wide, very soft reflection in the upper-left corner.
-        glow = QRadialGradient(
-            QPointF(rect.left() + rect.width() * 0.26,
-                    rect.top() + rect.height() * 0.02),
-            max(6.0, rect.height() * 1.05))
-        glow.setColorAt(0.0, QColor(255, 255, 255, int(sheen * 0.26)))
-        glow.setColorAt(1.0, QColor(255, 255, 255, 0))
-        painter.setBrush(glow)
-        painter.setPen(Qt.NoPen)
-        painter.drawRect(rect)
-        # Thickness: the lower edge falls into shadow.
-        depth = QLinearGradient(
-            QPointF(rect.left(), rect.bottom() - rect.height() * 0.34),
-            rect.bottomLeft())
-        depth.setColorAt(0.0, QColor(0, 0, 0, 0))
-        depth.setColorAt(1.0, QColor(0, 0, 0, 40 if dark else 22))
-        painter.setBrush(depth)
-        painter.drawRect(rect)
-        # Refraction: a thin bright line just inside the upper rim, the way
-        # light bends along the edge of a real glass lens.
-        inner = rect.adjusted(1.4, 1.4, -1.4, -1.4)
-        edge = QLinearGradient(inner.topLeft(), inner.bottomLeft())
-        edge.setColorAt(0.0, QColor(255, 255, 255, min(255, int(sheen * 1.6))))
-        edge.setColorAt(0.26, QColor(255, 255, 255, 0))
-        painter.setBrush(Qt.NoBrush)
-        painter.setPen(QPen(QBrush(edge), 1.2))
-        painter.drawRoundedRect(inner, max(2.0, radius - 1.4), max(2.0, radius - 1.4))
-        painter.restore()
+        painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5),
+                                radius, radius)
 
     def _content_color(self, palette):
         variant = self._variant

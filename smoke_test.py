@@ -34,7 +34,7 @@ def check(name, fn):
         print("  FAIL-", name)
         traceback.print_exc()
 import lyrics_overlay as L                                   # noqa: E402
-from PySide6.QtWidgets import QApplication                    # noqa: E402
+from PySide6.QtWidgets import QApplication, QWidget, QLabel    # noqa: E402
 from PySide6.QtCore import Qt, QPoint, QPointF, QRectF, QVariantAnimation, QPropertyAnimation  # noqa: E402
 from PySide6.QtGui import QPixmap, QColor                     # noqa: E402
 # ---- 给 _pick_session 用的假 SMTC 会话（无需真实播放器）----
@@ -484,6 +484,65 @@ def widgets():
     sg.resize(240, 32)
     assert sg.grab().toImage().pixelColor(220, 16).alpha() == 255, "分段选择器没画出内容"
 check("switch / segmented", widgets)
+print("[16b] 鼠标点击不留主色焦点环（开关残影回归）")
+def focus_ring_ghost():
+    """鼠标点过的开关不应残留一圈主色描边——那看着像「上次开启的残影」。
+
+    只有键盘（Tab / Backtab）进入的焦点才画环，与 ui_glass.GlassButton 同口径。
+    """
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QFocusEvent
+
+    def accentish(rgb, tol=70):
+        d = sum((a - b) ** 2 for a, b in
+                zip(rgb, (194, 66, 31)))   # 默认主色 #C2421F
+        return d ** 0.5 <= tol
+
+    def focus_event(w, gained):
+        ev = QFocusEvent(QEvent.Type.FocusIn if gained else QEvent.Type.FocusOut,
+                         Qt.TabFocusReason)
+        QApplication.sendEvent(w, ev)
+
+    sw = L.Switch(False)
+    sw.set_accent(QColor("#C2421F"))
+    sw.show()
+    QApplication.processEvents()
+    sw.mouseReleaseEvent(type("E", (), {
+        "button": lambda s: Qt.LeftButton,
+        "position": lambda s: QPointF(10, 10),
+    })())
+    for _ in range(20):
+        QApplication.processEvents()
+    px = sw.grab().toImage().pixelColor(0, sw.height() // 2)
+    assert not accentish((px.red(), px.green(), px.blue())), \
+        "鼠标点击后开关仍残留主色描边（%s）" % (px.getRgb(),)
+    assert sw._key_focus is False, "鼠标点击不应被记成键盘焦点"
+
+    # 画不画焦点环取决于两个条件：hasFocus()（控件真有焦点）和 _key_focus
+    # （焦点是键盘进来的）。冒烟套件里别的窗口持有焦点，hasFocus() 未必为真，
+    # 所以用一个小子类把 hasFocus() 钉成真，直接验「画不画」这个判定。
+    class _FocusedSwitch(L.Switch):
+        def hasFocus(self):
+            return True
+
+    fsw = _FocusedSwitch(False)
+    fsw.set_accent(QColor("#C2421F"))
+    fsw.show()
+    QApplication.processEvents()
+    px = fsw.grab().toImage().pixelColor(0, fsw.height() // 2)
+    assert not accentish((px.red(), px.green(), px.blue())), \
+        "非键盘焦点时不该画焦点环（%s）" % (px.getRgb(),)
+
+    focus_event(fsw, False)
+    focus_event(fsw, True)
+    QApplication.processEvents()
+    assert fsw._key_focus is True, "Tab 进入没有记成键盘焦点"
+    px = fsw.grab().toImage().pixelColor(0, fsw.height() // 2)
+    assert accentish((px.red(), px.green(), px.blue())), \
+        "键盘焦点环丢了（%s）" % (px.getRgb(),)
+    fsw.close()
+    sw.close()
+check("focus ring ghost", focus_ring_ghost)
 print("[17] 播放进度锚点连续性（切主题/跳变不抖、不丢同步）")
 def anchor_continuity():
     import time as _t
@@ -523,6 +582,112 @@ def frozen_report():
     ov._apply_tick(74.0, 200.0, "PLAYING")
     assert abs(ov._current_pos() - 74.0) < 1.2, ov._current_pos()
 check("frozen report immunity", frozen_report)
+print("[17b2] 歌词页滚动：方向 / 范围 / 点选定位 / 平滑（2026-11-28）")
+def lyric_scroll_model():
+    import lyrics_view as V
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+
+    def make(n=20, immersive=False):
+        c = V.LyricsCanvas(lambda s: s)
+        c.resize(600, 400)
+        c.set_content_rect(0, 0, 600, 400)
+        c.set_immersive(immersive)
+        c.set_lyrics([(i * 3.0, "line %d" % i) for i in range(n)], {})
+        c.set_playback(0.0, 0, True)
+        return c
+
+    def wheel(c, angle=120, pixels=0):
+        c.wheelEvent(QWheelEvent(
+            QPointF(100, 100), QPointF(100, 100), QPoint(0, 0), QPoint(0, angle),
+            Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False))
+
+    def wheel_px(c, pixels):
+        c.wheelEvent(QWheelEvent(
+            QPointF(100, 100), QPointF(100, 100), QPoint(0, pixels), QPoint(0, 0),
+            Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False))
+
+    # 1) 方向：向上滚 → 看过去（行号变小）；向下滚 → 看未来
+    c = make()
+    c.set_playback(30.0, 10, True)
+    c._focus = c._focus_target = 10.0
+    wheel(c, angle=120)
+    assert c._focus_target < 10.0, "向上滚没有回到过去: %s" % c._focus_target
+    c2 = make()
+    c2.set_playback(30.0, 10, True)
+    c2._focus = c2._focus_target = 10.0
+    wheel(c2, angle=-120)
+    assert c2._focus_target > 10.0, "向下滚没有看到未来: %s" % c2._focus_target
+
+    # 2) 触控板只给 pixelDelta 时也要能滚（旧代码只看 angleDelta）
+    c3 = make()
+    before = c3._focus_target
+    wheel_px(c3, -40)
+    assert c3._focus_target != before, "pixelDelta 被忽略，触控板滚不动"
+
+    # 3) 范围夹取：滚到头尾都不许滚进空白
+    c4 = make(n=5)
+    for _ in range(30):
+        wheel(c4, angle=120)
+    lo, hi = c4._focus_limits()
+    assert lo - 1e-6 <= c4._focus_target <= hi + 1e-6, \
+        "滚过头: %s 不在 [%s, %s]" % (c4._focus_target, lo, hi)
+    for _ in range(30):
+        wheel(c4, angle=-120)
+    assert lo - 1e-6 <= c4._focus_target <= hi + 1e-6, \
+        "滚过头: %s 不在 [%s, %s]" % (c4._focus_target, lo, hi)
+
+    # 4) 点选定位必须与绘制几何一致（含手动滚动后、沉浸模式）
+    c5 = make(n=20)
+    c5.set_playback(30.0, 10, True)
+    c5._focus = c5._focus_target = 10.0
+    anchor_y = c5._anchor_effective(c5._focus, 400.0)
+    assert c5._index_at(anchor_y, 400.0) == 10, c5._index_at(anchor_y, 400.0)
+    assert c5._index_at(anchor_y + 3 * c5._line_h, 400.0) == 13
+    c5._focus = c5._focus_target = 4.0
+    anchor5 = c5._anchor_effective(c5._focus, 400.0)
+    assert c5._index_at(anchor5, 400.0) == 4, "手动滚动后点选定位错行"
+
+    c6 = make(n=20, immersive=True)
+    c6.set_playback(30.0, 7, True)
+    c6._focus = c6._focus_target = 7.0
+    anchor6 = c6._anchor_effective(c6._focus, 400.0)
+    assert abs(400.0 * c6._anchor_ratio() - 400.0 * 0.42) < 1e-9
+    assert c6._index_at(anchor6, 400.0) == 7, c6._index_at(anchor6, 400.0)
+
+    # 5) 平滑：换行是渐进的，单帧位移有上限（不许瞬移）
+    c7 = make(n=20)
+    c7.set_playback(3.0, 5, True)
+    c7._focus = c7._focus_target = 5.0
+    c7.set_playback(6.0, 6, True)
+    prev = c7._focus
+    steps = []
+    for _ in range(120):
+        c7._anim_tick(dt=0.016)
+        steps.append(abs(c7._focus - prev))
+        prev = c7._focus
+    assert max(steps) < 0.5, "换行是整格硬跳: %s" % max(steps)
+    assert abs(c7._focus - 6.0) < 0.05, c7._focus
+
+    # 6) 停手后自动回到当前句
+    c8 = make(n=20)
+    c8.set_playback(30.0, 10, True)
+    c8._focus = c8._focus_target = 10.0
+    wheel(c8, angle=120)
+    assert c8._follow is False, "滚动后没有脱离跟随"
+    c8._last_input_t = time.monotonic() - 10.0
+    for _ in range(200):
+        c8._anim_tick(dt=0.016)
+    assert c8._follow is True, "停手后没有回到跟随"
+    assert abs(c8._focus - 10.0) < 0.1, c8._focus
+
+    # 7) 减少动态效果：直接落位，不做弹簧
+    c9 = make(n=20)
+    c9.set_reduce_motion(True)
+    wheel(c9, angle=120)
+    assert abs(c9._focus - c9._focus_target) < 1e-9, \
+        "减少动态效果时没有直接落位: %s vs %s" % (c9._focus, c9._focus_target)
+check("lyric scroll model", lyric_scroll_model)
 print("[17c] _live_pos 只补 SMTC 快照年龄：新鲜快照外推、陈旧/异常时间戳直传")
 def live_pos_snapshot_age():
     import datetime as _dt
@@ -570,6 +735,116 @@ def zombie_status_precedence():
     assert L._effective_tick_status("PAUSED", False) == "PAUSED"
     assert L._effective_tick_status("PLAYING", False) == "PLAYING"
 check("zombie status precedence", zombie_status_precedence)
+
+print("[17c3b] 反向桥接：SMTC 报 PLAYING 但实际已停 ⇒ 判定真暂停（2026-11-28）")
+def stuck_playing_bridge():
+    # 真暂停：位置停住够久 + 音频确认无声 + 连续两拍成立
+    assert L._stuck_playing_bridge("PLAYING", 3.0, True, 2)
+    # 位置还在推进 ⇒ 绝不改判（正常播放）
+    assert not L._stuck_playing_bridge("PLAYING", 0.0, True, 5)
+    # 冻结时间不够 ⇒ 不改判
+    assert not L._stuck_playing_bridge("PLAYING", 1.0, True, 5)
+    # 设备有声音 ⇒ 不改判（那是 SMTC 僵死，交给正向桥接）
+    assert not L._stuck_playing_bridge("PLAYING", 9.0, False, 5)
+    # streak 防抖
+    assert not L._stuck_playing_bridge("PLAYING", 9.0, True, 1)
+    # 已经不是 PLAYING ⇒ 不适用
+    assert not L._stuck_playing_bridge("PAUSED", 9.0, True, 5)
+check("stuck playing reverse bridge", stuck_playing_bridge)
+
+print("[17c3c] is_process_silent：只在拿到肯定证据时才判静音")
+def process_silent_probe():
+    import threading as _th
+    import time as _t
+    p = L._AudioProbe.__new__(L._AudioProbe)
+    p._lock = _th.Lock()
+    p._table = {}
+    p._stamp = 0.0
+    p._peak = -1.0
+    p._peak_stamp = 0.0
+    p._interval = 1.0
+    # 空表 = 探针不可用 ⇒ 拿不到证据不等于没声音
+    assert p.is_process_silent("QQMusic.exe") is False
+    p._table = {"qqmusic.exe": True}
+    p._stamp = _t.monotonic()
+    p._peak = 0.3
+    p._peak_stamp = _t.monotonic()
+    assert p.is_process_silent("QQMusic.exe") is False      # 在出声
+    p._peak = 0.0
+    assert p.is_process_silent("QQMusic.exe") is True       # 设备静音
+    p._peak = 0.3
+    p._table = {"qqmusic.exe": False}
+    assert p.is_process_silent("QQMusic.exe") is True       # 会话非 ACTIVE
+check("process silence evidence", process_silent_probe)
+
+print("[17c3d] 反向桥接端到端：暂停后歌词必须真冻结，且不得误伤正常播放")
+def stuck_playing_e2e():
+    class _FakeAudio:
+        def __init__(self, silent):
+            self.silent = silent
+
+        def is_active(self, aumid):
+            return not self.silent
+
+        def is_process_silent(self, aumid):
+            return self.silent
+
+        def active_processes(self):
+            return {}
+
+        def device_peak(self):
+            return 0.0 if self.silent else 0.3
+
+    def simulate(positions, silent, step=0.12):
+        """按 watcher 那一拍的真实顺序跑一遍，返回每拍下发的 status。"""
+        w = L.MediaWatcher.__new__(L.MediaWatcher)
+        w._audio = _FakeAudio(silent)
+        w._stuck_streak = 0
+        w._last_raw_pos = None
+        w._pos_frozen_since = 0.0
+        w._stuck_logged = False
+        out = []
+        clock = 0.0
+        for raw_pos in positions:
+            clock += step
+            if (w._last_raw_pos is None
+                    or abs(raw_pos - w._last_raw_pos) > 0.05):
+                w._last_raw_pos = raw_pos
+                w._pos_frozen_since = 0.0
+                frozen_for = 0.0
+            else:
+                if not w._pos_frozen_since:
+                    w._pos_frozen_since = clock
+                frozen_for = clock - w._pos_frozen_since
+            if frozen_for >= L.STUCK_PLAYING_SECONDS:
+                w._stuck_streak += 1
+            else:
+                w._stuck_streak = 0
+            status = "PLAYING"
+            silent_evidence = False
+            if (frozen_for >= L.STUCK_PLAYING_SECONDS
+                    and w._stuck_streak >= 2):
+                silent_evidence = w._audio.is_process_silent("QQMusic.exe")
+            if L._stuck_playing_bridge("PLAYING", frozen_for, silent_evidence,
+                                       w._stuck_streak):
+                status = "PAUSED"
+            out.append(status)
+        return out
+
+    # 用户按暂停：位置停住 + 音频无声 ⇒ 几秒内改判 PAUSED
+    res = simulate([100.0, 100.5, 101.0] + [101.0] * 200, silent=True)
+    assert "PAUSED" in res, "暂停后没有改判成 PAUSED"
+    elapsed = (res.index("PAUSED") + 1) * 0.12
+    assert elapsed <= 4.0, "暂停后 %.1fs 才冻结，太慢" % elapsed
+
+    # 正常播放：位置持续推进 ⇒ 全程 PLAYING，绝不误判
+    res = simulate([100.0 + i * 0.12 for i in range(200)], silent=False)
+    assert all(s == "PLAYING" for s in res), "正常播放被误判成暂停"
+
+    # SMTC 僵死：位置停住但音频有声 ⇒ 反向桥接不得改判（交给正向桥接）
+    res = simulate([100.0] * 200, silent=False)
+    assert all(s == "PLAYING" for s in res), "僵死场景被反向桥接误改判"
+check("stuck playing end-to-end", stuck_playing_e2e)
 
 print("[17c4] QQ 音乐进度校准：解析 / 选值 / 保护期")
 def qq_calib_parsing():
@@ -2317,6 +2592,26 @@ def light_contrast_gate():
         assert T.contrast_ratio(pal["text_muted"], pal["track"]) >= 3.0, \
             "%s 未选段文字对比不足" % theme.appearance
 check("light contrast gate", light_contrast_gate)
+
+print("[28c] 标题栏左上角：永远显示应用身份（图标 + 应用名），页面名只是 crumb")
+def titlebar_identity():
+    import lyrics_view as V
+    bar = V.TitleBar(lambda s: s)
+    # 应用名常驻标题栏左上角，不随页面切换而变
+    assert bar.app_name.text() == "桌面歌词", bar.app_name.text()
+    # 应用图标用真实 icon.png，不是随手画的字形
+    pm = bar.app_icon.pixmap()
+    assert not pm.isNull(), "标题栏没有应用图标"
+    assert pm.width() >= 16, pm.width()
+    # 侧栏不再重复一份品牌块（否则 40px 内出现两次应用名）
+    sb = V.Sidebar(lambda s: s)
+    labels = [w for w in sb.findChildren(QWidget)
+              if isinstance(w, QLabel) and w.objectName() == "brandname"]
+    assert not labels, "侧栏还有重复的品牌名"
+    # 页面名仍然保留为一条 crumb（辅助信息，不抢左上角）
+    assert bar.page_label.objectName() == "pagecrumb"
+    assert bar.page_label.text() == "正在播放"
+check("titlebar app identity", titlebar_identity)
 
 
 print("[29] 菜单 / 弹层皮肤：右键菜单、托盘菜单、下拉弹层、对话框都不能漏成原生白底")

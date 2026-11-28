@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
 
 import listening_store
 import lyrics_view
+import ui_glass
 import ui_theme
 
 # ---- SMTC 绑定：延迟导入 ----------------------------------------------------
@@ -2200,8 +2201,33 @@ class GlobalHotkeys(QObject):
 _DIRECT_OPENER = None
 _PROXY_OPENER = None
 _HAS_PROXY = None
-_NET_MODE = "direct"          # 上次成功的出口，新请求先试它
+_HAS_PROXY_TS = 0.0
+# 出口记忆按「目标域名」分别保存，而不是全局一份：否则只要有一个请求（典型是
+# 境外的 lrclib）走了代理成功，全局就切成「代理优先」，接下来国内的 QQ / 网易
+# 歌词接口和封面（y.gtimg.cn 等）也会被先塞进代理；代理一旦慢过国内源 1.8s 的
+# 预算就全源空手而归——用户看到的就是「一开代理：封面出不来、歌词还不同步」。
+# 按域名各记各的，国内域名始终直连优先，互不污染。
+_NET_MODE_BY_HOST = {}
 _net_lock = threading.Lock()
+
+
+def _host_of(url: str) -> str:
+    try:
+        return (urllib.parse.urlsplit(url).hostname or "").lower()
+    except Exception:
+        return ""
+
+
+def _net_mode_for(url: str) -> str:
+    host = _host_of(url)
+    with _net_lock:
+        return _NET_MODE_BY_HOST.get(host, "direct")
+
+
+def _remember_net_mode(url: str, mode: str):
+    host = _host_of(url)
+    with _net_lock:
+        _NET_MODE_BY_HOST[host] = mode
 
 
 def _opener(use_proxy: bool):
@@ -2216,21 +2242,31 @@ def _opener(use_proxy: bool):
 
 
 def _system_proxy_set() -> bool:
-    """本机是否配置了系统代理（环境变量 or 注册表）"""
-    global _HAS_PROXY
-    if _HAS_PROXY is None:
+    """本机是否配置了系统代理（环境变量 or 注册表）。
+
+    不永久缓存：用户可能在程序运行过程中开 / 关 Clash，永久缓存会让「开着代理
+    启动、中途又关掉」或反之的场景一直用错出口。这里按 30s 刷新一次，既能感知
+    代理状态变化，又不会每个请求都去读一遍注册表。
+    """
+    global _HAS_PROXY, _HAS_PROXY_TS
+    now = time.monotonic()
+    if _HAS_PROXY is None or now - _HAS_PROXY_TS > 30.0:
         try:
             _HAS_PROXY = bool(urllib.request.getproxies())
         except Exception:
             _HAS_PROXY = False
+        _HAS_PROXY_TS = now
     return _HAS_PROXY
 
 
 def http_get(url: str, headers=None, timeout: float = 8.0) -> bytes:
-    """取回响应字节。默认直连；直连失败且本机有系统代理时，自动退回代理再试一次。"""
+    """取回响应字节。默认直连；直连失败且本机有系统代理时，自动退回代理再试一次。
+
+    出口顺序按「目标域名」各自记忆（见 _NET_MODE_BY_HOST），不会被别的主机的
+    成功 / 失败带偏。
+    """
     req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA, **(headers or {})})
-    global _NET_MODE
-    order = ("direct", "proxy") if _NET_MODE == "direct" else ("proxy", "direct")
+    order = ("direct", "proxy") if _net_mode_for(url) == "direct" else ("proxy", "direct")
     first_err = None
     for mode in order:
         if mode == "proxy" and not _system_proxy_set():
@@ -2238,8 +2274,7 @@ def http_get(url: str, headers=None, timeout: float = 8.0) -> bytes:
         try:
             with _opener(mode == "proxy").open(req, timeout=timeout) as resp:
                 data = resp.read()
-            with _net_lock:
-                _NET_MODE = mode
+            _remember_net_mode(url, mode)
             return data
         except Exception as e:
             if first_err is None:
@@ -2256,8 +2291,7 @@ def http_post(url: str, data: bytes, headers=None, timeout: float = 8.0) -> byte
     """
     req = urllib.request.Request(url, data=data,
                                  headers={"User-Agent": BROWSER_UA, **(headers or {})})
-    global _NET_MODE
-    order = ("direct", "proxy") if _NET_MODE == "direct" else ("proxy", "direct")
+    order = ("direct", "proxy") if _net_mode_for(url) == "direct" else ("proxy", "direct")
     first_err = None
     for mode in order:
         if mode == "proxy" and not _system_proxy_set():
@@ -2265,8 +2299,7 @@ def http_post(url: str, data: bytes, headers=None, timeout: float = 8.0) -> byte
         try:
             with _opener(mode == "proxy").open(req, timeout=timeout) as resp:
                 body = resp.read()
-            with _net_lock:
-                _NET_MODE = mode
+            _remember_net_mode(url, mode)
             return body
         except Exception as e:
             if first_err is None:
@@ -2287,13 +2320,35 @@ def _cover_cache_path(url: str) -> str:
     return os.path.join(COVER_CACHE_DIR, "cover-" + digest + ".bytes")
 
 
+def _looks_like_image(data: bytes) -> bool:
+    """字节是不是一张真正的图片（JPEG/PNG/WEBP/GIF/BMP）。
+
+    开代理时，代理 / 网关很可能对图片域名返回一个 200 的 HTML 报错页或跳转页；
+    若不校验，这种「假图片」会被当成封面写进磁盘缓存，之后每次命中缓存都还是
+    坏的 —— 用户看到的就是「封面永远出不来」。这里按文件头魔数把关。
+    """
+    if not data or len(data) < 12:
+        return False
+    if data[:3] == b"\xff\xd8\xff":                     # JPEG
+        return True
+    if data[:8] == b"\x89PNG\r\n\x1a\n":               # PNG
+        return True
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":  # WEBP
+        return True
+    if data[:6] in (b"GIF87a", b"GIF89a"):             # GIF
+        return True
+    if data[:2] == b"BM":                              # BMP
+        return True
+    return False
+
+
 def fetch_cover_image(url: str, timeout: float = 5.0):
     """按 URL 读取封面字节；内存/磁盘命中时不重复发起网络请求。"""
     if not url:
         return None
     with _COVER_CACHE_LOCK:
         data = _COVER_MEMORY_CACHE.get(url)
-    if data is not None:
+    if data is not None and _looks_like_image(data):
         return data
 
     cp = _cover_cache_path(url)
@@ -2301,10 +2356,15 @@ def fetch_cover_image(url: str, timeout: float = 5.0):
         if os.path.getsize(cp) <= _COVER_MAX_BYTES:
             with open(cp, "rb") as f:
                 data = f.read()
-            if data:
+            if data and _looks_like_image(data):
                 with _COVER_CACHE_LOCK:
                     _COVER_MEMORY_CACHE[url] = data
                 return data
+            if data:                       # 命中坏缓存（旧版被代理返回的错误页）：删掉重下
+                try:
+                    os.remove(cp)
+                except OSError:
+                    pass
     except OSError:
         pass
 
@@ -2313,22 +2373,27 @@ def fetch_cover_image(url: str, timeout: float = 5.0):
     with download_lock:
         with _COVER_CACHE_LOCK:
             data = _COVER_MEMORY_CACHE.get(url)
-        if data is not None:
+        if data is not None and _looks_like_image(data):
             return data
         try:
             if os.path.getsize(cp) <= _COVER_MAX_BYTES:
                 with open(cp, "rb") as f:
                     data = f.read()
-                if data:
+                if data and _looks_like_image(data):
                     with _COVER_CACHE_LOCK:
                         _COVER_MEMORY_CACHE[url] = data
                     return data
+                if data:
+                    try:
+                        os.remove(cp)
+                    except OSError:
+                        pass
         except OSError:
             pass
 
         data = http_get(url, timeout=timeout)
-        if not data or len(data) > _COVER_MAX_BYTES:
-            raise ValueError("cover response is empty or too large")
+        if not data or len(data) > _COVER_MAX_BYTES or not _looks_like_image(data):
+            raise ValueError("cover response is empty, too large or not an image")
         os.makedirs(COVER_CACHE_DIR, exist_ok=True)
         tmp = cp + (".tmp-%d-%d" % (os.getpid(), threading.get_ident()))
         try:
@@ -4620,6 +4685,41 @@ class _AudioProbe:
             return False
         return True
 
+    def is_process_silent(self, aumid: str) -> bool:
+        """该 AUMID 对应的进程此刻是否**确定**没有在出声。
+
+        与 :meth:`is_active` 相反，这里只在拿到**肯定证据**时返回 True：
+          · 默认输出设备此刻电平为 0（设备级，最硬的证据）；
+          · 该进程有音频会话、但状态不是 ACTIVE。
+        探针不可用（表为空/快照陈旧）时返回 False —— 拿不到证据不等于没声音。
+
+        「该进程在会话表里完全找不到」**不算**证据：它可能把声音送到了
+        另一条输出路径（蓝牙/HDMI），此时设备电平照样能证明有声音。用
+        「找不到 + 设备静音」当证据会误伤正在用蓝牙外放的用户。
+
+        反向桥接（判「真暂停」）靠它兜底；正向桥接（判「僵死但还在放」）
+        靠 :meth:`is_active`。
+        """
+        proc = _aumid_process(aumid)
+        if not proc:
+            return False
+        with self._lock:
+            table, stamp = dict(self._table), self._stamp
+        if not table or time.monotonic() - stamp > max(5.0, self._interval * 5):
+            return False        # 探针不可用 → 不作判据
+        # 设备电平为 0 ⇒ 整个默认输出设备此刻没有任何声音 ⇒ 肯定没在放
+        peak = self.device_peak()
+        if 0.0 <= peak <= 0.002:
+            return True
+        active = table.get(proc)
+        if active is None:
+            for k, v in table.items():
+                if k.rsplit(".", 1)[0] == proc or k.startswith(proc):
+                    active = v
+                    break
+        # 会话存在但不 ACTIVE ⇒ 该进程确实没在出声
+        return active is False
+
     def device_peak(self) -> float:
         """默认输出设备此刻的电平峰值（0~1）；探针不可用/陈旧返回 -1。
 
@@ -5684,6 +5784,37 @@ def _effective_tick_status(raw_status: str, bridged: bool) -> str:
     return raw_status
 
 
+def _stuck_playing_bridge(raw_status: str, frozen_for: float, silent: bool,
+                           streak: int) -> bool:
+    """反向桥接：SMTC 报 PLAYING、但实际已经停了 —— 判定为真暂停。
+
+    正向桥接（_smtc_zombie_bridge）解决「还在放、SMTC 却报暂停」；
+    这里解决镜像情况：「已经暂停、SMTC 却还在报在放」。
+
+    实测症状（2026-11-28）：用户按下暂停后，QQ 音乐仍持续上报
+    `status=PLAYING raw_pos=216.2`（位置纹丝不动），上游把它当成
+    「SMTC 僵死」继续外推，歌词一路往后跑。浏览器幽灵会话
+    （Edge 报 PLAYING 而 pos 恒为 0）同源，而且它每 20~30s 会刷新一次
+    时间线，于是「时间线陈旧度」这类判据对它时灵时不灵。
+
+    三个条件同时成立才改判（宁可漏判也不误判）：
+      · SMTC 此刻仍在报 PLAYING；
+      · 上报的位置已经**连续 frozen_for 秒**纹丝不动（真在放时位置必然在涨）；
+      · 音频侧确认此刻没有声音（唯一与播放器声明无关的证据）。
+
+    frozen_for 用时间而不是「连续次数」：有些播放器每秒才推一次位置，
+    用次数会把「两拍之间位置没变」误判成冻结。
+    streak 只做防抖（>=2 表示这一判定连续成立了两拍）。
+    """
+    if raw_status != "PLAYING":
+        return False
+    if frozen_for < STUCK_PLAYING_SECONDS:
+        return False
+    if not silent:
+        return False
+    return streak >= 2
+
+
 def _aumid_process(aumid: str) -> str:
     """从 AUMID 里扒出可执行文件名（小写、无 .exe），用于和 WASAPI 会话比对。
 
@@ -5729,6 +5860,9 @@ def _pid_image_name(pid: int) -> str:
 # 会话切换防抖 / 陈旧判定（修复抖音网页版 SMTC 会话每秒闪烁导致跳到陈旧 QQ 音乐会话）
 SESSION_HYSTERESIS = 8.0     # 秒：当前会话刚消失时，多久内拒绝切换到「非播放」候选
 STALE_SESSION_AGE = 90.0     # 秒：未播放且时间线超过此陈旧度的会话视为「无有效播放」
+# 反向桥接阈值（秒）：SMTC 仍报 PLAYING、但上报位置连续这么久纹丝不动
+# ⇒ 判定为真暂停。正常播放时位置每 0.1~1s 就会推进，不会触发。
+STUCK_PLAYING_SECONDS = 2.5
 
 # 歌词偏移上限（秒）。原来只有 ±5s：碰上播放器 SMTC 位置整体偏一截（如 QQ 音乐
 # 拖过进度条后系统进度不跟着走），偏 10s+ 时用户顶到上限也校不回来。
@@ -5755,6 +5889,11 @@ class MediaWatcher(QObject):
         self._audio = _AudioProbe()
         self._zombie = False           # 当前是否处于「SMTC 僵死、按音频活跃桥接」状态
         self._alive_streak = 0         # 连续探测到「音频仍在输出」的次数（防抖）
+        # 反向桥接状态（判「真暂停」）：位置纹丝不动的起点 + 连续成立拍数
+        self._stuck_streak = 0
+        self._last_raw_pos = None
+        self._pos_frozen_since = 0.0
+        self._stuck_logged = False
         # 采集线程心跳（monotonic）：轮询循环每转一圈就刷新。
         # 2026-11-13 商店版事故的最终保险：v2.0.4 已经把已知挂死模式全部堵死
         # （COM 全部隔离到 audio-probe 线程 + 所有 WinRT await 带 wait_for 超时），
@@ -5836,6 +5975,7 @@ class MediaWatcher(QObject):
                 st = _status_name(s.get_playback_info().playback_status)
                 playing = st == "PLAYING"
                 src = (s.source_app_user_model_id or "").lower()
+                age = MediaWatcher._lut_age(s.get_timeline_properties())
                 # SMTC 僵死的会话在评分里也要算「在播」，否则它会被下面的陈旧惩罚
                 # 压到最低，转而挂到另一个真正暂停的会话上（等于放弃音频兜底）
                 if not playing and probe is not None:
@@ -5843,9 +5983,23 @@ class MediaWatcher(QObject):
                         playing = probe.is_active(s.source_app_user_model_id or "")
                     except Exception:
                         playing = False
+                # 反向僵死：自称 PLAYING、但位置永远停在 0 且时间线早已停更
+                # （浏览器幽灵会话：Edge 关闭播放页后残留的 PLAYING+pos=0）。
+                # 这种会话绝不能靠「自称在放」压过真正在放的音乐会话 ——
+                # 否则歌词会挂在一个不动的会话上，位置永远是 0。
+                # 三个条件都成立才降级：位置为 0、时间线陈旧、音频侧确认无声。
+                elif playing and probe is not None:
+                    try:
+                        tl2 = s.get_timeline_properties()
+                        if (MediaWatcher._lut_age(tl2) >= STUCK_PLAYING_SECONDS
+                                and _to_seconds(tl2.position) <= 0.01
+                                and probe.is_process_silent(
+                                    s.source_app_user_model_id or "")):
+                            playing = False
+                    except Exception:
+                        pass
                 music_app = _is_music_aumid(src)
                 sticky = bool(last_source) and src == last_source
-                age = MediaWatcher._lut_age(s.get_timeline_properties())
                 # 陈旧会话（如 QQ 音乐崩溃残留、Edge 关闭播放页后留下的
                 # "PLAYING + position=0" 幽灵）直接压到最低优先级。不能只判
                 # not playing：实测 Edge 的幽灵会话会一直自称 PLAYING，
@@ -5906,6 +6060,7 @@ class MediaWatcher(QObject):
             try:
                 self._poll_alive_ts = time.monotonic()   # 看门狗心跳
                 now = time.time()
+                now_mono = time.monotonic()
                 session = self._pick_session(manager, self._last_source, self._audio)
                 if session is None:
                     if self._had_session:
@@ -5984,6 +6139,12 @@ class MediaWatcher(QObject):
                     self._last_source = sid
                     self._last_switch_ts = now
                     self._key = None
+                    # 换会话 ⇒ 反向桥接的「位置冻结」基准作废（上一会话的位置
+                    # 与新会话无关，留着会误判成冻结）
+                    self._last_raw_pos = None
+                    self._pos_frozen_since = 0.0
+                    self._stuck_streak = 0
+                    self._stuck_logged = False
                     self.mediaChanged.emit(None)
                 self._last_source = sid
                 props = await asyncio.wait_for(
@@ -6026,6 +6187,39 @@ class MediaWatcher(QObject):
                 raw_pos = _to_seconds(tl.position)
                 age = self._lut_age(tl)
                 dur = _to_seconds(tl.end_time)
+                # 反向桥接：SMTC 说在放、实际已停（用户按了暂停但播放器还报
+                # PLAYING）⇒ 改判为 PAUSED，让歌词立刻冻结而不是继续外推。
+                # 判据见 _stuck_playing_bridge：位置连续 frozen_for 秒不动 +
+                # 音频侧确认此刻没有声音，两者同时成立才改判。
+                if (self._last_raw_pos is None
+                        or abs(raw_pos - self._last_raw_pos) > 0.05):
+                    self._last_raw_pos = raw_pos
+                    self._pos_frozen_since = 0.0
+                    frozen_for = 0.0
+                else:
+                    if not self._pos_frozen_since:
+                        self._pos_frozen_since = now_mono
+                    frozen_for = now_mono - self._pos_frozen_since
+                if raw_status == "PLAYING" and frozen_for >= STUCK_PLAYING_SECONDS:
+                    self._stuck_streak += 1
+                else:
+                    self._stuck_streak = 0
+                # 音频侧证据要查 COM 快照，只在便宜的条件都成立时才去问
+                silent = False
+                if (raw_status == "PLAYING"
+                        and frozen_for >= STUCK_PLAYING_SECONDS
+                        and self._stuck_streak >= 2):
+                    silent = self._audio.is_process_silent(sid)
+                if _stuck_playing_bridge(raw_status, frozen_for, silent,
+                                         self._stuck_streak):
+                    if not self._stuck_logged:
+                        self._stuck_logged = True
+                        log("反向桥接：SMTC 报 PLAYING 但位置停在 %.1f 已 %.1fs、"
+                            "该进程无音频输出 → 判定为真暂停，冻结歌词"
+                            % (raw_pos, frozen_for))
+                    status = "PAUSED"
+                elif raw_status != "PLAYING":
+                    self._stuck_logged = False
                 # position 是 last_updated_time 时刻的快照，PLAYING 时按陈旧度外推成实时值
                 pos = _live_pos(raw_pos, tl.last_updated_time, status)
                 # 停摆诊断（2026-11-14）：「歌词看起来卡住」时用来分清真假停摆。
@@ -7367,6 +7561,9 @@ class LyricOverlay(QWidget):
         self.anchor_ts = 0.0
         self._last_tick_pos = None   # 上一次收到的播放器原始进度（供连续性校正）
         self._frozen_report = False  # 播放器 SMTC 位置上报是否处于冻结中
+        # 按下暂停后的乐观冻结截止时刻（monotonic）：覆盖第三方播放器响应媒体键
+        # 的延迟，让「按下即停」，避免进度 / 歌词在暂停确认前继续往前跑。
+        self._pause_hold_until = 0.0
         # 校准时 SMTC 上报的那个原始位置：之后只要上报值还等于它，就说明
         # SMTC 仍卡在旧快照上，必须继续用校准后的锚点（值一变就立刻交回原链路）。
         self._calib_smtc_pos = None
@@ -7379,7 +7576,16 @@ class LyricOverlay(QWidget):
         self.status = "CLOSED"
         self.click_through = bool(self.cfg.get("click_through", False))
         self.show_cover = bool(self.cfg.get("show_cover", True))
-        self.style_mode = self.cfg.get("style", "native")          # native / glass
+        # 2026-11-28：悬浮条统一到 iOS「专辑卡片」风格——大圆角毛玻璃 + 实心无
+        # 描边排版，是五套里最耐看、也和播放器主界面同一套 iOS 语言的一套。旧的
+        # native / glass / vinyl 是「透明底 + 粗黑描边空心字」，与主界面明显割裂。
+        # 老配置若用户从没在设置里手动切换过样式，一次性迁移到 ios；用户之后手动
+        # 选过的样式会被 ui_style_user_picked 记住，不再覆盖。
+        if self.cfg.get("ui_style_user_picked"):
+            self.style_mode = self.cfg.get("style", "ios")
+        else:
+            self.style_mode = "ios"
+            self.cfg["style"] = "ios"          # 让下一次 _save_position 落盘为新默认
         self.color_mode = self.cfg.get("color_mode", "auto")       # auto=封面取色 / fixed=固定主题
         self.color_theme = self.cfg.get("color_theme", "mist")     # 固定主题 id（见 COLOR_THEMES）
         self.display_mode = self.cfg.get("display_mode", "desktop")  # desktop / topmost
@@ -8324,6 +8530,7 @@ class LyricOverlay(QWidget):
     def set_style_mode(self, mode: str):
         if mode in STYLE_NAMES and mode != self.style_mode:
             self.style_mode = mode
+            self.cfg["ui_style_user_picked"] = True   # 用户主动选的样式，之后不再被默认迁移覆盖
             self._apply_shadow()
             # 切换主题后文字度量 / 可用宽度会变，旧缓存会让高亮错位或「只亮前几个字」；
             # 同时复位切行动画，避免上一行的入场动画卡在 0（整行透明 = 看似冻结）
@@ -8499,6 +8706,15 @@ class LyricOverlay(QWidget):
                               QSystemTrayIcon.Information, 1200)
 
     def media_command(self, cmd: str):
+        # 播放 / 暂停走系统媒体键，第三方播放器（QQ 音乐等）从收到键到真正暂停
+        # 有几十~几百 ms 延迟；这期间 SMTC 仍报 PLAYING，_apply_tick 会继续外推，
+        # 用户看到「按了暂停，进度 / 歌词还往前跑一段」。这里在按下的瞬间乐观冻结
+        # 进度显示，让「按下即停」，等播放器确认暂停后再交回原链路。
+        if cmd == "toggle" and self.song is not None and self.status == "PLAYING":
+            self._pause_hold_until = time.monotonic() + 1.5
+            self.update()
+        else:
+            self._pause_hold_until = 0.0   # 非「暂停」方向的按键：清掉残留窗口
         send_media_command(cmd)
 
     def _refresh_lyrics(self, strict_artist=False):
@@ -8846,6 +9062,7 @@ class LyricOverlay(QWidget):
         self._last_tick_pos = None
         self._frozen_report = False
         self._calib_smtc_pos = None
+        self._pause_hold_until = 0.0
         self._calib_blocked_logged = False
         self._drift_n = 0
         self._bad_dur = False
@@ -8915,6 +9132,18 @@ class LyricOverlay(QWidget):
         self.status = status
         now = time.monotonic()
 
+        # 乐观暂停：刚按下暂停、第三方播放器还没真正停下（SMTC 仍报 PLAYING），
+        # 期间继续外推就是「按了暂停进度还往前走」。把锚点推进到按下那一刻的
+        # 显示值后冻结，并本地视为已暂停（触发暂停淡出），等真实暂停到来再收口。
+        if (self._pause_hold_until and now < self._pause_hold_until
+                and status == "PLAYING" and prev == "PLAYING"):
+            self.anchor_pos = self._current_pos()
+            self.anchor_ts = now
+            self._last_tick_pos = pos
+            self.status = "PAUSED"
+            self._apply_pause_opacity()
+            return
+
         da = self._last_tick_pos is None
         if not da and self.status == "PLAYING":
             dt = now - self.anchor_ts
@@ -8972,6 +9201,14 @@ class LyricOverlay(QWidget):
                             % (self._drift_n, pos, cur, err, step))
         elif self.status != "PLAYING":
             # 暂停/停止：直接锁死，不随时间走。
+            # 乐观暂停窗口内收到的「真实暂停」：保持按下时冻结的位置，不要跳到
+            # 播放器响应延迟之后的 pos（否则会出现「停住后又往前跳一下」）。
+            if self._pause_hold_until and now < self._pause_hold_until:
+                self._pause_hold_until = 0.0
+                self._last_tick_pos = pos
+                if status != prev:
+                    self._apply_pause_opacity()
+                return
             # 例外：刚手动校准过、SMTC 还停在旧值 → 保留校准后的锚点。
             stale = _calib_is_stale_snapshot(pos, self._calib_smtc_pos)
             if not stale:
@@ -11059,7 +11296,31 @@ LyricOverlay._restore_position_done = False
 # 设置面板（深色玻璃质感，跟随封面主色换肤）
 # ======================================================================
 
-class Switch(QWidget):
+class _FocusRingByKeyboard:
+    """只给「键盘进入」的焦点画主色描边。
+
+    鼠标点过控件后控件仍持有焦点，若此时也画描边，用户会看到一圈主色留在
+    控件外框上。开关尤其明显：关掉后轨道已经变灰，外圈却还挂着橙色描边，
+    看起来就像上一次开启时的残影。ui_glass.GlassButton 早就按同一口径处理
+    （只有 Tab / Backtab 进入才画），这里保持一致。
+    """
+
+    # 类属性兜底：即使子类忘了调 _init_key_focus 也不会 AttributeError。
+    _key_focus = False
+
+    def focusInEvent(self, event):
+        self._key_focus = event.reason() in (
+            Qt.TabFocusReason, Qt.BacktabFocusReason)
+        self.update()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        self._key_focus = False
+        self.update()
+        super().focusOutEvent(event)
+
+
+class Switch(_FocusRingByKeyboard, QWidget):
     """iOS 风格开关：圆角轨道 + 滑动圆钮，比 QCheckBox 现代得多
 
     交互即调色：轨道在「关=灰 / 开=主色」之间随圆钮位置插值，切换有 150ms 缓动。
@@ -11177,7 +11438,7 @@ class Switch(QWidget):
                 _qss_color(self._theme.surface_raised, QColor(250, 252, 255)))
         p.setBrush(knob)
         p.drawEllipse(QPointF(kx, r.center().y()), kr, kr)
-        if self.hasFocus():
+        if self.hasFocus() and self._key_focus:
             p.setBrush(Qt.NoBrush)
             p.setPen(QPen(self._accent, 2))
             p.drawRoundedRect(QRectF(0.0, 0.0, self._w - 1, self._h - 1), rad, rad)
@@ -11208,7 +11469,7 @@ def _qss_color(value, fallback: QColor) -> QColor:
     return color if color.isValid() else QColor(fallback)
 
 
-class Segmented(QWidget):
+class Segmented(_FocusRingByKeyboard, QWidget):
     """分段选择器：2~4 个互斥选项，选中段用主色填充，比下拉框更直观"""
 
     changed = Signal(str)
@@ -11387,7 +11648,7 @@ class Segmented(QWidget):
                 p.setPen(ink_idle)
             p.drawText(QRectF(i * seg, 0, seg, h), Qt.AlignCenter,
                        fm.elidedText(label, Qt.ElideRight, max(8, int(seg) - 8)))
-        if self.hasFocus():
+        if self.hasFocus() and self._key_focus:
             p.setBrush(Qt.NoBrush)
             p.setPen(QPen(self._accent, 2))
             p.drawRoundedRect(QRectF(1.0, 1.0, w - 2, h - 2), rad, rad)
@@ -12168,7 +12429,7 @@ class _WheelToScroll(QObject):
         return super().eventFilter(obj, ev)
 
 
-class SaverPreview(QLabel):
+class SaverPreview(_FocusRingByKeyboard, QLabel):
     """Keyboard-operable screen-saver preview that keeps the QLabel look."""
 
     activated = Signal()
@@ -12191,7 +12452,7 @@ class SaverPreview(QLabel):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        if self.hasFocus():
+        if self.hasFocus() and self._key_focus:
             painter = QPainter(self)
             painter.setRenderHint(QPainter.Antialiasing)
             painter.setBrush(Qt.NoBrush)
@@ -13192,7 +13453,7 @@ class SettingsPanel(QWidget):
         if theme is None:
             return
         self._theme = theme
-        self._chrome_accent = QColor(theme.accent_fill)
+        self._chrome_accent = ui_glass.qcolor(theme.accent_fill)
         self._accent = self._chrome_accent
         for sw in self._switches:
             sw.set_accent(self._chrome_accent)
@@ -13262,9 +13523,8 @@ class SettingsPanel(QWidget):
         QLabel#value { color: __TEXT2__; font-size: 12px; }
         QLabel#rowlabel { color: __TEXT2__; font-size: 14px; }
         QLabel#rowhint { color: __MUTED__; font-size: 12px; }
-        QLabel#cardtitle { color: __TEXT__; font-size: 17px; font-weight: 700;
-                           border-left: 3px solid __A__;
-                           padding-left: 8px; }
+        QLabel#cardtitle { color: __TEXT__; font-size: 16px; font-weight: 700;
+                           padding-left: 0; }
         QWidget#card { background: __SURF__;
                        border: 1px solid __BORDER__;
                        border-radius: __R_CARD__px; }
@@ -13294,7 +13554,7 @@ class SettingsPanel(QWidget):
         QSlider::sub-page:horizontal { background: __ACCENT__;
                                        border-radius: 3px; }
         QSlider::handle:horizontal { width: 14px; height: 14px; margin: -5px 0;
-                                     border-radius: 7px; background: __BG__;
+                                     border-radius: 7px; background: __SURF__;
                                      border: 1px solid __BSTRONG__; }
         QSlider::handle:horizontal:hover { border-color: __ACCENT__; }
         /* 嵌入设置页时，头部不再是整窗通栏，收成和下面卡片同一套圆角卡片 */

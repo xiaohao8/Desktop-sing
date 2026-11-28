@@ -161,16 +161,16 @@ def _theme(
             control_handle_focus
             or ("#FFFFFF" if appearance == "dark" else "#000000")
         ),
-        glass_fill=("rgba(255,255,255,.07)" if appearance == "dark"
-                    else "rgba(255,255,255,.72)"),
-        glass_border=("rgba(255,255,255,.20)" if appearance == "dark"
-                      else "rgba(20,20,24,.12)"),
-        glass_hover=("rgba(255,255,255,.13)" if appearance == "dark"
-                     else "rgba(255,255,255,.92)"),
-        glass_highlight=("rgba(255,255,255,.34)" if appearance == "dark"
+        glass_fill=("rgba(255,255,255,.08)" if appearance == "dark"
+                    else "rgba(255,255,255,.62)"),
+        glass_border=("rgba(255,255,255,.14)" if appearance == "dark"
+                      else "rgba(60,60,67,.12)"),
+        glass_hover=("rgba(255,255,255,.12)" if appearance == "dark"
+                     else "rgba(255,255,255,.82)"),
+        glass_highlight=("rgba(255,255,255,.32)" if appearance == "dark"
                          else "rgba(255,255,255,.95)"),
-        glass_shadow=("rgba(0,0,0,.42)" if appearance == "dark"
-                      else "rgba(20,20,24,.22)"),
+        glass_shadow=("rgba(0,0,0,.30)" if appearance == "dark"
+                      else "rgba(20,20,24,.10)"),
         font_display='"Segoe UI Variable Display", "Segoe UI", "MiSans", "Microsoft YaHei UI"',
         font_text='"Segoe UI Variable Text", "Segoe UI", "MiSans", "Microsoft YaHei UI"',
         font_cjk='"MiSans", "Microsoft YaHei UI", sans-serif',
@@ -190,8 +190,8 @@ def _theme(
         s6=32,
         r_control=12,
         r_row=14,
-        r_card=20,
-        r_window=26,
+        r_card=24,
+        r_window=28,
         m_fast=120,
         m_base=180,
         m_slow=240,
@@ -205,24 +205,24 @@ THEMES: dict[str, dict[str, Theme]] = {
             "ink", "墨", "dark",
             "#000000", "#1C1C1E", "#1C1C1E", "#0D0D0F", "#2C2C2E",
             "#F3F0E9", "#B0ADA5", "#A6A6AB", "#8A8A8F",
-            "rgba(255,255,255,.08)", "rgba(255,255,255,.36)", "rgba(255,255,255,.12)",
+            "rgba(255,255,255,.08)", "rgba(255,255,255,.20)", "rgba(255,255,255,.08)",
             "#C94322", "#F06A4A", "#B93C1D", "#A9341A", "#FFF8F0",
             "rgba(201,67,34,.16)", "#63C79A", "rgba(99,199,154,.16)",
             "#E3B15C", "rgba(227,177,92,.16)", "#F06A5E", "rgba(240,106,94,.16)",
             "#F06A4A", "rgba(240,106,74,.24)", "rgba(0,0,0,.42)",
-            "rgba(255,255,255,.38)", "rgba(255,255,255,.38)",
+            "rgba(255,255,255,.22)", "rgba(255,255,255,.18)",
             None, "#0B0B0C",
         ),
         "light": _theme(
             "ink", "墨", "light",
             "#F2F2F7", "#FFFFFF", "#FFFFFF", "#E5E5EA", "#EFEFF4",
             "#1B1A18", "#4F4B44", "#625D55", "#837E74",
-            "rgba(60,60,67,.10)", "rgba(60,60,67,.64)", "rgba(60,60,67,.12)",
+            "rgba(60,60,67,.10)", "rgba(60,60,67,.18)", "rgba(60,60,67,.08)",
             "#C2421F", "#A93618", "#A9341A", "#8F2B16", "#FFF8EF",
             "rgba(194,66,31,.12)", "#176349", "rgba(23,99,73,.14)",
             "#8A5200", "rgba(138,82,0,.14)", "#B3261E", "rgba(179,38,30,.12)",
-            "#C2421F", "rgba(194,66,31,.18)", "rgba(27,26,24,.22)",
-            "rgba(27,26,24,.50)", "rgba(27,26,24,.50)",
+            "#C2421F", "rgba(194,66,31,.18)", "rgba(27,26,24,.10)",
+            "rgba(27,26,24,.16)", "rgba(27,26,24,.16)",
         ),
     },
     "celadon": {
@@ -230,23 +230,23 @@ THEMES: dict[str, dict[str, Theme]] = {
             "celadon", "青瓷", "dark",
             "#000000", "#1A2620", "#1A2620", "#0C1712", "#243029",
             "#EDF2EC", "#B4C2B8", "#ADBCB2", "#93A79B",
-            "rgba(255,255,255,.09)", "rgba(255,255,255,.36)", "rgba(255,255,255,.13)",
+            "rgba(255,255,255,.09)", "rgba(255,255,255,.20)", "rgba(255,255,255,.09)",
             "#2E9E78", "#5FD0A0", "#35B287", "#2A906E", "#06140F",
             "rgba(46,158,120,.18)", "#63C79A", "rgba(99,199,154,.16)",
             "#D8B36A", "rgba(216,179,106,.16)", "#F08076", "rgba(240,128,118,.16)",
             "#5FD0A0", "rgba(95,208,160,.24)", "rgba(0,0,0,.42)",
-            "rgba(255,255,255,.38)", "rgba(255,255,255,.38)",
+            "rgba(255,255,255,.22)", "rgba(255,255,255,.18)",
         ),
         "light": _theme(
             "celadon", "青瓷", "light",
             "#F2F7F3", "#FFFFFF", "#FFFFFF", "#E4EDE7", "#EDF3EF",
             "#14201A", "#46554C", "#55645B", "#707E75",
-            "rgba(20,32,26,.13)", "rgba(20,32,26,.52)", "rgba(20,32,26,.20)",
+            "rgba(20,32,26,.13)", "rgba(20,32,26,.20)", "rgba(20,32,26,.10)",
             "#1F7A5A", "#176349", "#1A6A4E", "#155A42", "#F7FFFB",
             "rgba(31,122,90,.13)", "#176349", "rgba(23,99,73,.14)",
             "#7A5200", "rgba(122,82,0,.14)", "#A8342C", "rgba(168,52,44,.12)",
-            "#1F7A5A", "rgba(31,122,90,.19)", "rgba(20,32,26,.20)",
-            "rgba(20,32,26,.50)", "rgba(20,32,26,.50)",
+            "#1F7A5A", "rgba(31,122,90,.19)", "rgba(20,32,26,.10)",
+            "rgba(20,32,26,.16)", "rgba(20,32,26,.16)",
         ),
     },
     "amber": {
@@ -254,23 +254,23 @@ THEMES: dict[str, dict[str, Theme]] = {
             "amber", "琥珀", "dark",
             "#0D0C0A", "#171512", "#201D18", "#090806", "#282219",
             "#F2EDE4", "#ADA69A", "#90897B", "#736C60",
-            "rgba(255,255,255,.09)", "rgba(255,255,255,.36)", "rgba(255,255,255,.13)",
+            "rgba(255,255,255,.09)", "rgba(255,255,255,.20)", "rgba(255,255,255,.09)",
             "#D9912F", "#E8A33D", "#E8A33D", "#C77F22", "#1E1304",
             "rgba(217,145,47,.18)", "#7BC79E", "rgba(123,199,158,.16)",
             "#E8B35C", "rgba(232,179,92,.16)", "#F08076", "rgba(240,128,118,.16)",
             "#E8A33D", "rgba(232,163,61,.24)", "rgba(0,0,0,.42)",
-            "rgba(255,255,255,.38)", "rgba(255,255,255,.38)",
+            "rgba(255,255,255,.22)", "rgba(255,255,255,.18)",
         ),
         "light": _theme(
             "amber", "琥珀", "light",
             "#F1EEE6", "#F9F6EF", "#FFFFFF", "#E5E0D6", "#FFFFFF",
             "#1D1A15", "#4F4A41", "#5E584E", "#79736A",
-            "rgba(29,26,21,.13)", "rgba(29,26,21,.52)", "rgba(29,26,21,.20)",
+            "rgba(29,26,21,.13)", "rgba(29,26,21,.20)", "rgba(29,26,21,.10)",
             "#9A5B00", "#7D4900", "#7D4900", "#653A00", "#FFF8EC",
             "rgba(154,91,0,.13)", "#176349", "rgba(23,99,73,.14)",
             "#7A5200", "rgba(122,82,0,.14)", "#A8342C", "rgba(168,52,44,.12)",
-            "#9A5B00", "rgba(154,91,0,.19)", "rgba(29,26,21,.20)",
-            "rgba(29,26,21,.50)", "rgba(29,26,21,.50)",
+            "#9A5B00", "rgba(154,91,0,.19)", "rgba(29,26,21,.10)",
+            "rgba(29,26,21,.16)", "rgba(29,26,21,.16)",
         ),
     },
 }
@@ -432,48 +432,45 @@ _MAIN_QSS = Template(r"""
 QFrame#shell { background: $bg;
                border: 1px solid $border; border-radius: 28px; }
 QWidget#body { background: transparent; }
-QWidget#titlebar { background: $bg; }
-QLabel#pagecrumb { color: $text; font-size: 14px; font-weight: 750; }
-QPushButton#quick { background: $glass_fill; color: $text_muted;
-                    border: 1px solid $glass_border; border-radius: 12px;
-                    padding: 6px 11px; font-size: 12px; font-weight: 650; }
+QWidget#titlebar { background: transparent; }
+QLabel#pagecrumb { color: $text_muted; font-size: 13px; font-weight: 600; }
+QLabel#appicon { background: transparent; border: none; }
+QLabel#appname { color: $text; font-size: 15px; font-weight: 720; }
+QLabel#apptag { color: $text_muted; font-size: $fs_captionpx; letter-spacing: 2px;
+                font-weight: 700; }
+QPushButton#quick { background: $glass_fill; color: $text_secondary;
+                    border: 1px solid $glass_border; border-radius: 16px;
+                    padding: 6px 12px; font-size: 12px; font-weight: 650; }
 QPushButton#quick:hover { background: $glass_hover; color: $text;
                           border-color: $glass_highlight; }
 QPushButton#quick:pressed { background: $glass_fill; }
 QPushButton#winbtn, QPushButton#winclose { background: transparent; border: none; }
-QWidget#sidebar { background: $bg;
-                   border-right: 1px solid $divider; }
-QLabel#brandmark { background: $accent_fill; color: $on_accent;
-                   border-radius: 13px; font-size: 19px; font-weight: 700; }
-QLabel#brandname { color: $text; font-size: 17px; font-weight: 800; }
-QLabel#brandsub { color: $text_muted; font-size: $fs_captionpx; letter-spacing: 2px; }
+QWidget#sidebar { background: transparent;
+                   border: none; }
 QLabel#sidestatus { color: $text_muted; font-size: 12px; padding: 2px 4px; }
-QLabel#sidestatus[live="1"] { color: $success; }QPushButton#nav { text-align: left; padding: 0 11px;
-                  border: 2px solid transparent; border-left: 3px solid transparent;
-                  border-radius: 10px;
-                  color: $text_muted; font-size: 13px; font-weight: 650; }
-QPushButton#nav:hover { background: $glass_hover; color: $text;
-                        border-color: $glass_border; border-left-color: $accent_fill; }
-QPushButton#nav:pressed { background: $glass_fill; color: $text; }
-QPushButton#nav:checked { background: $accent_soft; color: $text;
-                          border-left: 3px solid transparent; }
+QLabel#sidestatus[live="1"] { color: $success; }QPushButton#nav { text-align: left; padding: 0 12px;
+                  border: none; border-radius: 12px;
+                  color: $text_secondary; font-size: 13px; font-weight: 600; }
+QPushButton#nav:hover { background: $surface_hover; color: $text; }
+QPushButton#nav:pressed { background: $surface_hover; color: $text; }
+QPushButton#nav:checked { background: $accent_soft; color: $accent_text;
+                          font-weight: 700; }
 QLabel#sidehead { color: $text_muted; font-size: $fs_eyebrowpx; font-weight: 700;
                   letter-spacing: 1px; }
 QLabel#sidecount { color: $text_muted; font-size: $fs_smallpx; }
 QLabel#sideempty { color: $text_disabled; font-size: 12px; padding: 8px 4px; }
 QPushButton#recent { background: transparent; color: $text_secondary; border: none;
-                     border-left: 3px solid transparent; border-radius: 11px;
+                     border-radius: 12px;
                      padding: 7px 9px 7px 11px; text-align: left;
                      font-size: 12px; }
-QPushButton#recent:hover { background: $surface_hover; color: $text;
-                           border-left-color: $accent_fill; }
+QPushButton#recent:hover { background: $surface_hover; color: $text; }
 QLabel#sidetip { color: $text_muted; font-size: $fs_smallpx;
                  border-top: 1px solid $divider; padding-top: 10px; }
 QStackedWidget#stack { background: transparent; }
 QWidget#stage { background: $bg; }
 QLabel#stageeyebrow { color: $text_muted; font-size: $fs_eyebrowpx;
                       letter-spacing: 2px; font-weight: 700; }
-QLabel#stagetrack { color: $text; font-size: 26px; font-weight: 800; }
+QLabel#stagetrack { color: $text; font-size: 28px; font-weight: 700; }
 QLabel#stageartist { color: $text_secondary; font-size: 13px; }
 QPushButton#stageghost { background: $glass_fill; color: $text_secondary;
                          border: 1px solid $glass_border; border-radius: 12px;
@@ -484,7 +481,7 @@ QWidget#reportPage, QWidget#historyPage { background: $bg; }
 QWidget#reportScroll { background: $bg; border: none; }
 QWidget#reportBody { background: transparent; }
 QWidget#settingsPage { background: $bg; }
-QLabel#reportTitle { color: $text; font-size: 26px; font-weight: 800; }
+QLabel#reportTitle { color: $text; font-size: 28px; font-weight: 700; }
 QLabel#reportSub { color: $text_muted; font-size: 13px; }
 QPushButton#dangerGhost { background: $glass_fill; color: $danger;
                           border: 1px solid $danger; border-radius: 12px;
@@ -506,7 +503,7 @@ QLabel#statValue { color: $text; font-size: 27px; font-weight: 700; }
 QLabel#statCaption { color: $text_muted; font-size: $fs_smallpx; }
 QLabel#cardHead { color: $text_muted; font-size: $fs_eyebrowpx; font-weight: 700;
                   letter-spacing: 1px; }
-QLabel#artistBig { color: $text; font-size: 24px; font-weight: 800; }
+QLabel#artistBig { color: $text; font-size: 24px; font-weight: 700; }
 QLabel#artistMeta { color: $accent_text; font-size: 12px; font-weight: 700;
                     font-feature-settings: "tnum" 1; }
 QLabel#muted { color: $text_muted; font-size: 12px; }
@@ -514,7 +511,7 @@ QLabel#rankList, QLabel#trackRank { color: $text_secondary; font-size: 12px; }
 QFrame#reportEmptyCard { background: $surface_raised;
                          border: 1px solid $border; border-top-color: $border_strong;
                          border-radius: 24px; }
-QLabel#reportEmptyTitle { color: $text; font-size: 22px; font-weight: 800; }
+QLabel#reportEmptyTitle { color: $text; font-size: 22px; font-weight: 700; }
 QLabel#reportEmptyHint { color: $text_muted; font-size: 13px; }
 QScrollArea { background: transparent; border: none; }
 QScrollArea > QWidget > QWidget { background: transparent; }
@@ -540,7 +537,7 @@ QLabel#historyArtist { color: $text_muted; font-size: 12px; font-weight: 400; }
 QLabel#historyMeta { color: $text_muted; font-size: 12px; font-weight: 400;
                      font-feature-settings: "tnum" 1; }
 QWidget#playlistPage { background: $bg; }
-QLabel#playlistPageTitle { color: $text; font-size: 32px; font-weight: 800; }
+QLabel#playlistPageTitle { color: $text; font-size: 32px; font-weight: 700; }
 QLabel#playlistSubtitle { color: $text_muted; font-size: 13px; font-weight: 400; }
 QFrame#playlistPanel { background: $surface_raised;
                        border: 1px solid $border;
@@ -617,8 +614,8 @@ QPushButton#quick:focus, QPushButton#stageghost:focus,
 QPushButton#dangerGhost:focus, QPushButton#ghost:focus {
     border: 2px solid $focus; }
 QPushButton#historyRow:focus { border-color: $focus; }
-QFrame#playbar { background: $surface_raised;
-                 border: none; border-radius: 24px; }
+QFrame#playbar { background: $glass_fill;
+                 border: 1px solid $glass_border; border-radius: 24px; }
 QPushButton#playprimary { background: $accent_fill; border: 1px solid $glass_highlight;
                          border-radius: 23px; }
 QPushButton#playprimary:hover { background: $accent_hover; }
@@ -632,35 +629,40 @@ QPushButton#playround:pressed { background: $glass_fill; }
 QPushButton#playround:focus { border: 2px solid $focus; }
 QLabel#bartitle { color: $text; font-size: 14px; font-weight: 700; }
 QLabel#barartist { color: $text_secondary; font-size: 12px; }
-QLabel#bartime { color: $text_muted; font-size: 12px;
+QLabel#bartime { color: $text_secondary; font-size: 12px;
                  font-feature-settings: "tnum" 1; }
-QSlider#progress::groove:horizontal { height: 3px; background: $surface_sunken;
-                                      border-radius: 2px; }
+QSlider#progress::groove:horizontal { height: 6px; background: rgba(120,120,128,.35);
+                                      border-radius: 3px; }
 QSlider#progress::sub-page:horizontal { background: $accent_fill; border-radius: 2px; }
-QSlider#progress::handle:horizontal { width: 5px; height: 15px; margin: -6px 0;
-                                     border-radius: 3px;
-                                     background: $text; }
-QSlider#progress::handle:horizontal:hover { width: 7px; height: 17px; margin: -7px 0;
-                                            border-radius: 4px;
-                                            background: $text; }
-QSlider#progress::handle:horizontal:focus { width: 7px; height: 17px; margin: -7px 0;
-                                            border-radius: 4px;
-                                            border: 2px solid $control_handle_focus;
-                                            background: $text; }
+/* iOS 26 的进度旋钮是一颗小白珠，靠一条发丝描边定型；旧版是黑色竖条，
+   浅色下像卡了一根黑刺。 */
+QSlider#progress::handle:horizontal { width: 18px; height: 18px; margin: -7px 0;
+                                     border-radius: 9px;
+                                     background: $on_accent;
+                                     border: 1px solid $border_strong; }
+QSlider#progress::handle:horizontal:hover { width: 20px; height: 20px; margin: -8px 0;
+                                            border-radius: 10px;
+                                            background: $on_accent;
+                                            border-color: $accent_fill; }
+QSlider#progress::handle:horizontal:focus { width: 20px; height: 20px; margin: -8px 0;
+                                            border-radius: 10px;
+                                            border: 2px solid $focus;
+                                            background: $on_accent; }
 QFrame#appearanceCard { background: $surface_raised;
-                        border: 1px solid $border;
-                        border-radius: 20px; }
-QLabel#appearanceTitle { color: $text; font-size: 17px; font-weight: 800; }
+                        border: none;
+                        border-radius: 24px; }
+QLabel#appearanceTitle { color: $text; font-size: 15px; font-weight: 700; }
+QLabel#rowlabel { color: $text; font-size: 14px; font-weight: 500; }
 QFrame#sectionBar { background: $accent_fill; border-radius: 1.5px; }
 QLabel#appearanceHint { color: $text_muted; font-size: 12px; }
 QWidget#divider { background: $divider; max-height: 1px; }
-QPushButton#appearanceSeg { background: $glass_fill; color: $text_muted;
-                            border: 1px solid $glass_border; border-radius: 12px;
-                            padding: 7px 14px; font-size: 13px; font-weight: 600; }
-QPushButton#appearanceSeg:hover { background: $glass_hover; color: $text;
-                                  border-color: $glass_highlight; }
-QPushButton#appearanceSeg:checked { background: $accent_soft; color: $accent_text;
-                                    border-color: $accent_fill; }
+QFrame#segTrack { background: rgba(120,120,128,.22); border: none;
+                  border-radius: 19px; }
+QPushButton#appearanceSeg { background: transparent; color: $text_muted;
+                            border: none; border-radius: 16px;
+                            padding: 6px 14px; font-size: 13px; font-weight: 600; }
+QPushButton#appearanceSeg:hover { color: $text; }
+QPushButton#appearanceSeg:checked { color: $text; }
 QPushButton#appearanceSeg:focus { border: 2px solid $focus; }
 QPushButton#themeSwatch { background: $surface; border: 1px solid $border;
                           border-radius: 16px; text-align: left;
